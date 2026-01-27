@@ -12,6 +12,13 @@
 		761780ED2CA45674006654EE /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761780EC2CA45674006654EE /* AppDelegate.swift */; };
 		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
 		B984A5EDF71F4212AA2AF590 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */; };
+		11E773C1083441CD9C105C1C /* NotoSans-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 7DA8F4C8DD4E4097900E9443 /* NotoSans-Regular.ttf */; };
+		E412CC636B5D476CB59C8A10 /* NotoSans-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = E36ACD938C2F4CFF9E08E771 /* NotoSans-Medium.ttf */; };
+		5D9492ECC8174DF9929F5A62 /* NotoSans_Condensed-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 5934B69C4955413DB4243F2D /* NotoSans_Condensed-Regular.ttf */; };
+		FCE2198FD6D246C797CBBB2F /* NotoSans_SemiCondensed-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = A6AD8DA7735142CB9CBB81DB /* NotoSans_SemiCondensed-Regular.ttf */; };
+		C9B27882F56D430E969B0099 /* NotoSans-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = DD1BA83C21AE4BADBE073C55 /* NotoSans-SemiBold.ttf */; };
+		B47268A0EC4E471CBAFDD7E6 /* NotoSans_Condensed-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = A45D94CD72CD492584D9AAD5 /* NotoSans_Condensed-Medium.ttf */; };
+		F8191AB8790B45D0A02E665E /* NotoSans-ExtraBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 6E507281FE0F40AD85E4D2D3 /* NotoSans-ExtraBold.ttf */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -25,6 +32,13 @@
 		761780EC2CA45674006654EE /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = FinancialAstrologyTerminalApp/AppDelegate.swift; sourceTree = "<group>"; };
 		81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = FinancialAstrologyTerminalApp/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
+		7DA8F4C8DD4E4097900E9443 /* NotoSans-Regular.ttf */ = {isa = PBXFileReference; name = "NotoSans-Regular.ttf"; path = "../assets/fonts/NotoSans-Regular.ttf"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = unknown; explicitFileType = undefined; includeInIndex = 0; };
+		E36ACD938C2F4CFF9E08E771 /* NotoSans-Medium.ttf */ = {isa = PBXFileReference; name = "NotoSans-Medium.ttf"; path = "../assets/fonts/NotoSans-Medium.ttf"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = unknown; explicitFileType = undefined; includeInIndex = 0; };
+		5934B69C4955413DB4243F2D /* NotoSans_Condensed-Regular.ttf */ = {isa = PBXFileReference; name = "NotoSans_Condensed-Regular.ttf"; path = "../assets/fonts/NotoSans_Condensed-Regular.ttf"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = unknown; explicitFileType = undefined; includeInIndex = 0; };
+		A6AD8DA7735142CB9CBB81DB /* NotoSans_SemiCondensed-Regular.ttf */ = {isa = PBXFileReference; name = "NotoSans_SemiCondensed-Regular.ttf"; path = "../assets/fonts/NotoSans_SemiCondensed-Regular.ttf"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = unknown; explicitFileType = undefined; includeInIndex = 0; };
+		DD1BA83C21AE4BADBE073C55 /* NotoSans-SemiBold.ttf */ = {isa = PBXFileReference; name = "NotoSans-SemiBold.ttf"; path = "../assets/fonts/NotoSans-SemiBold.ttf"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = unknown; explicitFileType = undefined; includeInIndex = 0; };
+		A45D94CD72CD492584D9AAD5 /* NotoSans_Condensed-Medium.ttf */ = {isa = PBXFileReference; name = "NotoSans_Condensed-Medium.ttf"; path = "../assets/fonts/NotoSans_Condensed-Medium.ttf"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = unknown; explicitFileType = undefined; includeInIndex = 0; };
+		6E507281FE0F40AD85E4D2D3 /* NotoSans-ExtraBold.ttf */ = {isa = PBXFileReference; name = "NotoSans-ExtraBold.ttf"; path = "../assets/fonts/NotoSans-ExtraBold.ttf"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = unknown; explicitFileType = undefined; includeInIndex = 0; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -75,6 +89,7 @@
 				83CBBA001A601CBA00E9B192 /* Products */,
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
 				BBD78D7AC51CEA395F1C20DB /* Pods */,
+				DA65915E0BF949769EB88944 /* Resources */,
 			);
 			indentWidth = 2;
 			sourceTree = "<group>";
@@ -97,6 +112,21 @@
 			);
 			path = Pods;
 			sourceTree = "<group>";
+		};
+		DA65915E0BF949769EB88944 /* Resources */ = {
+			isa = "PBXGroup";
+			children = (
+				7DA8F4C8DD4E4097900E9443 /* NotoSans-Regular.ttf */,
+				E36ACD938C2F4CFF9E08E771 /* NotoSans-Medium.ttf */,
+				5934B69C4955413DB4243F2D /* NotoSans_Condensed-Regular.ttf */,
+				A6AD8DA7735142CB9CBB81DB /* NotoSans_SemiCondensed-Regular.ttf */,
+				DD1BA83C21AE4BADBE073C55 /* NotoSans-SemiBold.ttf */,
+				A45D94CD72CD492584D9AAD5 /* NotoSans_Condensed-Medium.ttf */,
+				6E507281FE0F40AD85E4D2D3 /* NotoSans-ExtraBold.ttf */,
+			);
+			name = Resources;
+			sourceTree = "<group>";
+			path = "";
 		};
 /* End PBXGroup section */
 
@@ -161,6 +191,13 @@
 				81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				B984A5EDF71F4212AA2AF590 /* PrivacyInfo.xcprivacy in Resources */,
+				11E773C1083441CD9C105C1C /* NotoSans-Regular.ttf in Resources */,
+				E412CC636B5D476CB59C8A10 /* NotoSans-Medium.ttf in Resources */,
+				5D9492ECC8174DF9929F5A62 /* NotoSans_Condensed-Regular.ttf in Resources */,
+				FCE2198FD6D246C797CBBB2F /* NotoSans_SemiCondensed-Regular.ttf in Resources */,
+				C9B27882F56D430E969B0099 /* NotoSans-SemiBold.ttf in Resources */,
+				B47268A0EC4E471CBAFDD7E6 /* NotoSans_Condensed-Medium.ttf in Resources */,
+				F8191AB8790B45D0A02E665E /* NotoSans-ExtraBold.ttf in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
