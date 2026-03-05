@@ -4,24 +4,19 @@ import { UserCircle } from 'lucide-react-native';
 import AppText from '../../components/AppText';
 import BottomTabs from '../../components/BottomTabs';
 import GradientBackground from '../../components/GradientBackground';
-
-const COLORS = {
-  background: '#0B0B0C',
-  surfaceAlt: '#1A1B20',
-  surfaceGlass: 'rgba(16, 20, 30, 0.62)',
-  textPrimary: '#FFFFFF',
-  textMuted: '#B7BDC8',
-  border: 'rgba(255, 255, 255, 0.08)',
-};
+import { useUser } from '../../store/UserContext';
 
 const Overview = ({ navigation }) => {
+  const { themeColors } = useUser();
+  const styles = createStyles(themeColors);
+
   return (
     <View style={styles.safeArea}>
       <GradientBackground>
         <View style={styles.header}>
           <AppText style={styles.title}>Overview</AppText>
           <Pressable style={styles.iconButton} onPress={() => navigation.navigate('Profile')}>
-            <UserCircle size={18} color={COLORS.textPrimary} />
+            <UserCircle size={18} color={themeColors.textPrimary} />
           </Pressable>
         </View>
 
@@ -47,63 +42,64 @@ const Overview = ({ navigation }) => {
   );
 };
 
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  header: {
-    paddingHorizontal: 16,
-    paddingTop: 28,
-    paddingBottom: 12,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  title: {
-    color: COLORS.textPrimary,
-    fontSize: 18,
-  },
-  iconButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: COLORS.surfaceAlt,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  content: {
-    paddingHorizontal: 16,
-    paddingBottom: 110,
-    gap: 16,
-  },
-  card: {
-    backgroundColor: COLORS.surfaceGlass,
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    gap: 12,
-  },
-  cardTitle: {
-    color: COLORS.textPrimary,
-    fontSize: 15,
-  },
-  row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  rowLabel: {
-    color: COLORS.textPrimary,
-    fontSize: 13,
-  },
-  rowValue: {
-    color: COLORS.textMuted,
-    fontSize: 12,
-  },
-});
+const createStyles = (colors) =>
+  StyleSheet.create({
+    safeArea: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    header: {
+      paddingHorizontal: 16,
+      paddingTop: 28,
+      paddingBottom: 12,
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    title: {
+      color: colors.textPrimary,
+      fontSize: 18,
+    },
+    iconButton: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: colors.surfaceAlt,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    content: {
+      paddingHorizontal: 16,
+      paddingBottom: 110,
+      gap: 16,
+    },
+    card: {
+      backgroundColor: colors.surfaceGlass,
+      borderRadius: 16,
+      padding: 16,
+      borderWidth: 1,
+      borderColor: colors.border,
+      gap: 12,
+    },
+    cardTitle: {
+      color: colors.textPrimary,
+      fontSize: 15,
+    },
+    row: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    rowLabel: {
+      color: colors.textPrimary,
+      fontSize: 13,
+    },
+    rowValue: {
+      color: colors.textMuted,
+      fontSize: 12,
+    },
+  });
 
 export default Overview;

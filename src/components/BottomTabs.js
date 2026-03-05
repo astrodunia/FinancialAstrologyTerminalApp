@@ -8,14 +8,7 @@ import {
   LayoutGrid,
 } from 'lucide-react-native';
 import AppText from './AppText';
-
-const COLORS = {
-  background: '#0B0B0C',
-  surfaceAlt: '#1A1B20',
-  textPrimary: '#FFFFFF',
-  textMuted: '#B7BDC8',
-  border: 'rgba(255, 255, 255, 0.08)',
-};
+import { useUser } from '../store/UserContext';
 
 const TABS = [
   { label: 'Home', route: 'Home', icon: HomeIcon },
@@ -26,6 +19,9 @@ const TABS = [
 ];
 
 const BottomTabs = ({ activeRoute, navigation }) => {
+  const { themeColors } = useUser();
+  const styles = createStyles(themeColors);
+
   return (
     <View style={styles.footer}>
       {TABS.map((item) => {
@@ -37,10 +33,8 @@ const BottomTabs = ({ activeRoute, navigation }) => {
             style={styles.footerItem}
             onPress={() => navigation.navigate(item.route)}
           >
-            <Icon size={18} color={active ? COLORS.textPrimary : COLORS.textMuted} />
-            <AppText style={active ? styles.footerLabelActive : styles.footerLabel}>
-              {item.label}
-            </AppText>
+            <Icon size={18} color={active ? themeColors.textPrimary : themeColors.textMuted} />
+            <AppText style={active ? styles.footerLabelActive : styles.footerLabel}>{item.label}</AppText>
           </Pressable>
         );
       })}
@@ -48,28 +42,29 @@ const BottomTabs = ({ activeRoute, navigation }) => {
   );
 };
 
-const styles = StyleSheet.create({
-  footer: {
-    height: 68,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-    backgroundColor: 'rgba(12, 14, 20, 0.85)',
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-  },
-  footerItem: {
-    alignItems: 'center',
-    gap: 4,
-  },
-  footerLabel: {
-    color: COLORS.textMuted,
-    fontSize: 10,
-  },
-  footerLabelActive: {
-    color: COLORS.textPrimary,
-    fontSize: 10,
-  },
-});
+const createStyles = (colors) =>
+  StyleSheet.create({
+    footer: {
+      height: 68,
+      borderTopWidth: 1,
+      borderTopColor: colors.border,
+      backgroundColor: colors.tabBarBg,
+      flexDirection: 'row',
+      justifyContent: 'space-around',
+      alignItems: 'center',
+    },
+    footerItem: {
+      alignItems: 'center',
+      gap: 4,
+    },
+    footerLabel: {
+      color: colors.textMuted,
+      fontSize: 10,
+    },
+    footerLabelActive: {
+      color: colors.textPrimary,
+      fontSize: 10,
+    },
+  });
 
 export default BottomTabs;

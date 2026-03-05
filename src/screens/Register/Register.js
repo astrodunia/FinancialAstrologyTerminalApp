@@ -1,6 +1,5 @@
 import React, { useMemo, useState } from 'react';
 import {
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Pressable,
@@ -13,6 +12,10 @@ import { Apple, Chrome, Eye, EyeOff, Lock, Mail, ShieldCheck, User } from 'lucid
 import AppText from '../../components/AppText';
 import AppTextInput from '../../components/AppTextInput';
 import GradientBackground from '../../components/GradientBackground';
+
+const ANDROID_API_URL = 'http://10.0.2.2:4500';
+const IOS_API_URL = 'http://localhost:4500';
+const API_BASE_URL = Platform.OS === 'android' ? ANDROID_API_URL : IOS_API_URL;
 
 const COLORS = {
   background: '#0B0B0C',
@@ -43,15 +46,99 @@ const MAX_WIDTH = 420;
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_WIDTH = Math.min(MAX_WIDTH, SCREEN_WIDTH - 32);
 const TOP_INSET = Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 12 : 16;
+const SUCCESS_VERIFY_MESSAGE = 'Before sign in, please verify your gmail.';
 
 const Register = ({ navigation }) => {
-  const [fullName, setFullName] = useState('Jane Doe');
-  const [email, setEmail] = useState('you@example.com');
+  const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [agree, setAgree] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [statusMessage, setStatusMessage] = useState('');
+  const [statusType, setStatusType] = useState('');
+
+  const showError = (message) => {
+    setStatusType('error');
+    setStatusMessage(message);
+  };
+
+  const handleRegister = async () => {
+    const trimmedFullName = fullName.trim();
+    const trimmedEmail = email.trim().toLowerCase();
+
+    if (!trimmedFullName) {
+      showError('Full name is required.');
+      return;
+    }
+
+    if (!trimmedEmail) {
+      showError('Email is required.');
+      return;
+    }
+
+    if (!password) {
+      showError('Password is required.');
+      return;
+    }
+
+    if (password.length < 6) {
+      showError('Password must be at least 6 characters.');
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      showError('Password and confirm password must match.');
+      return;
+    }
+
+    if (!agree) {
+      showError('Please accept Terms and Privacy Policy to continue.');
+      return;
+    }
+
+    setStatusMessage('');
+    setStatusType('');
+    setIsSubmitting(true);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: trimmedFullName,
+          email: trimmedEmail,
+          password,
+        }),
+      });
+
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        console.error('Registration error:', data);
+        throw new Error(
+          data?.message ||
+            data?.error ||
+            data?.errors?.[0]?.msg ||
+            'Could not create account. Please try again.',
+        );
+      }
+
+      setPassword('');
+      setConfirmPassword('');
+      setStatusType('success');
+      setStatusMessage(SUCCESS_VERIFY_MESSAGE);
+    } catch (error) {
+      showError(error?.message || 'Could not create account. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const strength = useMemo(() => {
     if (!password) return { label: 'Weak', color: COLORS.danger, width: '25%' };
@@ -61,7 +148,7 @@ const Register = ({ navigation }) => {
   }, [password]);
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View style={styles.screen}>
       <GradientBackground>
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.headerRow}>
@@ -86,6 +173,7 @@ const Register = ({ navigation }) => {
                 placeholder="Jane Doe"
                 placeholderTextColor={COLORS.textMuted}
                 style={styles.input}
+                editable={!isSubmitting}
               />
             </View>
           </View>
@@ -102,6 +190,7 @@ const Register = ({ navigation }) => {
                 style={styles.input}
                 autoCapitalize="none"
                 keyboardType="email-address"
+                editable={!isSubmitting}
               />
             </View>
           </View>
@@ -117,8 +206,9 @@ const Register = ({ navigation }) => {
                 placeholderTextColor={COLORS.textMuted}
                 style={styles.input}
                 secureTextEntry={!showPassword}
+                editable={!isSubmitting}
               />
-              <Pressable onPress={() => setShowPassword((prev) => !prev)}>
+              <Pressable disabled={isSubmitting} onPress={() => setShowPassword((prev) => !prev)}>
                 {showPassword ? (
                   <EyeOff size={18} color={COLORS.textMuted} />
                 ) : (
@@ -149,8 +239,9 @@ const Register = ({ navigation }) => {
                 placeholderTextColor={COLORS.textMuted}
                 style={styles.input}
                 secureTextEntry={!showConfirm}
+                editable={!isSubmitting}
               />
-              <Pressable onPress={() => setShowConfirm((prev) => !prev)}>
+              <Pressable disabled={isSubmitting} onPress={() => setShowConfirm((prev) => !prev)}>
                 {showConfirm ? (
                   <EyeOff size={18} color={COLORS.textMuted} />
                 ) : (
@@ -170,9 +261,33 @@ const Register = ({ navigation }) => {
             <AppText style={styles.link}>Privacy Policy</AppText>
           </Pressable>
 
-          <Pressable style={styles.primaryButton} onPress={() => navigation.navigate('Home')}>
-            <AppText style={styles.primaryText}>Create account</AppText>
+          <Pressable
+            style={[styles.primaryButton, isSubmitting && styles.primaryButtonDisabled]}
+            onPress={handleRegister}
+            disabled={isSubmitting}
+          >
+            <AppText style={styles.primaryText}>
+              {isSubmitting ? 'Creating account...' : 'Create account'}
+            </AppText>
           </Pressable>
+
+          {!!statusMessage && (
+            <View
+              style={[
+                styles.statusBox,
+                statusType === 'success' ? styles.statusBoxSuccess : styles.statusBoxError,
+              ]}
+            >
+              <AppText
+                style={[
+                  styles.statusText,
+                  statusType === 'success' ? styles.successText : styles.errorText,
+                ]}
+              >
+                {statusMessage}
+              </AppText>
+            </View>
+          )}
 
           <View style={styles.footerRow}>
             <AppText style={styles.footerText}>Already have an account?</AppText>
@@ -202,20 +317,20 @@ const Register = ({ navigation }) => {
         </View>
         </ScrollView>
       </GradientBackground>
-    </SafeAreaView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
-  safeArea: {
+  screen: {
     flex: 1,
     backgroundColor: COLORS.background,
   },
   content: {
     paddingHorizontal: 16,
     paddingTop: TOP_INSET,
-    paddingBottom: 20,
-    gap: 12,
+    paddingBottom: 28,
+    gap: 16,
     alignItems: 'center',
   },
   headerRow: {
@@ -245,17 +360,17 @@ const styles = StyleSheet.create({
   card: {
     width: '100%',
     maxWidth: CARD_WIDTH,
-    backgroundColor: 'rgba(16, 20, 30, 0.62)',
-    borderRadius: 20,
-    padding: 16,
+    backgroundColor: 'rgba(16, 20, 30, 0.72)',
+    borderRadius: 24,
+    padding: 18,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
-    gap: 12,
+    borderColor: 'rgba(201, 168, 255, 0.22)',
+    gap: 14,
     shadowColor: '#000',
-    shadowOpacity: 0.25,
-    shadowOffset: { width: 0, height: 12 },
-    shadowRadius: 24,
-    elevation: 6,
+    shadowOpacity: 0.35,
+    shadowOffset: { width: 0, height: 16 },
+    shadowRadius: 28,
+    elevation: 10,
     overflow: 'hidden',
   },
   cardGlossTop: {
@@ -287,16 +402,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: 'rgba(12, 14, 20, 0.72)',
-    borderRadius: 12,
+    backgroundColor: 'rgba(12, 14, 20, 0.82)',
+    borderRadius: 14,
     paddingHorizontal: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.10)',
+    borderColor: 'rgba(201, 168, 255, 0.20)',
   },
   input: {
     flex: 1,
     color: COLORS.textPrimary,
-    paddingVertical: 8,
+    paddingVertical: 10,
     fontFamily: FONT.regular,
   },
   strengthRow: {
@@ -349,19 +464,47 @@ const styles = StyleSheet.create({
     fontFamily: FONT.semiBold,
   },
   primaryButton: {
-    backgroundColor: COLORS.accent,
-    paddingVertical: 10,
-    borderRadius: 12,
+    backgroundColor: '#C9A8FF',
+    paddingVertical: 12,
+    borderRadius: 14,
     alignItems: 'center',
     shadowColor: '#000',
-    shadowOpacity: 0.35,
-    shadowOffset: { width: 0, height: 8 },
-    shadowRadius: 12,
-    elevation: 6,
+    shadowOpacity: 0.28,
+    shadowOffset: { width: 0, height: 10 },
+    shadowRadius: 18,
+    elevation: 8,
+  },
+  primaryButtonDisabled: {
+    opacity: 0.6,
   },
   primaryText: {
-    color: '#0B0B0C',
+    color: '#160F22',
     fontFamily: FONT.semiBold,
+    fontSize: 14,
+  },
+  statusBox: {
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+  },
+  statusBoxSuccess: {
+    backgroundColor: 'rgba(134, 224, 161, 0.10)',
+    borderColor: 'rgba(134, 224, 161, 0.45)',
+  },
+  statusBoxError: {
+    backgroundColor: 'rgba(240, 140, 140, 0.10)',
+    borderColor: 'rgba(240, 140, 140, 0.45)',
+  },
+  statusText: {
+    fontFamily: FONT.medium,
+    fontSize: 12,
+  },
+  successText: {
+    color: COLORS.success,
+  },
+  errorText: {
+    color: COLORS.danger,
   },
   footerRow: {
     flexDirection: 'row',

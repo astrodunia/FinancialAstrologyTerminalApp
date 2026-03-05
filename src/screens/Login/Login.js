@@ -13,6 +13,11 @@ import { Apple, Chrome, Eye, EyeOff, Lock, Mail, ShieldCheck, Sparkles } from 'l
 import AppText from '../../components/AppText';
 import AppTextInput from '../../components/AppTextInput';
 import GradientBackground from '../../components/GradientBackground';
+import { useUser } from '../../store/UserContext';
+
+const ANDROID_API_URL = 'http://10.0.2.2:4500';
+const IOS_API_URL = 'http://localhost:4500';
+const API_BASE_URL = Platform.OS === 'android' ? ANDROID_API_URL : IOS_API_URL;
 
 const COLORS = {
   background: '#0B0B0C',
@@ -42,10 +47,81 @@ const CARD_WIDTH = Math.min(MAX_WIDTH, SCREEN_WIDTH - 32);
 const TOP_INSET = Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 12 : 16;
 
 const Login = ({ navigation }) => {
-  const [email, setEmail] = useState('astrodunia@gmail.com');
+  const { getOrCreateDeviceId, setAuthSession } = useUser();
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [statusMessage, setStatusMessage] = useState('');
+  const [statusType, setStatusType] = useState('');
+
+  const showError = (message) => {
+    setStatusType('error');
+    setStatusMessage(message);
+  };
+
+  const handleLogin = async () => {
+    const trimmedUsername = username.trim().toLowerCase();
+
+    if (!trimmedUsername) {
+      showError('Username is required.');
+      return;
+    }
+
+    if (!password) {
+      showError('Password is required.');
+      return;
+    }
+
+    setStatusType('');
+    setStatusMessage('');
+    setIsSubmitting(true);
+
+    try {
+      const deviceId = await getOrCreateDeviceId();
+
+      const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          'x-device-id': deviceId,
+        },
+        body: JSON.stringify({
+          email: trimmedUsername,
+          password,
+        }),
+      });
+
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(
+          data?.message || data?.error || data?.errors?.[0]?.msg || 'Login failed. Please try again.',
+        );
+      }
+
+      const responseUser =
+        data?.user || data?.data?.user || data?.session?.user || data?.data || null;
+
+      await setAuthSession({
+        token: data?.token || '',
+        refreshToken: data?.refresh_token || '',
+        deviceId,
+        identifier: trimmedUsername,
+        user: responseUser,
+      });
+
+      setStatusType('success');
+      setStatusMessage('Login successful.');
+      navigation.navigate('Home');
+    } catch (error) {
+      showError(error?.message || 'Login failed. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -67,17 +143,17 @@ const Login = ({ navigation }) => {
         <View style={styles.card}>
           <View style={styles.cardGlossTop} />
           <View style={styles.field}>
-            <AppText style={styles.label}>Email</AppText>
+            <AppText style={styles.label}>Username</AppText>
             <View style={styles.inputRow}>
               <Mail size={18} color={COLORS.textMuted} />
               <AppTextInput
-                value={email}
-                onChangeText={setEmail}
-                placeholder="you@example.com"
+                value={username}
+                onChangeText={setUsername}
+                placeholder="Enter username or email"
                 placeholderTextColor={COLORS.textMuted}
                 style={styles.input}
                 autoCapitalize="none"
-                keyboardType="email-address"
+                editable={!isSubmitting}
               />
             </View>
           </View>
@@ -93,8 +169,9 @@ const Login = ({ navigation }) => {
                 placeholderTextColor={COLORS.textMuted}
                 style={styles.input}
                 secureTextEntry={!showPassword}
+                editable={!isSubmitting}
               />
-              <Pressable onPress={() => setShowPassword((prev) => !prev)}>
+              <Pressable disabled={isSubmitting} onPress={() => setShowPassword((prev) => !prev)}>
                 {showPassword ? (
                   <EyeOff size={18} color={COLORS.textMuted} />
                 ) : (
@@ -116,9 +193,19 @@ const Login = ({ navigation }) => {
             </Pressable>
           </View>
 
-          <Pressable style={styles.primaryButton} onPress={() => navigation.navigate('Home')}>
-            <AppText style={styles.primaryText}>Sign in</AppText>
+          <Pressable
+            style={[styles.primaryButton, isSubmitting && styles.primaryButtonDisabled]}
+            onPress={handleLogin}
+            disabled={isSubmitting}
+          >
+            <AppText style={styles.primaryText}>{isSubmitting ? 'Signing in...' : 'Sign in'}</AppText>
           </Pressable>
+
+          {!!statusMessage && (
+            <AppText style={statusType === 'success' ? styles.successText : styles.errorText}>
+              {statusMessage}
+            </AppText>
+          )}
 
           <View style={styles.dividerRow}>
             <View style={styles.divider} />
@@ -311,9 +398,22 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 6,
   },
+  primaryButtonDisabled: {
+    opacity: 0.65,
+  },
   primaryText: {
     color: '#0B0B0C',
     fontFamily: FONT.semiBold,
+  },
+  successText: {
+    color: '#86E0A1',
+    fontFamily: FONT.medium,
+    fontSize: 12,
+  },
+  errorText: {
+    color: '#F08C8C',
+    fontFamily: FONT.medium,
+    fontSize: 12,
   },
   dividerRow: {
     flexDirection: 'row',

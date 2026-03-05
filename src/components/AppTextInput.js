@@ -1,5 +1,6 @@
 import React from 'react';
 import { Platform, StyleSheet, TextInput } from 'react-native';
+import { useUser } from '../store/UserContext';
 
 const FONT = {
   regular: 'NotoSans-Regular',
@@ -9,7 +10,8 @@ const FONT = {
 };
 
 function AppTextInput({ style, ...props }) {
-  return <TextInput {...props} style={[styles.base, style]} />;
+  const { themeColors } = useUser();
+  return <TextInput {...props} style={[styles.base, { color: themeColors.textPrimary }, style]} />;
 }
 
 const styles = StyleSheet.create({
