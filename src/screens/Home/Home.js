@@ -8,8 +8,6 @@ import {
   View,
 } from 'react-native';
 import {
-  ArrowDownRight,
-  ArrowUpRight,
   Bell,
   Globe,
   Newspaper,
@@ -20,6 +18,7 @@ import AppText from '../../components/AppText';
 import AppTextInput from '../../components/AppTextInput';
 import BottomTabs from '../../components/BottomTabs';
 import GradientBackground from '../../components/GradientBackground';
+import LiveIndicesTicker from '../../components/LiveIndicesTicker';
 import { useUser } from '../../store/UserContext';
 
 const getUsMarketStatus = () => {
@@ -95,7 +94,6 @@ const Home = ({ navigation }) => {
   const [marketStatus, setMarketStatus] = useState(() => getUsMarketStatus());
 
   const profileName = user?.displayName || user?.name || 'Trader';
-  const profileEmail = user?.email || 'Signed in';
   const initials = (profileName || 'T')
     .split(' ')
     .filter(Boolean)
@@ -199,52 +197,14 @@ const Home = ({ navigation }) => {
             />
           </View>
 
-          <Pressable style={styles.profileCard} onPress={() => navigation.navigate('Profile')}>
-            <View>
-              <AppText style={styles.profileTitle}>Your Profile</AppText>
-              <AppText style={styles.profileSubtitle}>{profileEmail}</AppText>
-            </View>
-            <View style={styles.profileBadge}>
-              <UserCircle size={15} color={themeColors.textPrimary} />
-              <AppText style={styles.profileBadgeText}>Open Profile</AppText>
-            </View>
-          </Pressable>
-
           <View style={styles.sectionHeader}>
             <AppText style={styles.sectionTitle}>Market indices</AppText>
-            <AppText style={styles.sectionLink}>View all</AppText>
+            <Pressable onPress={() => navigation.navigate('GlobalIndices')}>
+              <AppText style={styles.sectionLink}>View all</AppText>
+            </Pressable>
           </View>
 
-          <View style={styles.cardRow}>
-            {[
-              { label: 'S&P 500', value: '5,180.22', change: '+0.64%' },
-              { label: 'NASDAQ', value: '16,104.18', change: '+0.42%' },
-              { label: 'DOW J', value: '38,564.90', change: '-0.18%' },
-            ].map((item) => {
-              const positive = item.change.startsWith('+');
-              return (
-                <View key={item.label} style={styles.marketCard}>
-                  <AppText style={styles.marketLabel}>{item.label}</AppText>
-                  <AppText style={styles.marketValue}>{item.value}</AppText>
-                  <View style={styles.marketChangeRow}>
-                    {positive ? (
-                      <ArrowUpRight size={14} color={themeColors.positive} />
-                    ) : (
-                      <ArrowDownRight size={14} color={themeColors.negative} />
-                    )}
-                    <AppText
-                      style={[
-                        styles.marketChange,
-                        { color: positive ? themeColors.positive : themeColors.negative },
-                      ]}
-                    >
-                      {item.change}
-                    </AppText>
-                  </View>
-                </View>
-              );
-            })}
-          </View>
+          <LiveIndicesTicker />
 
           <View style={styles.sectionHeader}>
             <AppText style={styles.sectionTitle}>Top movers</AppText>
@@ -533,45 +493,6 @@ const createStyles = (colors) =>
       color: colors.textPrimary,
       paddingVertical: 0,
     },
-    profileCard: {
-      backgroundColor: colors.surfaceGlass,
-      borderRadius: 18,
-      padding: 16,
-      borderWidth: 1,
-      borderColor: colors.border,
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      shadowColor: '#000',
-      shadowOpacity: 0.07,
-      shadowRadius: 14,
-      shadowOffset: { width: 0, height: 5 },
-      elevation: 2,
-    },
-    profileTitle: {
-      color: colors.textPrimary,
-      fontSize: 17,
-    },
-    profileSubtitle: {
-      color: colors.textMuted,
-      fontSize: 12,
-      marginTop: 4,
-    },
-    profileBadge: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 6,
-      backgroundColor: colors.surfaceAlt,
-      paddingVertical: 7,
-      paddingHorizontal: 11,
-      borderRadius: 999,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    profileBadgeText: {
-      color: colors.textPrimary,
-      fontSize: 12,
-    },
     sectionHeader: {
       flexDirection: 'row',
       justifyContent: 'space-between',
@@ -583,41 +504,6 @@ const createStyles = (colors) =>
     },
     sectionLink: {
       color: colors.textMuted,
-      fontSize: 12,
-    },
-    cardRow: {
-      flexDirection: 'row',
-      gap: 10,
-    },
-    marketCard: {
-      flex: 1,
-      minWidth: 0,
-      backgroundColor: colors.surfaceGlass,
-      borderRadius: 16,
-      padding: 12,
-      borderWidth: 1,
-      borderColor: colors.border,
-      gap: 6,
-      shadowColor: '#000',
-      shadowOpacity: 0.06,
-      shadowRadius: 10,
-      shadowOffset: { width: 0, height: 3 },
-      elevation: 1,
-    },
-    marketLabel: {
-      color: colors.textMuted,
-      fontSize: 11,
-    },
-    marketValue: {
-      color: colors.textPrimary,
-      fontSize: 15,
-    },
-    marketChangeRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 4,
-    },
-    marketChange: {
       fontSize: 12,
     },
     filterRow: {
@@ -644,7 +530,7 @@ const createStyles = (colors) =>
     },
     filterTextActive: {
       fontSize: 11,
-      color: '#0B0B0C',
+      color: colors.background,
     },
     listCard: {
       backgroundColor: colors.surfaceGlass,

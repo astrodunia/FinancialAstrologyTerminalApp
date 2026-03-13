@@ -268,6 +268,26 @@ export const UserProvider = ({ children }) => {
     ]);
   }, []);
 
+  const logout = useCallback(async () => {
+    const currentDeviceId = await getOrCreateDeviceId().catch(() => deviceId);
+
+    try {
+      await fetch(`${API_BASE_URL}/api/auth/logout2`, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(currentDeviceId ? { 'x-device-id': currentDeviceId } : {}),
+        },
+        credentials: 'include',
+        body: JSON.stringify({ device_id: currentDeviceId || '' }),
+      }).catch(() => null);
+    } finally {
+      await clearAuthSession();
+    }
+  }, [clearAuthSession, deviceId, getOrCreateDeviceId, token]);
+
   const value = useMemo(
     () => ({
       isHydrating,
@@ -285,6 +305,7 @@ export const UserProvider = ({ children }) => {
       syncSession,
       updateUserProfile,
       clearAuthSession,
+      logout,
       setThemePreference,
       toggleTheme,
     }),
@@ -299,6 +320,7 @@ export const UserProvider = ({ children }) => {
       syncSession,
       updateUserProfile,
       clearAuthSession,
+      logout,
       setThemePreference,
       token,
       theme,

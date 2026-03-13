@@ -11,6 +11,8 @@ import { Info, TrendingDown, TrendingUp, X } from 'lucide-react-native';
 import AppText from './AppText';
 import { API_BASE_URL } from '../store/UserContext';
 
+const LIVE_INDICES_API_BASE = 'https://finance.rajeevprakash.com';
+
 const INDEX_LIST = [
   { id: 'GSPC', name: 'S&P 500' },
   { id: 'IXIC', name: 'NASDAQ' },
@@ -96,6 +98,27 @@ const classify = (pct?: number | null): 'BULLISH' | 'BEARISH' | 'NEUTRAL' => {
   return pct > 0 ? 'BULLISH' : 'BEARISH';
 };
 
+const isUsRegularMarketOpen = () => {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    weekday: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(now);
+
+  const valueOf = (type: string) => parts.find((part) => part.type === type)?.value || '';
+  const weekday = valueOf('weekday');
+  const hour = Number(valueOf('hour') || 0);
+  const minute = Number(valueOf('minute') || 0);
+  const totalMinutes = hour * 60 + minute;
+  const isWeekend = weekday === 'Sat' || weekday === 'Sun';
+
+  if (isWeekend) return false;
+  return totalMinutes >= 570 && totalMinutes < 960; // 9:30am - 4:00pm ET
+};
+
 type ViewRow = {
   symbol: string;
   name: string;
@@ -112,8 +135,14 @@ type Props = {
 function SkeletonCard() {
   return (
     <View style={[styles.card, styles.skeletonCard]}>
-      <ActivityIndicator size="small" color={COLORS.textMuted} />
-      <AppText style={styles.skeletonText}>Loading...</AppText>
+      <View style={styles.skeletonTop}>
+        <View style={styles.skeletonSymbol} />
+        <View style={styles.skeletonMood} />
+      </View>
+      <View style={styles.skeletonPrice} />
+      <View style={styles.skeletonDelta} />
+      <View style={styles.skeletonFooter} />
+      <ActivityIndicator size="small" color={COLORS.textMuted} style={styles.skeletonSpinner} />
     </View>
   );
 }
@@ -161,6 +190,7 @@ export default function LiveIndicesTicker({ onPressIndex }: Props) {
   const [status, setStatus] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
   const [helpSymbol, setHelpSymbol] = useState<string | null>(null);
+  const [marketOpen, setMarketOpen] = useState(() => isUsRegularMarketOpen());
 
   const abortRef = useRef<AbortController | null>(null);
   const reqSeq = useRef(0);
@@ -175,7 +205,8 @@ export default function LiveIndicesTicker({ onPressIndex }: Props) {
     abortRef.current = ac;
 
     const symbols = INDEX_LIST.map((item) => item.id).join(',');
-    const url = `${API_BASE_URL}/api/market/indices?symbols=${symbols}`;
+    const baseUrl = LIVE_INDICES_API_BASE || API_BASE_URL;
+    const url = `${baseUrl}/api/market/indices?symbols=${symbols}`;
 
     try {
       const res = await fetch(url, {
@@ -216,8 +247,28 @@ export default function LiveIndicesTicker({ onPressIndex }: Props) {
 
   useEffect(() => {
     load();
-    return () => abortRef.current?.abort();
+
+    const marketClockId = setInterval(() => {
+      setMarketOpen(isUsRegularMarketOpen());
+    }, 60000);
+
+    return () => {
+      clearInterval(marketClockId);
+      abortRef.current?.abort();
+    };
   }, [load]);
+
+  useEffect(() => {
+    if (!marketOpen) return undefined;
+
+    load();
+
+    const pollId = setInterval(() => {
+      load();
+    }, 30000);
+
+    return () => clearInterval(pollId);
+  }, [load, marketOpen]);
 
   const cards = useMemo(() => rows, [rows]);
 
@@ -240,7 +291,11 @@ export default function LiveIndicesTicker({ onPressIndex }: Props) {
         const mood = classify(row.changePercent);
         const isUp = (row.change ?? 0) >= 0;
         return (
-          <Pressable key={row.symbol} style={styles.card} onPress={() => openIndex(row.symbol)}>
+          <Pressable
+            key={row.symbol}
+            style={styles.card}
+            onPress={() => openIndex(row.symbol)}
+          >
             <View style={styles.headerRow}>
               <AppText numberOfLines={1} style={styles.nameText}>{row.name}</AppText>
               <View
@@ -267,14 +322,17 @@ export default function LiveIndicesTicker({ onPressIndex }: Props) {
             <AppText style={styles.valueText}>{row.close == null ? '--' : nf0.format(row.close)}</AppText>
 
             {row.change != null ? (
-              <View style={styles.changeRow}>
-                {isUp ? (
-                  <TrendingUp size={14} color={COLORS.positive} />
-                ) : (
-                  <TrendingDown size={14} color={COLORS.negative} />
-                )}
+              <View style={styles.deltaPill}>
+                <View style={[styles.deltaIconWrap, isUp ? styles.deltaIconUp : styles.deltaIconDown]}>
+                  {isUp ? (
+                    <TrendingUp size={13} color={COLORS.positive} />
+                  ) : (
+                    <TrendingDown size={13} color={COLORS.negative} />
+                  )}
+                </View>
                 <AppText style={[styles.changeText, isUp ? styles.upText : styles.downText]}>
-                  {`${isUp ? '+' : ''}${nf2.format(row.change)} (${row.changePercent == null ? '--' : `${nf2.format(row.changePercent)}%`})`}
+                  {`${isUp ? '+' : ''}${nf2.format(row.change)}  `}
+                  {`(${row.changePercent == null ? '--' : `${nf2.format(row.changePercent)}%`})`}
                 </AppText>
               </View>
             ) : (
@@ -307,25 +365,68 @@ export default function LiveIndicesTicker({ onPressIndex }: Props) {
 
 const styles = StyleSheet.create({
   grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 12,
   },
   card: {
-    backgroundColor: COLORS.cardBg,
-    borderColor: COLORS.border,
+    width: '48%',
+    backgroundColor: 'rgba(17, 20, 30, 0.82)',
+    borderColor: 'rgba(255, 255, 255, 0.08)',
     borderWidth: 1,
-    borderRadius: 14,
-    padding: 14,
-    gap: 8,
+    borderRadius: 16,
+    padding: 13,
+    gap: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.14,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 3,
+    minHeight: 154,
   },
   skeletonCard: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 110,
+    justifyContent: 'space-between',
   },
-  skeletonText: {
+  skeletonTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  skeletonSymbol: {
+    width: 54,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(255,255,255,0.13)',
+  },
+  skeletonMood: {
+    width: 62,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(255,255,255,0.13)',
+  },
+  skeletonPrice: {
+    width: '56%',
+    height: 26,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.16)',
     marginTop: 8,
-    fontSize: 12,
-    color: COLORS.textMuted,
+  },
+  skeletonDelta: {
+    width: '78%',
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    marginTop: 6,
+  },
+  skeletonFooter: {
+    width: '85%',
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: 'rgba(255,255,255,0.10)',
+    marginTop: 6,
+  },
+  skeletonSpinner: {
+    marginTop: 8,
   },
   errorText: {
     color: COLORS.negative,
@@ -375,14 +476,36 @@ const styles = StyleSheet.create({
   valueText: {
     color: COLORS.textPrimary,
     fontSize: 24,
+    letterSpacing: 0.3,
   },
-  changeRow: {
+  deltaPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 6,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    alignSelf: 'flex-start',
+  },
+  deltaIconWrap: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deltaIconUp: {
+    backgroundColor: 'rgba(73, 209, 141, 0.17)',
+  },
+  deltaIconDown: {
+    backgroundColor: 'rgba(240, 140, 140, 0.17)',
   },
   changeText: {
-    fontSize: 12,
+    fontSize: 11,
+    letterSpacing: 0.2,
   },
   upText: {
     color: COLORS.positive,
@@ -399,20 +522,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 8,
+    marginTop: 3,
   },
   prevCloseText: {
     color: COLORS.textMuted,
-    fontSize: 11,
+    fontSize: 10,
     flex: 1,
   },
   infoBtn: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     borderColor: COLORS.border,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.06)',
   },
   modalBackdrop: {
     flex: 1,

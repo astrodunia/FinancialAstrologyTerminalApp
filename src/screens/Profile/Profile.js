@@ -47,7 +47,7 @@ const Profile = ({ navigation }) => {
     themePreference,
     getOrCreateDeviceId,
     updateUserProfile,
-    clearAuthSession,
+    logout,
     setThemePreference,
     toggleTheme,
   } = useUser();
@@ -239,13 +239,7 @@ const Profile = ({ navigation }) => {
         onPress: async () => {
           setLoggingOut(true);
           try {
-            await apiAuthFetch('/api/auth/logout2', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ device_id: await getOrCreateDeviceId() }),
-            }).catch(() => null);
-            await clearAuthSession();
-            navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+            await logout();
           } finally {
             setLoggingOut(false);
           }

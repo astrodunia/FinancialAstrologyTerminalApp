@@ -32,18 +32,28 @@ const AppNavigation = () => {
 
     return (
        <NavigationContainer>
-          <Stack.Navigator initialRouteName={token ? 'Home' : 'Login'} screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="Login" component={Login} />
-          <Stack.Screen name="Register" component={Register} />
-          <Stack.Screen name="Home" component={Home} />
-          <Stack.Screen name="Watchlist" component={Watchlist} />
-          <Stack.Screen name="Sectors" component={Sectors} />
-          <Stack.Screen name="Portfolio" component={Portfolio} />
-          <Stack.Screen name="Overview" component={Overview} />
-          <Stack.Screen name="GlobalIndices" component={GlobalIndices} />
-          <Stack.Screen name="Profile" component={Profile} />
-          <Stack.Screen name="ForgotPassword" component={ForgotPassword} />
-        </Stack.Navigator>
+          <Stack.Navigator
+            key={token ? 'app-stack' : 'auth-stack'}
+            screenOptions={{ headerShown: false }}
+          >
+            {token ? (
+              <>
+                <Stack.Screen name="Home" component={Home} />
+                <Stack.Screen name="Watchlist" component={Watchlist} />
+                <Stack.Screen name="Sectors" component={Sectors} />
+                <Stack.Screen name="Portfolio" component={Portfolio} />
+                <Stack.Screen name="Overview" component={Overview} />
+                <Stack.Screen name="GlobalIndices" component={GlobalIndices} />
+                <Stack.Screen name="Profile" component={Profile} />
+              </>
+            ) : (
+              <>
+                <Stack.Screen name="Login" component={Login} />
+                <Stack.Screen name="Register" component={Register} />
+                <Stack.Screen name="ForgotPassword" component={ForgotPassword} />
+              </>
+            )}
+          </Stack.Navigator>
        </NavigationContainer>
     );
 };
