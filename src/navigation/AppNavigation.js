@@ -12,6 +12,8 @@ import Overview from '../screens/Overview/Overview';
 import GlobalIndices from '../screens/GlobalIndices/GlobalIndices';
 import Profile from '../screens/Profile/Profile';
 import ForgotPassword from '../screens/ForgotPassword/ForgotPassword';
+import Calculators from '../screens/Calculators/Calculators';
+import CalculatorTool from '../screens/Calculators/CalculatorTool';
 import AppText from '../components/AppText';
 import { useUser } from '../store/UserContext';
 
@@ -43,6 +45,8 @@ const AppNavigation = () => {
                 <Stack.Screen name="Sectors" component={Sectors} />
                 <Stack.Screen name="Portfolio" component={Portfolio} />
                 <Stack.Screen name="Overview" component={Overview} />
+                <Stack.Screen name="Calculators" component={Calculators} />
+                <Stack.Screen name="CalculatorTool" component={CalculatorTool} />
                 <Stack.Screen name="GlobalIndices" component={GlobalIndices} />
                 <Stack.Screen name="Profile" component={Profile} />
               </>
