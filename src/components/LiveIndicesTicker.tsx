@@ -1,15 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Modal,
   Pressable,
+  ScrollView,
   StyleSheet,
   View,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Info, TrendingDown, TrendingUp, X } from 'lucide-react-native';
 import AppText from './AppText';
-import { API_BASE_URL } from '../store/UserContext';
+import CardLoadingOverlay from './CardLoadingOverlay';
+import { API_BASE_URL, useUser } from '../store/UserContext';
 
 const LIVE_INDICES_API_BASE = 'https://finance.rajeevprakash.com';
 
@@ -68,17 +69,28 @@ const INDEX_HELP = {
   },
 };
 
-const COLORS = {
-  cardBg: 'rgba(17, 20, 30, 0.74)',
-  border: 'rgba(255, 255, 255, 0.10)',
-  textPrimary: '#FFFFFF',
-  textMuted: '#B7BDC8',
-  positive: '#49D18D',
-  negative: '#F08C8C',
-  neutral: '#F5C36A',
-  modalBackdrop: 'rgba(0, 0, 0, 0.65)',
-  modalSurface: '#14161D',
-};
+const createPalette = (themeColors: any, theme: string) => ({
+  cardBg: themeColors.surfaceGlass,
+  border: themeColors.border,
+  textPrimary: themeColors.textPrimary,
+  textMuted: themeColors.textMuted,
+  surface: themeColors.surface,
+  surfaceAlt: themeColors.surfaceAlt,
+  positive: themeColors.positive,
+  negative: themeColors.negative,
+  neutral: theme === 'dark' ? '#F5C36A' : '#B7791F',
+  modalBackdrop: theme === 'dark' ? 'rgba(0, 0, 0, 0.65)' : 'rgba(9, 20, 32, 0.34)',
+  modalSurface: themeColors.surface,
+  badgeBullishBorder: theme === 'dark' ? 'rgba(73, 209, 141, 0.45)' : 'rgba(25, 158, 99, 0.55)',
+  badgeBullishBg: theme === 'dark' ? 'rgba(73, 209, 141, 0.14)' : 'rgba(25, 158, 99, 0.14)',
+  badgeBearishBorder: theme === 'dark' ? 'rgba(240, 140, 140, 0.45)' : 'rgba(207, 63, 88, 0.55)',
+  badgeBearishBg: theme === 'dark' ? 'rgba(240, 140, 140, 0.14)' : 'rgba(207, 63, 88, 0.14)',
+  badgeNeutralBorder: theme === 'dark' ? 'rgba(245, 195, 106, 0.45)' : 'rgba(183, 121, 31, 0.48)',
+  badgeNeutralBg: theme === 'dark' ? 'rgba(245, 195, 106, 0.14)' : 'rgba(183, 121, 31, 0.14)',
+  symbolBg: themeColors.surfaceAlt,
+  symbolBorder: themeColors.border,
+  shadowOpacity: theme === 'dark' ? 0.2 : 0.1,
+});
 
 const nf0 = new Intl.NumberFormat(undefined);
 const nf2 = new Intl.NumberFormat(undefined, {
@@ -132,22 +144,36 @@ type Props = {
   onPressIndex?: (symbol: string) => void;
 };
 
-function SkeletonCard() {
+function SkeletonCard({ styles, colors }: { styles: any; colors: any }) {
   return (
     <View style={[styles.card, styles.skeletonCard]}>
-      <View style={styles.skeletonTop}>
-        <View style={styles.skeletonSymbol} />
-        <View style={styles.skeletonMood} />
+      <View style={styles.skeletonContent}>
+        <View style={styles.skeletonTop}>
+          <View style={styles.skeletonSymbol} />
+          <View style={styles.skeletonMood} />
+        </View>
+        <View style={styles.skeletonPrice} />
+        <View style={styles.skeletonDelta} />
+        <View style={styles.skeletonFooter} />
       </View>
-      <View style={styles.skeletonPrice} />
-      <View style={styles.skeletonDelta} />
-      <View style={styles.skeletonFooter} />
-      <ActivityIndicator size="small" color={COLORS.textMuted} style={styles.skeletonSpinner} />
+      <CardLoadingOverlay color={colors.textMuted} />
     </View>
   );
 }
 
-function InfoModal({ symbol, visible, onClose }: { symbol: string; visible: boolean; onClose: () => void }) {
+function InfoModal({
+  symbol,
+  visible,
+  onClose,
+  styles,
+  colors,
+}: {
+  symbol: string;
+  visible: boolean;
+  onClose: () => void;
+  styles: any;
+  colors: any;
+}) {
   const help = (INDEX_HELP as any)[symbol];
   if (!help) return null;
 
@@ -158,7 +184,7 @@ function InfoModal({ symbol, visible, onClose }: { symbol: string; visible: bool
           <View style={styles.modalHeader}>
             <AppText style={styles.modalTitle}>{help.title}</AppText>
             <Pressable onPress={onClose} style={styles.closeBtn}>
-              <X size={16} color={COLORS.textMuted} />
+              <X size={16} color={colors.textMuted} />
             </Pressable>
           </View>
           <AppText style={styles.modalIntro}>A practical explanation to help you understand this market index.</AppText>
@@ -185,6 +211,9 @@ function InfoModal({ symbol, visible, onClose }: { symbol: string; visible: bool
 }
 
 export default function LiveIndicesTicker({ onPressIndex }: Props) {
+  const { theme, themeColors } = useUser();
+  const colors = useMemo(() => createPalette(themeColors, theme), [theme, themeColors]);
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const navigation = useNavigation<any>();
   const [rows, setRows] = useState<ViewRow[]>([]);
   const [status, setStatus] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle');
@@ -282,110 +311,131 @@ export default function LiveIndicesTicker({ onPressIndex }: Props) {
   };
 
   return (
-    <View style={styles.grid}>
-      {status === 'loading' && INDEX_LIST.map((item) => <SkeletonCard key={item.id} />)}
-
+    <View style={styles.wrapper}>
       {status === 'error' && <AppText style={styles.errorText}>{error}</AppText>}
 
-      {status === 'ok' && cards.map((row) => {
-        const mood = classify(row.changePercent);
-        const isUp = (row.change ?? 0) >= 0;
-        return (
-          <Pressable
-            key={row.symbol}
-            style={styles.card}
-            onPress={() => openIndex(row.symbol)}
-          >
-            <View style={styles.headerRow}>
-              <AppText numberOfLines={1} style={styles.nameText}>{row.name}</AppText>
-              <View
-                style={[
-                  styles.badge,
-                  mood === 'BULLISH' && styles.badgeBullish,
-                  mood === 'BEARISH' && styles.badgeBearish,
-                  mood === 'NEUTRAL' && styles.badgeNeutral,
-                ]}
-              >
-                <AppText
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.rowTrack}
+      >
+        {status === 'loading' && INDEX_LIST.map((item) => <SkeletonCard key={item.id} styles={styles} colors={colors} />)}
+
+        {status === 'ok' && cards.map((row) => {
+          const mood = classify(row.changePercent);
+          const isUp = (row.change ?? 0) >= 0;
+          return (
+            <Pressable
+              key={row.symbol}
+              style={styles.card}
+              onPress={() => openIndex(row.symbol)}
+            >
+              <View style={styles.headerRow}>
+                <View style={styles.symbolPill}>
+                  <AppText style={styles.symbolText}>{row.symbol}</AppText>
+                </View>
+                <View
                   style={[
-                    styles.badgeText,
-                    mood === 'BULLISH' && styles.bullText,
-                    mood === 'BEARISH' && styles.bearText,
-                    mood === 'NEUTRAL' && styles.neutralText,
+                    styles.badge,
+                    mood === 'BULLISH' && styles.badgeBullish,
+                    mood === 'BEARISH' && styles.badgeBearish,
+                    mood === 'NEUTRAL' && styles.badgeNeutral,
                   ]}
                 >
-                  {mood}
-                </AppText>
-              </View>
-            </View>
-
-            <AppText style={styles.valueText}>{row.close == null ? '--' : nf0.format(row.close)}</AppText>
-
-            {row.change != null ? (
-              <View style={styles.deltaPill}>
-                <View style={[styles.deltaIconWrap, isUp ? styles.deltaIconUp : styles.deltaIconDown]}>
-                  {isUp ? (
-                    <TrendingUp size={13} color={COLORS.positive} />
-                  ) : (
-                    <TrendingDown size={13} color={COLORS.negative} />
-                  )}
+                  <AppText
+                    style={[
+                      styles.badgeText,
+                      mood === 'BULLISH' && styles.bullText,
+                      mood === 'BEARISH' && styles.bearText,
+                      mood === 'NEUTRAL' && styles.neutralText,
+                    ]}
+                  >
+                    {mood}
+                  </AppText>
                 </View>
-                <AppText style={[styles.changeText, isUp ? styles.upText : styles.downText]}>
-                  {`${isUp ? '+' : ''}${nf2.format(row.change)}  `}
-                  {`(${row.changePercent == null ? '--' : `${nf2.format(row.changePercent)}%`})`}
-                </AppText>
               </View>
-            ) : (
-              <AppText style={styles.mutedText}>--</AppText>
-            )}
 
-            <View style={styles.footerRow}>
-              <AppText style={styles.prevCloseText}>
-                Prev close: {row.previousClose == null ? '--' : nf0.format(row.previousClose)}
-              </AppText>
-              <Pressable
-                onPress={(e) => {
-                  e.stopPropagation();
-                  setHelpSymbol(row.symbol);
-                }}
-                hitSlop={8}
-                style={styles.infoBtn}
-              >
-                <Info size={14} color={COLORS.textMuted} />
-              </Pressable>
-            </View>
-          </Pressable>
-        );
-      })}
+              <AppText numberOfLines={1} style={styles.nameText}>{row.name}</AppText>
+              <AppText style={styles.valueText}>{row.close == null ? '--' : nf0.format(row.close)}</AppText>
 
-      <InfoModal symbol={helpSymbol || ''} visible={!!helpSymbol} onClose={() => setHelpSymbol(null)} />
+              {row.change != null ? (
+                <View style={styles.deltaPill}>
+                  <View style={[styles.deltaIconWrap, isUp ? styles.deltaIconUp : styles.deltaIconDown]}>
+                    {isUp ? (
+                      <TrendingUp size={13} color={colors.positive} />
+                    ) : (
+                      <TrendingDown size={13} color={colors.negative} />
+                    )}
+                  </View>
+                  <AppText style={[styles.changeText, isUp ? styles.upText : styles.downText]}>
+                    {`${isUp ? '+' : ''}${nf2.format(row.change)}  `}
+                    {`(${row.changePercent == null ? '--' : `${nf2.format(row.changePercent)}%`})`}
+                  </AppText>
+                </View>
+              ) : (
+                <AppText style={styles.mutedText}>--</AppText>
+              )}
+
+              <View style={styles.footerRow}>
+                <AppText style={styles.prevCloseText}>
+                  Prev close: {row.previousClose == null ? '--' : nf0.format(row.previousClose)}
+                </AppText>
+                <Pressable
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    setHelpSymbol(row.symbol);
+                  }}
+                  hitSlop={8}
+                  style={styles.infoBtn}
+                >
+                  <Info size={14} color={colors.textMuted} />
+                </Pressable>
+              </View>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+
+      <InfoModal
+        symbol={helpSymbol || ''}
+        visible={!!helpSymbol}
+        onClose={() => setHelpSymbol(null)}
+        styles={styles}
+        colors={colors}
+      />
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
+const createStyles = (colors: any) => StyleSheet.create({
+  wrapper: {
+    gap: 8,
+  },
+  rowTrack: {
+    gap: 10,
+    paddingRight: 6,
   },
   card: {
-    width: '48%',
-    backgroundColor: 'rgba(17, 20, 30, 0.82)',
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    width: 182,
+    backgroundColor: colors.cardBg,
+    borderColor: colors.border,
     borderWidth: 1,
-    borderRadius: 16,
-    padding: 13,
-    gap: 10,
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    gap: 6,
     shadowColor: '#000',
-    shadowOpacity: 0.14,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 5 },
-    elevation: 3,
-    minHeight: 154,
+    shadowOpacity: colors.shadowOpacity,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
+    minHeight: 120,
   },
   skeletonCard: {
-    justifyContent: 'space-between',
+    justifyContent: 'center',
+  },
+  skeletonContent: {
+    gap: 6,
   },
   skeletonTop: {
     flexDirection: 'row',
@@ -396,159 +446,164 @@ const styles = StyleSheet.create({
     width: 54,
     height: 22,
     borderRadius: 11,
-    backgroundColor: 'rgba(255,255,255,0.13)',
+    backgroundColor: colors.surfaceAlt,
   },
   skeletonMood: {
     width: 62,
     height: 22,
     borderRadius: 11,
-    backgroundColor: 'rgba(255,255,255,0.13)',
+    backgroundColor: colors.surfaceAlt,
   },
   skeletonPrice: {
     width: '56%',
     height: 26,
     borderRadius: 8,
-    backgroundColor: 'rgba(255,255,255,0.16)',
-    marginTop: 8,
+    backgroundColor: colors.surfaceAlt,
   },
   skeletonDelta: {
     width: '78%',
     height: 28,
     borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    marginTop: 6,
+    backgroundColor: colors.surfaceAlt,
   },
   skeletonFooter: {
     width: '85%',
     height: 14,
     borderRadius: 7,
-    backgroundColor: 'rgba(255,255,255,0.10)',
-    marginTop: 6,
-  },
-  skeletonSpinner: {
-    marginTop: 8,
+    backgroundColor: colors.surfaceAlt,
   },
   errorText: {
-    color: COLORS.negative,
-    fontSize: 12,
+    color: colors.negative,
+    fontSize: 11,
   },
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
+  },
+  symbolPill: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.symbolBorder,
+    backgroundColor: colors.symbolBg,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  symbolText: {
+    fontSize: 9,
+    color: colors.textPrimary,
   },
   nameText: {
-    fontSize: 14,
-    color: COLORS.textPrimary,
-    flex: 1,
+    fontSize: 11,
+    color: colors.textMuted,
   },
   badge: {
     borderWidth: 1,
     borderRadius: 999,
-    paddingHorizontal: 8,
+    paddingHorizontal: 7,
     paddingVertical: 2,
   },
   badgeText: {
-    fontSize: 10,
+    fontSize: 9,
   },
   badgeBullish: {
-    borderColor: 'rgba(73, 209, 141, 0.45)',
-    backgroundColor: 'rgba(73, 209, 141, 0.14)',
+    borderColor: colors.badgeBullishBorder,
+    backgroundColor: colors.badgeBullishBg,
   },
   badgeBearish: {
-    borderColor: 'rgba(240, 140, 140, 0.45)',
-    backgroundColor: 'rgba(240, 140, 140, 0.14)',
+    borderColor: colors.badgeBearishBorder,
+    backgroundColor: colors.badgeBearishBg,
   },
   badgeNeutral: {
-    borderColor: 'rgba(245, 195, 106, 0.45)',
-    backgroundColor: 'rgba(245, 195, 106, 0.14)',
+    borderColor: colors.badgeNeutralBorder,
+    backgroundColor: colors.badgeNeutralBg,
   },
   bullText: {
-    color: COLORS.positive,
+    color: colors.positive,
   },
   bearText: {
-    color: COLORS.negative,
+    color: colors.negative,
   },
   neutralText: {
-    color: COLORS.neutral,
+    color: colors.neutral,
   },
   valueText: {
-    color: COLORS.textPrimary,
-    fontSize: 24,
-    letterSpacing: 0.3,
+    color: colors.textPrimary,
+    fontSize: 20,
+    letterSpacing: 0.2,
   },
   deltaPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 4,
     borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceAlt,
     alignSelf: 'flex-start',
   },
   deltaIconWrap: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
   deltaIconUp: {
-    backgroundColor: 'rgba(73, 209, 141, 0.17)',
+    backgroundColor: colors.badgeBullishBg,
   },
   deltaIconDown: {
-    backgroundColor: 'rgba(240, 140, 140, 0.17)',
+    backgroundColor: colors.badgeBearishBg,
   },
   changeText: {
-    fontSize: 11,
+    fontSize: 10,
     letterSpacing: 0.2,
   },
   upText: {
-    color: COLORS.positive,
+    color: colors.positive,
   },
   downText: {
-    color: COLORS.negative,
+    color: colors.negative,
   },
   mutedText: {
-    color: COLORS.textMuted,
-    fontSize: 12,
+    color: colors.textMuted,
+    fontSize: 10,
   },
   footerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 8,
-    marginTop: 3,
+    gap: 6,
+    marginTop: 1,
   },
   prevCloseText: {
-    color: COLORS.textMuted,
-    fontSize: 10,
+    color: colors.textMuted,
+    fontSize: 9,
     flex: 1,
   },
   infoBtn: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    borderColor: COLORS.border,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderColor: colors.border,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: colors.surfaceAlt,
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: COLORS.modalBackdrop,
+    backgroundColor: colors.modalBackdrop,
     justifyContent: 'center',
     padding: 16,
   },
   modalCard: {
-    backgroundColor: COLORS.modalSurface,
+    backgroundColor: colors.modalSurface,
     borderRadius: 16,
-    borderColor: COLORS.border,
+    borderColor: colors.border,
     borderWidth: 1,
     padding: 16,
     gap: 8,
@@ -561,7 +616,7 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     fontSize: 16,
-    color: COLORS.textPrimary,
+    color: colors.textPrimary,
     flex: 1,
   },
   closeBtn: {
@@ -571,36 +626,36 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: colors.border,
   },
   modalIntro: {
     fontSize: 12,
-    color: COLORS.textMuted,
+    color: colors.textMuted,
     marginBottom: 4,
   },
   modalLabel: {
     fontSize: 13,
-    color: COLORS.textPrimary,
+    color: colors.textPrimary,
   },
   modalText: {
     fontSize: 12,
-    color: COLORS.textMuted,
+    color: colors.textMuted,
     marginBottom: 4,
   },
   noteBox: {
     marginTop: 4,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: colors.border,
     borderRadius: 12,
     padding: 10,
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    backgroundColor: colors.surfaceAlt,
   },
   noteTitle: {
     fontSize: 11,
-    color: COLORS.textPrimary,
+    color: colors.textPrimary,
   },
   noteText: {
     fontSize: 11,
-    color: COLORS.textMuted,
+    color: colors.textMuted,
   },
 });

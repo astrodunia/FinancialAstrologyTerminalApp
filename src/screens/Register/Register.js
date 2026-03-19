@@ -12,11 +12,13 @@ import { Apple, Chrome, Eye, EyeOff, Lock, Mail, ShieldCheck, User } from 'lucid
 import AppText from '../../components/AppText';
 import AppTextInput from '../../components/AppTextInput';
 import GradientBackground from '../../components/GradientBackground';
-import { useUser } from '../../store/UserContext';
-
-const ANDROID_API_URL = 'http://10.0.2.2:4500';
-const IOS_API_URL = 'http://localhost:4500';
-const API_BASE_URL = Platform.OS === 'android' ? ANDROID_API_URL : IOS_API_URL;
+import { API_BASE_URL, useUser } from '../../store/UserContext';
+import {
+  logRequestError,
+  logRequestStart,
+  logResponse,
+  networkHintForAndroidLoopback,
+} from '../../utils/networkDebug';
 
 const FONT = {
   regular: 'NotoSans-Regular',
@@ -107,9 +109,16 @@ const Register = ({ navigation }) => {
     setStatusMessage('');
     setStatusType('');
     setIsSubmitting(true);
+    const registerUrl = `${API_BASE_URL}/api/auth/register`;
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
+      logRequestStart({
+        label: 'auth.register',
+        url: registerUrl,
+        method: 'POST',
+        meta: { email: trimmedEmail, apiBaseUrl: API_BASE_URL },
+      });
+      const response = await fetch(registerUrl, {
         method: 'POST',
         headers: {
           Accept: 'application/json',
@@ -121,8 +130,13 @@ const Register = ({ navigation }) => {
           password,
         }),
       });
+      await logResponse({ label: 'auth.register', response });
 
       const data = await response.json().catch(() => null);
+      console.log('[NetworkDebug] auth.register payload', {
+        hasData: Boolean(data),
+        keys: data && typeof data === 'object' ? Object.keys(data) : [],
+      });
 
       if (!response.ok) {
         console.error('Registration error:', data);
@@ -136,7 +150,9 @@ const Register = ({ navigation }) => {
       setStatusType('success');
       setStatusMessage(SUCCESS_VERIFY_MESSAGE);
     } catch (error) {
-      showError(error?.message || 'Could not create account. Please try again.');
+      logRequestError({ label: 'auth.register', url: registerUrl, error });
+      const loopbackHint = networkHintForAndroidLoopback({ apiBaseUrl: API_BASE_URL, error });
+      showError(loopbackHint || error?.message || 'Could not create account. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
