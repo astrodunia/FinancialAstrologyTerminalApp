@@ -17,6 +17,7 @@ import CalculatorTool from '../screens/Calculators/CalculatorTool';
 import StockDetailScreen from '../screens/StockDetail/StockDetailScreen';
 import AppText from '../components/AppText';
 import { useUser } from '../store/UserContext';
+import SectorDetailScreen from '../screens/SectorDetail/SectorDetailScreen';
 
 const Stack = createNativeStackNavigator();
 const linking = {
@@ -68,6 +69,8 @@ const AppNavigation = () => {
                 <Stack.Screen name="CalculatorTool" component={CalculatorTool} />
                 <Stack.Screen name="GlobalIndices" component={GlobalIndices} />
                 <Stack.Screen name="Profile" component={Profile} />
+
+                <Stack.Screen name="SectorDetail" component={SectorDetailScreen} />
                 <Stack.Screen name="StockDetail" component={StockDetailScreen} />
               </>
             ) : (
