@@ -14,6 +14,7 @@ import Profile from '../screens/Profile/Profile';
 import ForgotPassword from '../screens/ForgotPassword/ForgotPassword';
 import AppText from '../components/AppText';
 import { useUser } from '../store/UserContext';
+import SectorDetailScreen from '../screens/SectorDetail/SectorDetailScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -45,6 +46,8 @@ const AppNavigation = () => {
                 <Stack.Screen name="Overview" component={Overview} />
                 <Stack.Screen name="GlobalIndices" component={GlobalIndices} />
                 <Stack.Screen name="Profile" component={Profile} />
+
+                <Stack.Screen name="SectorDetail" component={SectorDetailScreen} />
               </>
             ) : (
               <>
