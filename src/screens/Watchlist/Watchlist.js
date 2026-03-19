@@ -5,6 +5,7 @@ import AppText from '../../components/AppText';
 import BottomTabs from '../../components/BottomTabs';
 import GradientBackground from '../../components/GradientBackground';
 import { useUser } from '../../store/UserContext';
+import { navigateToStockDetail } from '../../features/stocks/navigation';
 
 const Watchlist = ({ navigation }) => {
   const { themeColors } = useUser();
@@ -24,10 +25,10 @@ const Watchlist = ({ navigation }) => {
           <View style={styles.card}>
             <AppText style={styles.cardTitle}>Pinned assets</AppText>
             {['AAPL', 'NVDA', 'TSLA'].map((item) => (
-              <View key={item} style={styles.row}>
+              <Pressable key={item} style={styles.row} onPress={() => navigateToStockDetail(navigation, item)}>
                 <AppText style={styles.rowLabel}>{item}</AppText>
                 <AppText style={styles.rowValue}>View details</AppText>
-              </View>
+              </Pressable>
             ))}
           </View>
         </ScrollView>

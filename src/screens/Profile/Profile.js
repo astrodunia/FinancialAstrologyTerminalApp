@@ -8,12 +8,23 @@ import {
   StyleSheet,
   View,
 } from 'react-native';
-import { Eye, EyeOff, Lock, LogOut, Mail, RefreshCw, Save, User as UserIcon, UserCircle } from 'lucide-react-native';
+import {
+  Eye,
+  EyeOff,
+  Lock,
+  LogOut,
+  Mail,
+  RefreshCw,
+  Save,
+  Smartphone,
+  User as UserIcon,
+  UserCircle,
+} from 'lucide-react-native';
 import AppText from '../../components/AppText';
 import AppTextInput from '../../components/AppTextInput';
 import BottomTabs from '../../components/BottomTabs';
 import GradientBackground from '../../components/GradientBackground';
-import { API_BASE_URL, useUser } from '../../store/UserContext';
+import { useUser } from '../../store/UserContext';
 
 const makeInitials = (name = '', email = '') => {
   const source = (name || email || 'U').trim();
@@ -40,12 +51,11 @@ const safeJson = async (res) => {
 
 const Profile = ({ navigation }) => {
   const {
-    token,
     user,
     theme,
     themeColors,
     themePreference,
-    getOrCreateDeviceId,
+    authFetch,
     updateUserProfile,
     logout,
     setThemePreference,
@@ -66,6 +76,7 @@ const Profile = ({ navigation }) => {
   const [savingAccount, setSavingAccount] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [revokingDeviceId, setRevokingDeviceId] = useState('');
 
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
@@ -74,29 +85,10 @@ const Profile = ({ navigation }) => {
     setAccount({ name: user?.displayName || '', email: user?.email || '' });
   }, [user?.displayName, user?.email]);
 
-  const apiAuthFetch = useCallback(
-    async (path, init = {}) => {
-      const did = await getOrCreateDeviceId();
-      const headers = {
-        Accept: 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...(did ? { 'x-device-id': did } : {}),
-        ...(init.headers || {}),
-      };
-
-      return fetch(`${API_BASE_URL}${path}`, {
-        credentials: 'include',
-        ...init,
-        headers,
-      });
-    },
-    [getOrCreateDeviceId, token],
-  );
-
   const loadAvatar = useCallback(async () => {
     setLoadingAvatar(true);
     try {
-      const res = await apiAuthFetch('/api/me/profile-image');
+      const res = await authFetch('/api/me/profile-image');
       const json = await safeJson(res);
       if (!res.ok) {
         setAvatarUrl('');
@@ -115,14 +107,14 @@ const Profile = ({ navigation }) => {
     } finally {
       setLoadingAvatar(false);
     }
-  }, [apiAuthFetch]);
+  }, [authFetch]);
 
   const loadDevices = useCallback(async () => {
     setLoadingDevices(true);
     setError('');
 
     try {
-      const res = await apiAuthFetch('/api/auth/devices');
+      const res = await authFetch('/api/auth/devices');
       const json = await safeJson(res);
 
       if (!res.ok) {
@@ -138,13 +130,12 @@ const Profile = ({ navigation }) => {
     } finally {
       setLoadingDevices(false);
     }
-  }, [apiAuthFetch]);
+  }, [authFetch]);
 
   useEffect(() => {
-    if (!token) return;
     loadAvatar();
     loadDevices();
-  }, [token, loadAvatar, loadDevices]);
+  }, [loadAvatar, loadDevices]);
 
   const saveAccount = async () => {
     setError('');
@@ -166,7 +157,7 @@ const Profile = ({ navigation }) => {
     setSavingAccount(true);
 
     try {
-      const res = await apiAuthFetch('/api/auth/profile', {
+      const res = await authFetch('/api/auth/profile', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, email }),
@@ -210,7 +201,7 @@ const Profile = ({ navigation }) => {
     setSavingPassword(true);
 
     try {
-      const res = await apiAuthFetch('/api/auth/change-password', {
+      const res = await authFetch('/api/auth/change-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ currentPassword: password.current, newPassword: password.next }),
@@ -229,6 +220,70 @@ const Profile = ({ navigation }) => {
       setSavingPassword(false);
     }
   };
+
+  const revokeDevice = useCallback(
+    async (device) => {
+      const targetDeviceId = device?.device_id;
+      if (!targetDeviceId) {
+        setError('Invalid device selected.');
+        return;
+      }
+
+      setError('');
+      setNotice('');
+      setRevokingDeviceId(targetDeviceId);
+
+      try {
+        const res = await authFetch('/api/auth/devices/revoke', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ device_id: targetDeviceId }),
+        });
+        const json = await safeJson(res);
+
+        if (!res.ok) {
+          throw new Error(json?.message || json?.error || `Failed to revoke device (${res.status})`);
+        }
+
+        setNotice(json?.message || json?.msg || 'Device logged out successfully.');
+        setDevices((currentDevices) =>
+          currentDevices.filter((currentDevice) => currentDevice?.device_id !== targetDeviceId),
+        );
+        await loadDevices();
+      } catch (e) {
+        setError(e?.message || 'Failed to revoke device.');
+      } finally {
+        setRevokingDeviceId('');
+      }
+    },
+    [authFetch, loadDevices],
+  );
+
+  const confirmRevokeDevice = useCallback(
+    (device) => {
+      const label = device?.label || `${device?.browser || 'Unknown browser'} on ${device?.os || 'Unknown OS'}`;
+      const isCurrent = Boolean(device?.is_current);
+
+      Alert.alert(
+        isCurrent ? 'Log Out This Device' : 'Log Out Device',
+        isCurrent ? 'This will log out this phone as well. Continue?' : `Log out ${label}?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Log out',
+            style: 'destructive',
+            onPress: async () => {
+              await revokeDevice(device);
+              if (isCurrent) {
+                await logout();
+              }
+            },
+          },
+        ],
+      );
+    },
+    [logout, revokeDevice],
+  );
 
   const confirmLogout = () => {
     Alert.alert('Logout', 'Are you sure you want to log out from this account?', [
@@ -381,6 +436,7 @@ const Profile = ({ navigation }) => {
               const deviceId = device?.device_id || `device-${index}`;
               const label = device?.label || `${device?.browser || 'Unknown browser'} on ${device?.os || 'Unknown OS'}`;
               const isCurrent = Boolean(device?.is_current);
+              const isRevoking = revokingDeviceId === device?.device_id;
 
               return (
                 <View key={deviceId} style={styles.deviceRow}>
@@ -389,7 +445,23 @@ const Profile = ({ navigation }) => {
                     <AppText style={styles.deviceMeta}>Last seen: {formatDateTime(device?.last_seen)}</AppText>
                     <AppText style={styles.deviceMeta}>IP: {device?.ip || '—'}</AppText>
                   </View>
-                  {isCurrent ? <AppText style={styles.currentDeviceBadge}>Current</AppText> : null}
+                  <View style={styles.deviceActions}>
+                    {isCurrent ? <AppText style={styles.currentDeviceBadge}>Current</AppText> : null}
+                    <Pressable
+                      style={[styles.revokeButton, isRevoking && styles.revokeButtonDisabled]}
+                      onPress={() => confirmRevokeDevice(device)}
+                      disabled={isRevoking}
+                    >
+                      {isRevoking ? (
+                        <ActivityIndicator size="small" color={themeColors.negative} />
+                      ) : (
+                        <Smartphone size={14} color={themeColors.negative} />
+                      )}
+                      <AppText style={styles.revokeButtonText}>
+                        {isCurrent ? 'Log out here' : 'Log out'}
+                      </AppText>
+                    </Pressable>
+                  </View>
                 </View>
               );
             })}
@@ -632,6 +704,10 @@ const createStyles = (colors) =>
       flex: 1,
       gap: 2,
     },
+    deviceActions: {
+      alignItems: 'flex-end',
+      gap: 8,
+    },
     deviceTitle: {
       color: colors.textPrimary,
       fontSize: 12,
@@ -649,6 +725,26 @@ const createStyles = (colors) =>
       borderRadius: 999,
       paddingHorizontal: 8,
       paddingVertical: 3,
+    },
+    revokeButton: {
+      minWidth: 108,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      backgroundColor: 'rgba(240, 140, 140, 0.12)',
+      borderWidth: 1,
+      borderColor: 'rgba(240, 140, 140, 0.4)',
+      borderRadius: 10,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+    },
+    revokeButtonDisabled: {
+      opacity: 0.7,
+    },
+    revokeButtonText: {
+      color: colors.negative,
+      fontSize: 11,
     },
     emptyText: {
       color: colors.textMuted,

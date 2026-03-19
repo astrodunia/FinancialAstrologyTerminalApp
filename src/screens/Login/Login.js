@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import {
+  Alert,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -13,11 +14,13 @@ import { Apple, Chrome, Eye, EyeOff, Lock, Mail, ShieldCheck, Sparkles } from 'l
 import AppText from '../../components/AppText';
 import AppTextInput from '../../components/AppTextInput';
 import GradientBackground from '../../components/GradientBackground';
-import { useUser } from '../../store/UserContext';
-
-const ANDROID_API_URL = 'http://10.0.2.2:4500';
-const IOS_API_URL = 'http://localhost:4500';
-const API_BASE_URL = Platform.OS === 'android' ? ANDROID_API_URL : IOS_API_URL;
+import { API_BASE_URL, useUser } from '../../store/UserContext';
+import {
+  logRequestError,
+  logRequestStart,
+  logResponse,
+  networkHintForAndroidLoopback,
+} from '../../utils/networkDebug';
 
 const FONT = {
   regular: 'NotoSans-Regular',
@@ -68,8 +71,45 @@ const Login = ({ navigation }) =>
     setStatusMessage(message);
   };
 
+  const performLogin = async ({ identifier, passwordValue, force }) => {
+    const deviceId = await getOrCreateDeviceId();
+    const loginUrl = `${API_BASE_URL}/api/auth/login`;
+
+    logRequestStart({
+      label: 'auth.login',
+      url: loginUrl,
+      method: 'POST',
+      meta: {
+        identifier,
+        force,
+        hasDeviceId: Boolean(deviceId),
+        apiBaseUrl: API_BASE_URL,
+      },
+    });
+
+    const response = await fetch(loginUrl, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'x-device-id': deviceId,
+      },
+      body: JSON.stringify({
+        email: identifier,
+        password: passwordValue,
+        device_id: deviceId,
+        force,
+      }),
+    });
+    await logResponse({ label: 'auth.login', response });
+
+    const data = await response.json().catch(() => null);
+    return { response, data, deviceId, loginUrl };
+  };
+
   const handleLogin = async () => {
     const trimmedUsername = username.trim().toLowerCase();
+    const loginUrl = `${API_BASE_URL}/api/auth/login`;
 
     if (!trimmedUsername) {
       showError('Username is required.');
@@ -86,22 +126,40 @@ const Login = ({ navigation }) =>
     setIsSubmitting(true);
 
     try {
-      const deviceId = await getOrCreateDeviceId();
-
-      const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
-        method: 'POST',
-        headers: {
-          Accept: 'application/json',
-          'Content-Type': 'application/json',
-          'x-device-id': deviceId,
-        },
-        body: JSON.stringify({
-          email: trimmedUsername,
-          password,
-        }),
+      let { response, data, deviceId } = await performLogin({
+        identifier: trimmedUsername,
+        passwordValue: password,
+        force: false,
+      });
+      console.log('[NetworkDebug] auth.login payload', {
+        hasData: Boolean(data),
+        keys: data && typeof data === 'object' ? Object.keys(data) : [],
       });
 
-      const data = await response.json().catch(() => null);
+      if (response.status === 409 && data?.error === 'device_limit_reached') {
+        const shouldTakeOver = await new Promise((resolve) => {
+          Alert.alert(
+            'Active On Another Device',
+            'This account is already active on another device. Continue here and log out the old device?',
+            [
+              { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+              { text: 'Continue here', onPress: () => resolve(true) },
+            ],
+          );
+        });
+
+        if (!shouldTakeOver) {
+          setStatusType('');
+          setStatusMessage('');
+          return;
+        }
+
+        ({ response, data, deviceId } = await performLogin({
+          identifier: trimmedUsername,
+          passwordValue: password,
+          force: true,
+        }));
+      }
 
       if (!response.ok) {
         throw new Error(
@@ -123,7 +181,9 @@ const Login = ({ navigation }) =>
       setStatusMessage('Login successful.');
       navigation.navigate('Home');
     } catch (error) {
-      showError(error?.message || 'Login failed. Please try again.');
+      logRequestError({ label: 'auth.login', url: loginUrl, error });
+      const loopbackHint = networkHintForAndroidLoopback({ apiBaseUrl: API_BASE_URL, error });
+      showError(loopbackHint || error?.message || 'Login failed. Please try again.');
     } finally {
       setIsSubmitting(false);
     }

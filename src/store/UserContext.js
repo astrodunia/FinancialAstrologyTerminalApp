@@ -1,11 +1,10 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { Platform, useColorScheme } from 'react-native';
+import { useColorScheme } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { logRequestError, logRequestStart, logResponse } from '../utils/networkDebug';
+import { API_BASE_URL, API_BASE_URL_DEBUG } from '../utils/apiBaseUrl';
 
-const ANDROID_API_URL = 'http://10.0.2.2:4500';
-const IOS_API_URL = 'http://localhost:4500';
-
-export const API_BASE_URL = Platform.OS === 'android' ? ANDROID_API_URL : IOS_API_URL;
+export { API_BASE_URL };
 
 const STORAGE_KEYS = {
   deviceId: 'device_id',
@@ -52,6 +51,7 @@ const THEME_PALETTES = {
 };
 
 const UserContext = createContext(null);
+const SESSION_INVALID_ERRORS = new Set(['session_revoked', 'session_rotated', 'invalid_refresh']);
 
 const createDeviceId = () => {
   return `mobile-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -71,6 +71,18 @@ const formatNameFromIdentifier = (identifier) => {
 
 const extractUserFromPayload = (payload) => {
   return payload?.user || payload?.data?.user || payload?.session?.user || payload?.data || null;
+};
+
+const parseJsonSafely = async (response) => {
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
+};
+
+const extractApiError = (payload) => {
+  return payload?.error || payload?.message || payload?.errors?.[0]?.msg || '';
 };
 
 const buildUserState = ({ user, identifier }) => {
@@ -95,6 +107,10 @@ export const UserProvider = ({ children }) => {
   const [user, setUser] = useState(buildUserState({ user: null, identifier: '' }));
   const [themePreference, setThemePreferenceState] = useState('system');
 
+  useEffect(() => {
+    console.log('[NetworkDebug] api.base', API_BASE_URL_DEBUG);
+  }, []);
+
   const persistUser = useCallback(async (nextUser) => {
     await AsyncStorage.setItem(STORAGE_KEYS.userProfile, JSON.stringify(nextUser));
   }, []);
@@ -117,15 +133,25 @@ export const UserProvider = ({ children }) => {
   const syncSession = useCallback(async () => {
     if (!token || !deviceId) return;
 
+    const sessionUrl = `${API_BASE_URL}/api/auth/session`;
+
     try {
       setIsSyncingSession(true);
-      const response = await fetch(`${API_BASE_URL}/api/auth/session`, {
+      logRequestStart({
+        label: 'auth.session',
+        url: sessionUrl,
+        method: 'GET',
+        meta: { hasToken: Boolean(token), hasDeviceId: Boolean(deviceId) },
+      });
+
+      const response = await fetch(sessionUrl, {
         headers: {
           Accept: 'application/json',
           Authorization: `Bearer ${token}`,
           'x-device-id': deviceId,
         },
       });
+      await logResponse({ label: 'auth.session', response });
 
       if (!response.ok) return;
 
@@ -136,6 +162,8 @@ export const UserProvider = ({ children }) => {
       const nextUser = buildUserState({ user: sessionUser, identifier: lastLoginUsername });
       setUser(nextUser);
       await persistUser(nextUser);
+    } catch (error) {
+      logRequestError({ label: 'auth.session', url: sessionUrl, error });
     } finally {
       setIsSyncingSession(false);
     }
@@ -268,11 +296,136 @@ export const UserProvider = ({ children }) => {
     ]);
   }, []);
 
-  const logout = useCallback(async () => {
+  const refreshAccessToken = useCallback(async () => {
     const currentDeviceId = await getOrCreateDeviceId().catch(() => deviceId);
+    const currentRefreshToken = refreshToken;
+    const refreshUrl = `${API_BASE_URL}/api/auth/refresh`;
+
+    if (!currentDeviceId || !currentRefreshToken) {
+      await clearAuthSession();
+      return null;
+    }
 
     try {
-      await fetch(`${API_BASE_URL}/api/auth/logout2`, {
+      logRequestStart({
+        label: 'auth.refresh',
+        url: refreshUrl,
+        method: 'POST',
+        meta: { hasRefreshToken: Boolean(currentRefreshToken), hasDeviceId: Boolean(currentDeviceId) },
+      });
+
+      const response = await fetch(refreshUrl, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          'x-device-id': currentDeviceId,
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          refresh_token: currentRefreshToken,
+          device_id: currentDeviceId,
+        }),
+      });
+      await logResponse({ label: 'auth.refresh', response });
+
+      const payload = await parseJsonSafely(response);
+      if (!response.ok) {
+        const apiError = extractApiError(payload);
+        if (SESSION_INVALID_ERRORS.has(apiError)) {
+          await clearAuthSession();
+          return null;
+        }
+
+        throw new Error(apiError || `Refresh failed (${response.status})`);
+      }
+
+      const nextToken = payload?.token || '';
+      if (!nextToken) {
+        throw new Error('Refresh response did not include an access token.');
+      }
+
+      setToken(nextToken);
+      await AsyncStorage.setItem(STORAGE_KEYS.accessToken, nextToken);
+      return nextToken;
+    } catch (error) {
+      logRequestError({ label: 'auth.refresh', url: refreshUrl, error });
+      throw error;
+    }
+  }, [clearAuthSession, deviceId, getOrCreateDeviceId, refreshToken]);
+
+  const authFetch = useCallback(
+    async (path, init = {}) => {
+      const currentDeviceId = await getOrCreateDeviceId().catch(() => deviceId);
+      const normalizedPath = path.startsWith('http') ? path : `${API_BASE_URL}${path}`;
+      const {
+        headers: initHeaders = {},
+        skipRefresh = false,
+        allowUnauthorized = false,
+        ...restInit
+      } = init;
+
+      const doFetch = async (accessToken) => {
+        const headers = {
+          Accept: 'application/json',
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+          ...(currentDeviceId ? { 'x-device-id': currentDeviceId } : {}),
+          ...initHeaders,
+        };
+
+        return fetch(normalizedPath, {
+          credentials: 'include',
+          ...restInit,
+          headers,
+        });
+      };
+
+      let response = await doFetch(token);
+
+      if (allowUnauthorized || response.status !== 401 || skipRefresh) {
+        return response;
+      }
+
+      const unauthorizedPayload = await parseJsonSafely(response);
+      const unauthorizedError = extractApiError(unauthorizedPayload);
+      if (SESSION_INVALID_ERRORS.has(unauthorizedError)) {
+        await clearAuthSession();
+        return response;
+      }
+
+      const nextToken = await refreshAccessToken().catch(() => null);
+      if (!nextToken) {
+        return response;
+      }
+
+      response = await doFetch(nextToken);
+      if (response.status !== 401) {
+        return response;
+      }
+
+      const retryPayload = await parseJsonSafely(response);
+      const retryError = extractApiError(retryPayload);
+      if (SESSION_INVALID_ERRORS.has(retryError)) {
+        await clearAuthSession();
+      }
+
+      return response;
+    },
+    [clearAuthSession, deviceId, getOrCreateDeviceId, refreshAccessToken, token],
+  );
+
+  const logout = useCallback(async () => {
+    const currentDeviceId = await getOrCreateDeviceId().catch(() => deviceId);
+    const logoutUrl = `${API_BASE_URL}/api/auth/logout2`;
+
+    try {
+      logRequestStart({
+        label: 'auth.logout',
+        url: logoutUrl,
+        method: 'POST',
+        meta: { hasToken: Boolean(token), hasDeviceId: Boolean(currentDeviceId) },
+      });
+      const response = await fetch(logoutUrl, {
         method: 'POST',
         headers: {
           Accept: 'application/json',
@@ -282,7 +435,10 @@ export const UserProvider = ({ children }) => {
         },
         credentials: 'include',
         body: JSON.stringify({ device_id: currentDeviceId || '' }),
-      }).catch(() => null);
+      });
+      await logResponse({ label: 'auth.logout', response });
+    } catch (error) {
+      logRequestError({ label: 'auth.logout', url: logoutUrl, error });
     } finally {
       await clearAuthSession();
     }
@@ -301,6 +457,8 @@ export const UserProvider = ({ children }) => {
       themePreference,
       themeColors,
       getOrCreateDeviceId,
+      authFetch,
+      refreshAccessToken,
       setAuthSession,
       syncSession,
       updateUserProfile,
@@ -311,10 +469,12 @@ export const UserProvider = ({ children }) => {
     }),
     [
       deviceId,
+      authFetch,
       getOrCreateDeviceId,
       isHydrating,
       isSyncingSession,
       lastLoginUsername,
+      refreshAccessToken,
       refreshToken,
       setAuthSession,
       syncSession,
