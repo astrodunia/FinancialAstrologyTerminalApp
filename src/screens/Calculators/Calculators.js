@@ -25,6 +25,7 @@ import AppTextInput from '../../components/AppTextInput';
 import BottomTabs from '../../components/BottomTabs';
 import GradientBackground from '../../components/GradientBackground';
 import { useUser } from '../../store/UserContext';
+import { MAIN_TAB_ROUTES, useHorizontalSwipe } from '../../navigation/useHorizontalSwipe';
 
 const FONT = {
   regular: 'NotoSans-Regular',
@@ -452,6 +453,7 @@ const Calculators = ({ navigation }) => {
   const { theme, themeColors } = useUser();
   const isLight = theme === 'light';
   const styles = useMemo(() => createStyles(themeColors, isLight), [isLight, themeColors]);
+  const swipeHandlers = useHorizontalSwipe(MAIN_TAB_ROUTES, 'Calculators', (route) => navigation.navigate(route));
 
   const [query, setQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('all');
@@ -493,7 +495,7 @@ const Calculators = ({ navigation }) => {
   };
 
   return (
-    <View style={styles.safeArea}>
+    <View style={styles.safeArea} {...swipeHandlers}>
       <GradientBackground>
         <View style={styles.headerCard}>
           <View style={styles.headerTop}>
@@ -1006,7 +1008,6 @@ const createStyles = (colors, isLight) =>
   });
 
 export default Calculators;
-
 
 
 

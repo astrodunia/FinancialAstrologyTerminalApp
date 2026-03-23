@@ -5,13 +5,15 @@ import AppText from '../../components/AppText';
 import BottomTabs from '../../components/BottomTabs';
 import GradientBackground from '../../components/GradientBackground';
 import { useUser } from '../../store/UserContext';
+import { MAIN_TAB_ROUTES, useHorizontalSwipe } from '../../navigation/useHorizontalSwipe';
 
 const Portfolio = ({ navigation }) => {
   const { themeColors } = useUser();
   const styles = createStyles(themeColors);
+  const swipeHandlers = useHorizontalSwipe(MAIN_TAB_ROUTES, 'Portfolio', (route) => navigation.navigate(route));
 
   return (
-    <View style={styles.safeArea}>
+    <View style={styles.safeArea} {...swipeHandlers}>
       <GradientBackground>
         <View style={styles.header}>
           <AppText style={styles.title}>Portfolio</AppText>

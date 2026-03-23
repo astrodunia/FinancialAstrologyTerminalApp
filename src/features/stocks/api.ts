@@ -7,6 +7,7 @@ import {
   type StockInfo,
   type StockNewsItem,
   type StockOfficer,
+  type TickerSearchItem,
 } from './types';
 import { getChartTimeframeConfig, normalizeChartTimeframe, normalizeStockSymbol, TF_INTERVAL_FALLBACKS } from './navigation';
 
@@ -32,6 +33,14 @@ const toArray = <T = Record<string, unknown>>(payload: unknown): T[] => {
   if (Array.isArray((payload as any)?.data)) return (payload as any).data as T[];
   if (Array.isArray((payload as any)?.items)) return (payload as any).items as T[];
   if (Array.isArray((payload as any)?.result)) return (payload as any).result as T[];
+  if (Array.isArray((payload as any)?.results)) return (payload as any).results as T[];
+  if (Array.isArray((payload as any)?.matches)) return (payload as any).matches as T[];
+  if (Array.isArray((payload as any)?.tickers)) return (payload as any).tickers as T[];
+  if (Array.isArray((payload as any)?.quotes)) return (payload as any).quotes as T[];
+  if (Array.isArray((payload as any)?.news)) return (payload as any).news as T[];
+  if (Array.isArray((payload as any)?.articles)) return (payload as any).articles as T[];
+  if (Array.isArray((payload as any)?.stories)) return (payload as any).stories as T[];
+  if (Array.isArray((payload as any)?.stream)) return (payload as any).stream as T[];
   return [];
 };
 
@@ -312,23 +321,49 @@ export const mapNews = (payload: unknown): StockNewsItem[] => {
 
   return sourceItems.map((item, index) => {
     const content = (item as any)?.content || item;
+    const provider =
+      toString(content?.provider?.displayName) ||
+      toString(content?.provider?.name) ||
+      toString(content?.provider) ||
+      toString(content?.publisher?.name) ||
+      toString(content?.publisher) ||
+      toString(content?.source?.name) ||
+      toString(content?.source);
     const thumbnail =
       toString(content?.thumbnail?.resolutions?.find?.((entry: any) => entry?.tag === '170x128')?.url) ||
       toString(content?.thumbnail?.originalUrl) ||
+      toString(content?.thumbnail?.url) ||
       toString(content?.thumbnail) ||
+      toString(content?.images?.[0]?.url) ||
+      toString(content?.fields?.thumbnail) ||
       toString(content?.image) ||
       toString(content?.imageUrl);
+    const url =
+      toString(content?.canonicalUrl?.url) ||
+      toString(content?.clickThroughUrl?.url) ||
+      toString(content?.previewUrl) ||
+      toString(content?.link) ||
+      toString(content?.url) ||
+      toString(content?.links?.self) ||
+      toString(content?.links?.web?.href);
 
     return {
-      id: toString(item.id || item.uuid || `${content?.canonicalUrl?.url || content?.clickThroughUrl?.url || 'news'}-${index}`),
-      title: toString(content?.title || content?.headline),
-      summary: toString(content?.summary || content?.description || content?.snippet),
-      provider: toString(content?.provider?.displayName || content?.provider || content?.publisher || content?.source),
-      publishedAt: toString(content?.pubDate || content?.displayTime || content?.publishedAt || content?.providerPublishTime || content?.date),
+      id: toString(item.id || item.uuid || url || `${provider || 'news'}-${index}`),
+      title: toString(content?.title || content?.headline || content?.fields?.headline),
+      summary: toString(content?.summary || content?.description || content?.snippet || content?.content),
+      provider,
+      publishedAt: toString(
+        content?.pubDate ||
+        content?.displayTime ||
+        content?.publishedAt ||
+        content?.providerPublishTime ||
+        content?.date ||
+        content?.updatedAt,
+      ),
       thumbnail,
-      url: toString(content?.canonicalUrl?.url || content?.clickThroughUrl?.url || content?.previewUrl || content?.link || content?.url),
+      url,
     };
-  });
+  }).filter((item) => item.title || item.url);
 };
 
 export const mapAlerts = (payload: unknown): StockAlert[] => {
@@ -341,6 +376,97 @@ export const mapAlerts = (payload: unknown): StockAlert[] => {
     enabled: item.enabled == null ? item.is_active !== false : Boolean(item.enabled),
     raw: item,
   }));
+};
+
+const toBoolean = (value: unknown): boolean | null => {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) return null;
+    if (['true', '1', 'yes', 'y', 'active'].includes(normalized)) return true;
+    if (['false', '0', 'no', 'n', 'inactive'].includes(normalized)) return false;
+  }
+  return null;
+};
+
+export const mapTickerSearchResults = (payload: unknown): TickerSearchItem[] => {
+  return toObjectArray(payload)
+    .map((item) => {
+      const symbol = normalizeStockSymbol(
+        toString(item.symbol || item.ticker || item.code || item.instrument || item.id),
+      );
+
+      if (!symbol) return null;
+
+      return {
+        symbol,
+        name: toString(
+          item.name ||
+            item.longName ||
+            item.shortName ||
+            item.companyName ||
+            item.description ||
+            item.title,
+        ),
+        exchange: toString(item.exchange || item.primary_exchange || item.fullExchangeName),
+        type: toString(item.type || item.tickerType || item.securityType || item.assetType || item.instrumentType),
+        market: toString(item.market || item.locale || item.region),
+        active: toBoolean(item.active ?? item.isActive ?? item.enabled),
+        raw: item,
+      };
+    })
+    .filter(Boolean) as TickerSearchItem[];
+};
+
+const SEARCH_ENDPOINT_BUILDERS = [
+  (query: string, limit: number) => `/api/search/tickers?q=${encodeURIComponent(query)}&limit=${limit}`,
+  (query: string, limit: number) => `/api/market/search?q=${encodeURIComponent(query)}&limit=${limit}`,
+  (query: string, limit: number) => `/api/market/search?query=${encodeURIComponent(query)}&limit=${limit}`,
+  (query: string, limit: number) => `/api/market/search?ticker=${encodeURIComponent(query)}&limit=${limit}`,
+  (query: string, limit: number) => `/api/market/tickers/search?q=${encodeURIComponent(query)}&limit=${limit}`,
+  (query: string, limit: number) => `/api/tagx/search?q=${encodeURIComponent(query)}&limit=${limit}`,
+  (query: string, limit: number) => `/api/tagx/stocks/search?q=${encodeURIComponent(query)}&limit=${limit}`,
+];
+
+export const fetchTickerSearch = async (
+  fetcher: Fetcher,
+  query: string,
+  limit = 8,
+  signal?: AbortSignal,
+): Promise<TickerSearchItem[]> => {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+
+  let lastError: Error | null = null;
+
+  for (const buildPath of SEARCH_ENDPOINT_BUILDERS) {
+    const path = buildPath(trimmed, limit);
+
+    try {
+      const response = await fetcher(getApiPath(path), { signal });
+      const payload = await parseJson(response);
+
+      if (!response.ok) {
+        lastError = new Error(
+          (payload as any)?.error || (payload as any)?.message || `Request failed (${response.status})`,
+        );
+        continue;
+      }
+
+      const items = mapTickerSearchResults(payload);
+      if (items.length || Array.isArray(payload) || Array.isArray((payload as any)?.items) || Array.isArray((payload as any)?.data)) {
+        return items.slice(0, limit);
+      }
+    } catch (error) {
+      if ((error as Error)?.name === 'AbortError') {
+        throw error;
+      }
+      lastError = error as Error;
+    }
+  }
+
+  throw lastError || new Error('Ticker search is unavailable.');
 };
 
 export const fetchStockInfo = (fetcher: Fetcher, symbol: string, signal?: AbortSignal) =>

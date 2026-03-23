@@ -21,6 +21,7 @@ import AppText from '../../components/AppText';
 import BottomTabs from '../../components/BottomTabs';
 import GradientBackground from '../../components/GradientBackground';
 import { API_BASE_URL, useUser } from '../../store/UserContext';
+import { MAIN_TAB_ROUTES, useHorizontalSwipe } from '../../navigation/useHorizontalSwipe';
 
 const LIVE_API_BASE = 'https://finance.rajeevprakash.com';
 const TICKER_SYMBOLS = ['MSFT', 'NVDA', 'GOOGL', 'AMZN', 'META', 'TSLA'];
@@ -266,6 +267,7 @@ const Overview = ({ navigation }) => {
   const { theme, themeColors } = useUser();
   const isLight = theme === 'light';
   const styles = useMemo(() => createStyles(themeColors, isLight), [themeColors, isLight]);
+  const swipeHandlers = useHorizontalSwipe(MAIN_TAB_ROUTES, 'Overview', (route) => navigation.navigate(route));
 
   const [tickerRows, setTickerRows] = useState([]);
   const [movers, setMovers] = useState([]);
@@ -460,7 +462,7 @@ const Overview = ({ navigation }) => {
   }, []);
 
   return (
-    <View style={styles.safeArea}>
+    <View style={styles.safeArea} {...swipeHandlers}>
       <GradientBackground>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tickerStrip} contentContainerStyle={styles.tickerStripContent}>
           {tickerRows.map((item) => {

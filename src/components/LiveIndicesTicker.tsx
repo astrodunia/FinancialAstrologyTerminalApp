@@ -11,8 +11,11 @@ import { Info, TrendingDown, TrendingUp, X } from 'lucide-react-native';
 import AppText from './AppText';
 import CardLoadingOverlay from './CardLoadingOverlay';
 import { API_BASE_URL, useUser } from '../store/UserContext';
+import { getMarketDataCache, getUsMarketSession, setMarketDataCache, shouldRefreshMarketData } from '../utils/marketDataCache';
 
 const LIVE_INDICES_API_BASE = 'https://finance.rajeevprakash.com';
+const LIVE_INDICES_CACHE_KEY = 'liveIndices';
+const LIVE_INDICES_TTL_MS = 30 * 1000;
 
 const INDEX_LIST = [
   { id: 'GSPC', name: 'S&P 500' },
@@ -110,27 +113,6 @@ const classify = (pct?: number | null): 'BULLISH' | 'BEARISH' | 'NEUTRAL' => {
   return pct > 0 ? 'BULLISH' : 'BEARISH';
 };
 
-const isUsRegularMarketOpen = () => {
-  const now = new Date();
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
-    weekday: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).formatToParts(now);
-
-  const valueOf = (type: string) => parts.find((part) => part.type === type)?.value || '';
-  const weekday = valueOf('weekday');
-  const hour = Number(valueOf('hour') || 0);
-  const minute = Number(valueOf('minute') || 0);
-  const totalMinutes = hour * 60 + minute;
-  const isWeekend = weekday === 'Sat' || weekday === 'Sun';
-
-  if (isWeekend) return false;
-  return totalMinutes >= 570 && totalMinutes < 960; // 9:30am - 4:00pm ET
-};
-
 type ViewRow = {
   symbol: string;
   name: string;
@@ -215,16 +197,27 @@ export default function LiveIndicesTicker({ onPressIndex }: Props) {
   const colors = useMemo(() => createPalette(themeColors, theme), [theme, themeColors]);
   const styles = useMemo(() => createStyles(colors), [colors]);
   const navigation = useNavigation<any>();
-  const [rows, setRows] = useState<ViewRow[]>([]);
-  const [status, setStatus] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle');
+  const cachedRows = (getMarketDataCache(LIVE_INDICES_CACHE_KEY)?.data as ViewRow[] | null) || [];
+  const [rows, setRows] = useState<ViewRow[]>(cachedRows);
+  const [status, setStatus] = useState<'idle' | 'loading' | 'ok' | 'error'>(cachedRows.length ? 'ok' : 'idle');
   const [error, setError] = useState<string | null>(null);
   const [helpSymbol, setHelpSymbol] = useState<string | null>(null);
-  const [marketOpen, setMarketOpen] = useState(() => isUsRegularMarketOpen());
+  const [marketActive, setMarketActive] = useState(() => getUsMarketSession().isActive);
 
   const abortRef = useRef<AbortController | null>(null);
   const reqSeq = useRef(0);
 
   const load = useCallback(async () => {
+    const cached = (getMarketDataCache(LIVE_INDICES_CACHE_KEY)?.data as ViewRow[] | null) || [];
+    const shouldRefresh = shouldRefreshMarketData(LIVE_INDICES_CACHE_KEY, LIVE_INDICES_TTL_MS);
+
+    if (!shouldRefresh && cached.length) {
+      setRows(cached);
+      setStatus('ok');
+      setError(null);
+      return;
+    }
+
     const mySeq = ++reqSeq.current;
     setStatus('loading');
     setError(null);
@@ -263,11 +256,18 @@ export default function LiveIndicesTicker({ onPressIndex }: Props) {
         };
       });
 
+      setMarketDataCache(LIVE_INDICES_CACHE_KEY, mapped, getUsMarketSession().session);
       setRows(mapped);
       setStatus('ok');
     } catch (e: any) {
       if (isAbortError(e)) return;
       if (mySeq !== reqSeq.current) return;
+      if (cached.length) {
+        setRows(cached);
+        setStatus('ok');
+        setError(null);
+        return;
+      }
       setStatus('error');
       setError(e?.message || 'Failed to load indices');
       setRows([]);
@@ -278,7 +278,7 @@ export default function LiveIndicesTicker({ onPressIndex }: Props) {
     load();
 
     const marketClockId = setInterval(() => {
-      setMarketOpen(isUsRegularMarketOpen());
+      setMarketActive(getUsMarketSession().isActive);
     }, 60000);
 
     return () => {
@@ -288,7 +288,7 @@ export default function LiveIndicesTicker({ onPressIndex }: Props) {
   }, [load]);
 
   useEffect(() => {
-    if (!marketOpen) return undefined;
+    if (!marketActive) return undefined;
 
     load();
 
@@ -297,9 +297,22 @@ export default function LiveIndicesTicker({ onPressIndex }: Props) {
     }, 30000);
 
     return () => clearInterval(pollId);
-  }, [load, marketOpen]);
+  }, [load, marketActive]);
 
-  const cards = useMemo(() => rows, [rows]);
+  const cards = useMemo(
+    () =>
+      rows.length
+        ? rows
+        : INDEX_LIST.map((item) => ({
+            symbol: item.id,
+            name: item.name,
+            close: null,
+            change: null,
+            changePercent: null,
+            previousClose: null,
+          })),
+    [rows],
+  );
 
   const openIndex = (symbol: string) => {
     if (onPressIndex) {
@@ -319,9 +332,9 @@ export default function LiveIndicesTicker({ onPressIndex }: Props) {
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.rowTrack}
       >
-        {status === 'loading' && INDEX_LIST.map((item) => <SkeletonCard key={item.id} styles={styles} colors={colors} />)}
+        {status === 'loading' && !rows.length && INDEX_LIST.map((item) => <SkeletonCard key={item.id} styles={styles} colors={colors} />)}
 
-        {status === 'ok' && cards.map((row) => {
+        {(status === 'ok' || rows.length) && cards.map((row) => {
           const mood = classify(row.changePercent);
           const isUp = (row.change ?? 0) >= 0;
           return (

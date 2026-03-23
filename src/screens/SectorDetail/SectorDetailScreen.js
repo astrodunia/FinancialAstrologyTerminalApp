@@ -1,514 +1,477 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { ArrowLeft } from 'lucide-react-native';
+import { ArrowDownRight, ArrowUpRight } from 'lucide-react-native';
 import AppText from '../../components/AppText';
 import GradientBackground from '../../components/GradientBackground';
-import { SLUG_TO_SECTOR } from '../../data/sectors/sectorConfig';
+import HomeHeader from '../../components/HomeHeader';
+import { getSectorPage, SECTOR_BY_SLUG, SECTOR_PAGE_SIZE } from '../../data/sectors/sectorUniverse';
+import { fetchStockInfo } from '../../features/stocks/api';
+import { navigateToStockDetail } from '../../features/stocks/navigation';
+import { useUser } from '../../store/UserContext';
 
-const API_HOST = 'http://10.0.2.2:4500';
-const PAGE_SIZE = 25;
-const sectorPageCache = new Map();
-
-const buildSectorUrl = (sectorName, page = 1, pageSize = PAGE_SIZE) => {
-  return `${API_HOST}/api/tagx/s/sectors/${encodeURIComponent(
-    sectorName
-  )}?page=${page}&pageSize=${pageSize}`;
+const toNumber = (value) => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Number(value.replace(/[^0-9.-]/g, ''));
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
 };
 
-const getCacheKey = (sectorName, page) => `${sectorName}::${page}`;
+const mapSectorStockInfo = (payload, symbol) => {
+  const source = payload?.data || payload || {};
+  return {
+    symbol,
+    name: String(source?.longName || source?.shortName || source?.companyName || symbol),
+    price: toNumber(
+      source?.regularMarketPrice ??
+        source?.currentPrice ??
+        source?.regularMarketClose ??
+        source?.close,
+    ),
+    pct: toNumber(source?.regularMarketChangePercent ?? source?.priceChangePercent),
+  };
+};
 
-const formatCurrency = (n) => {
-  if (typeof n !== 'number' || Number.isNaN(n)) return '-';
-
-  return n.toLocaleString(undefined, {
-    style: 'currency',
-    currency: 'USD',
+const formatPrice = (value) => {
+  if (value == null || Number.isNaN(value)) return '--';
+  return `$${Number(value).toLocaleString('en-US', {
+    minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  });
+  })}`;
 };
 
-const formatChangeText = (item) => {
-  if (typeof item.changePct === 'number') {
-    const sign = item.changePct > 0 ? '+' : '';
-    return `${sign}${item.changePct.toFixed(2)}%`;
-  }
-
-  if (typeof item.change === 'number') {
-    const sign = item.change > 0 ? '+' : '';
-    return `${sign}${item.change.toFixed(2)}`;
-  }
-
-  return '-';
-};
-
-const goBackOrFallback = (navigation, fallbackScreen) => {
-  if (navigation.canGoBack()) {
-    navigation.goBack();
-    return;
-  }
-
-  navigation.navigate(fallbackScreen);
+const formatPct = (value) => {
+  if (value == null || Number.isNaN(value)) return '--';
+  const sign = value > 0 ? '+' : '';
+  return `${sign}${Number(value).toFixed(2)}%`;
 };
 
 const SectorDetailScreen = ({ navigation, route }) => {
   const slug = route?.params?.slug || 'technology';
+  const { themeColors, user, authFetch } = useUser();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+  const sector = SECTOR_BY_SLUG[slug] || SECTOR_BY_SLUG.technology;
+  const profileName = user?.displayName || user?.name || 'Trader';
 
-  const sector =
-    SLUG_TO_SECTOR[slug] ||
-    SLUG_TO_SECTOR.technology || {
-      name: 'Tech',
-      apiSectorName: 'Information Technology',
-    };
-
-  const sectorTitle = sector.name;
-  const apiSectorName = sector.apiSectorName;
-
-  const [rows, setRows] = useState([]);
   const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [total, setTotal] = useState(0);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [stockItems, setStockItems] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [pageLoading, setPageLoading] = useState(false);
   const [error, setError] = useState('');
-  const rowsRef = useRef([]);
 
   useEffect(() => {
-    rowsRef.current = rows;
-  }, [rows]);
+    setPage(1);
+    setSearchQuery('');
+  }, [slug]);
+
+  const pageTickers = useMemo(() => getSectorPage(sector, page), [page, sector]);
+  const totalPages = sector?.totalPages || 1;
+  const total = sector?.count || 0;
+  const startIndex = total === 0 ? 0 : (page - 1) * SECTOR_PAGE_SIZE + 1;
+  const endIndex = Math.min(page * SECTOR_PAGE_SIZE, total);
+
+  const loadQuotes = useCallback(
+    async (signal) => {
+      setLoading(true);
+      setError('');
+
+      try {
+        const settled = await Promise.allSettled(
+          pageTickers.map(async (ticker) => {
+            const payload = await fetchStockInfo(authFetch, ticker, signal);
+            return mapSectorStockInfo(payload, ticker);
+          }),
+        );
+
+        if (signal?.aborted) return;
+
+        const nextItems = settled
+          .filter((result) => result.status === 'fulfilled')
+          .map((result) => result.value);
+
+        if (!nextItems.length) {
+          throw new Error('No stock quotes available for this page.');
+        }
+
+        setStockItems(nextItems);
+      } catch (nextError) {
+        if (signal?.aborted) return;
+        setError(nextError?.message || 'Failed to load sector stocks.');
+        setStockItems([]);
+      } finally {
+        if (!signal?.aborted) {
+          setLoading(false);
+        }
+      }
+    },
+    [authFetch, pageTickers],
+  );
 
   useEffect(() => {
     const controller = new AbortController();
-    const cacheKey = getCacheKey(apiSectorName, page);
-    const cachedPage = sectorPageCache.get(cacheKey);
+    loadQuotes(controller.signal);
+    return () => controller.abort();
+  }, [loadQuotes]);
 
-    if (cachedPage) {
-      setRows(cachedPage.rows);
-      setTotalPages(cachedPage.totalPages);
-      setTotal(cachedPage.total);
-      setLoading(false);
-      setPageLoading(false);
-      setError('');
-    } else if (rowsRef.current.length > 0) {
-      setPageLoading(true);
-    } else {
-      setLoading(true);
-    }
+  const visibleStocks = useMemo(() => {
+    const normalized = searchQuery.trim().toLowerCase();
+    if (!normalized) return stockItems;
 
-    const fetchData = async ({ prefetch = false, targetPage = page } = {}) => {
-      try {
-        const targetCacheKey = getCacheKey(apiSectorName, targetPage);
-        if (sectorPageCache.has(targetCacheKey)) return;
-
-        const url = buildSectorUrl(apiSectorName, targetPage, PAGE_SIZE);
-        const res = await fetch(url, { signal: controller.signal });
-        const json = await res.json();
-
-        if (!res.ok || json?.ok === false) {
-          throw new Error(json?.message || 'Failed to load sector data');
-        }
-
-        const nextRows = Array.isArray(json?.data) ? json.data : [];
-        const nextTotalPages = Number(json?.totalPages || 1);
-        const nextTotal = Number(json?.total || 0);
-
-        sectorPageCache.set(targetCacheKey, {
-          rows: nextRows,
-          totalPages: nextTotalPages,
-          total: nextTotal,
-        });
-
-        if (prefetch) return;
-
-        setRows(nextRows);
-        setTotalPages(nextTotalPages);
-        setTotal(nextTotal);
-        setError('');
-
-        const nextPage = targetPage + 1;
-        if (nextPage <= nextTotalPages && !sectorPageCache.has(getCacheKey(apiSectorName, nextPage))) {
-          fetchData({ prefetch: true, targetPage: nextPage }).catch(() => {});
-        }
-      } catch (e) {
-        if (e?.name === 'AbortError') return;
-        if (!prefetch) setError(e?.message || 'Failed to load sector data');
-      } finally {
-        if (!prefetch) {
-          setLoading(false);
-          setPageLoading(false);
-        }
-      }
-    };
-
-    fetchData();
-
-    return () => {
-      controller.abort();
-    };
-  }, [apiSectorName, page]);
-
-  const openTicker = (item) => {
-    navigation.navigate('StockDetail', {
-      ticker: item.symbol,
-      companyName: item.name || item.symbol,
+    return stockItems.filter((item) => {
+      return item.symbol.toLowerCase().includes(normalized) || item.name.toLowerCase().includes(normalized);
     });
-  };
+  }, [searchQuery, stockItems]);
 
   return (
-    <View style={styles.safeArea}>
+    <View style={styles.screen}>
       <GradientBackground>
-        <View style={styles.screen}>
-          <View style={styles.header}>
-            <Pressable
-              style={styles.backBtn}
-              hitSlop={10}
-              onPress={() => goBackOrFallback(navigation, 'Sectors')}
-            >
-              <ArrowLeft size={18} color="#344054" />
-            </Pressable>
+        <HomeHeader
+          themeColors={themeColors}
+          profileName={profileName}
+          searchQuery={searchQuery}
+          onChangeSearchQuery={setSearchQuery}
+          onPressProfile={() => navigation.navigate('Profile')}
+          onPressGlobalIndices={() => navigation.navigate('GlobalIndices')}
+        />
 
-            <View style={styles.headerContent}>
-              <AppText style={styles.headerTitle} weight="extraBold">
-                {sectorTitle}
+        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          <View style={styles.sectionBlock}>
+            <View style={styles.sectionHeader}>
+              <AppText style={styles.sectionTitle}>{sector?.name || 'Tech'} stocks</AppText>
+              <AppText style={styles.sectionLink}>
+                Page {page}/{totalPages}  {startIndex}-{endIndex} of {total}
               </AppText>
-              <AppText style={styles.headerSub}>Snapshot - Total tickers: {total}</AppText>
             </View>
-          </View>
 
-          {loading && rows.length === 0 ? (
-            <View style={styles.centerState}>
-              <ActivityIndicator size="small" color="#2F7DFF" />
-            </View>
-          ) : error ? (
-            <View style={styles.centerState}>
-              <AppText style={styles.errorText}>{error}</AppText>
-            </View>
-          ) : (
-            <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-              {pageLoading ? (
-                <View style={styles.inlineLoader}>
-                  <ActivityIndicator size="small" color="#2F7DFF" />
-                  <AppText style={styles.inlineLoaderText}>Loading page...</AppText>
+            <View style={styles.stocksCard}>
+              <View style={styles.stockHeadRow}>
+                <AppText style={styles.stockHeadTextLeft}>Symbol</AppText>
+                <View style={styles.stockHeadRight}>
+                  <AppText style={styles.stockHeadText}>Price</AppText>
+                  <AppText style={styles.stockHeadText}>Change</AppText>
+                </View>
+              </View>
+
+              {loading ? (
+                <View style={styles.centerState}>
+                  <ActivityIndicator size="small" color={themeColors.textPrimary} />
+                  <AppText style={styles.stateText}>Loading live quotes...</AppText>
                 </View>
               ) : null}
 
-              <View style={styles.tableCard}>
-                <View style={styles.tableHeader}>
-                  <AppText style={[styles.headerCell, styles.symbolCol]}>Symbol</AppText>
-                  <AppText style={[styles.headerCell, styles.priceCol, styles.numericHeaderCell]}>
-                    Price
-                  </AppText>
-                  <AppText style={[styles.headerCell, styles.changeCol, styles.numericHeaderCell]}>
-                    Change
-                  </AppText>
+              {!loading && error ? (
+                <View style={styles.centerState}>
+                  <AppText style={styles.errorText}>{error}</AppText>
                 </View>
+              ) : null}
 
-                {rows.map((item, index) => {
-                  const isUp = typeof item.change === 'number' && item.change > 0;
-                  const isDown = typeof item.change === 'number' && item.change < 0;
+              {!loading && !error
+                ? visibleStocks.map((item, idx) => {
+                    const up = (item.pct ?? 0) >= 0;
 
-                  return (
-                    <Pressable
-                      key={item.symbol}
-                      style={[styles.row, index !== rows.length - 1 && styles.rowBorder]}
-                      onPress={() => openTicker(item)}
-                    >
-                      <View style={styles.symbolCol}>
-                        <AppText style={styles.symbolText} weight="semiBold">
-                          {item.symbol}
-                        </AppText>
-                        <AppText style={styles.companyText} numberOfLines={1}>
-                          {item.name || item.symbol}
-                        </AppText>
-                      </View>
-
-                      <View style={styles.priceCol}>
-                        <AppText style={styles.priceText} weight="medium">
-                          {formatCurrency(item.price)}
-                        </AppText>
-                      </View>
-
-                      <View style={styles.changeCol}>
-                        <View
-                          style={[
-                            styles.changePill,
-                            isUp && styles.changePillUp,
-                            isDown && styles.changePillDown,
-                            !isUp && !isDown && styles.changePillFlat,
-                          ]}
-                        >
-                          <AppText
-                            style={[
-                              styles.changePillText,
-                              isUp && styles.changeTextUp,
-                              isDown && styles.changeTextDown,
-                              !isUp && !isDown && styles.changeTextFlat,
-                            ]}
-                            weight="semiBold"
-                          >
-                            {formatChangeText(item)}
+                    return (
+                      <Pressable
+                        key={item.symbol}
+                        onPress={() => navigateToStockDetail(navigation, item.symbol)}
+                        style={[styles.stockRow, idx === visibleStocks.length - 1 && styles.listRowLast]}
+                      >
+                        <View style={styles.stockLeft}>
+                          <AppText style={styles.ticker}>{item.symbol}</AppText>
+                          <AppText style={styles.company} numberOfLines={1}>
+                            {item.name}
                           </AppText>
                         </View>
-                      </View>
-                    </Pressable>
-                  );
-                })}
-              </View>
 
-              <View style={styles.pagination}>
-                <Pressable
-                  style={[styles.pageBtn, page <= 1 && styles.pageBtnDisabled]}
-                  disabled={page <= 1 || pageLoading}
-                  onPress={() => setPage((p) => Math.max(1, p - 1))}
-                >
-                  <AppText style={styles.pageBtnText} weight="semiBold">
-                    Prev
-                  </AppText>
-                </Pressable>
+                        <View style={styles.stockRight}>
+                          <AppText style={styles.priceText}>{formatPrice(item.price)}</AppText>
+                          <View style={[styles.changePill, up ? styles.changePillUp : styles.changePillDown]}>
+                            {up ? (
+                              <ArrowUpRight size={12} color={themeColors.positive} />
+                            ) : (
+                              <ArrowDownRight size={12} color={themeColors.negative} />
+                            )}
+                            <AppText
+                              style={[
+                                styles.changeText,
+                                { color: up ? themeColors.positive : themeColors.negative },
+                              ]}
+                            >
+                              {formatPct(item.pct)}
+                            </AppText>
+                          </View>
+                        </View>
+                      </Pressable>
+                    );
+                  })
+                : null}
 
-                <AppText style={styles.pageText}>
-                  Page {page} / {totalPages}
+              {!loading && !error && !visibleStocks.length ? (
+                <View style={styles.centerState}>
+                  <AppText style={styles.stateText}>No stocks match your search.</AppText>
+                </View>
+              ) : null}
+            </View>
+
+            <View style={styles.paginationBar}>
+              <Pressable
+                style={[styles.pageBtn, page <= 1 && styles.pageBtnDisabled]}
+                disabled={page <= 1}
+                onPress={() => setPage((current) => Math.max(1, current - 1))}
+              >
+                <AppText style={[styles.pageBtnText, page <= 1 && styles.pageBtnTextDisabled]}>
+                  Previous
                 </AppText>
+              </Pressable>
 
-                <Pressable
-                  style={[styles.pageBtn, page >= totalPages && styles.pageBtnDisabled]}
-                  disabled={page >= totalPages || pageLoading}
-                  onPress={() => setPage((p) => Math.min(totalPages, p + 1))}
-                >
-                  <AppText style={styles.pageBtnText} weight="semiBold">
-                    Next
-                  </AppText>
-                </Pressable>
+              <View style={styles.paginationCenter}>
+                <AppText style={styles.pageText}>{page} / {totalPages}</AppText>
+                <AppText style={styles.pageMeta}>
+                  {startIndex}-{endIndex} of {total}
+                </AppText>
               </View>
-            </ScrollView>
-          )}
-        </View>
+
+              <Pressable
+                style={[styles.pageBtn, page >= totalPages && styles.pageBtnDisabled]}
+                disabled={page >= totalPages}
+                onPress={() => setPage((current) => Math.min(totalPages, current + 1))}
+              >
+                <AppText style={[styles.pageBtnText, page >= totalPages && styles.pageBtnTextDisabled]}>
+                  Next
+                </AppText>
+              </Pressable>
+            </View>
+          </View>
+        </ScrollView>
       </GradientBackground>
     </View>
   );
 };
 
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-  },
+const createStyles = (colors) =>
+  StyleSheet.create({
+    screen: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
 
-  screen: {
-    flex: 1,
-  },
+    content: {
+      paddingHorizontal: 16,
+      paddingTop: 12,
+      paddingBottom: 44,
+    },
 
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 18,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#EAECF0',
-  },
+    sectionBlock: {
+      marginBottom: 20,
+    },
 
-  headerContent: {
-    flex: 1,
-  },
+    sectionHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      gap: 10,
+      marginBottom: 10,
+    },
 
-  backBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#EAECF0',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 10,
-  },
+    sectionTitle: {
+      color: colors.textPrimary,
+      fontSize: 16,
+      fontFamily: 'NotoSans-ExtraBold',
+    },
 
-  headerTitle: {
-    fontSize: 20,
-    color: '#101828',
-  },
+    sectionLink: {
+      color: colors.textMuted,
+      fontSize: 12,
+      textAlign: 'right',
+      flexShrink: 1,
+      fontFamily: 'NotoSans-Regular',
+    },
 
-  headerSub: {
-    fontSize: 13,
-    color: '#667085',
-    marginTop: 4,
-  },
+    stocksCard: {
+      backgroundColor: colors.surfaceGlass,
+      borderRadius: 18,
+      paddingHorizontal: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      shadowColor: '#000',
+      shadowOpacity: 0.08,
+      shadowRadius: 12,
+      shadowOffset: { width: 0, height: 4 },
+      elevation: 2,
+    },
 
-  content: {
-    padding: 14,
-    paddingBottom: 40,
-  },
+    stockHeadRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingVertical: 10,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
 
-  centerState: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+    stockHeadTextLeft: {
+      color: colors.textMuted,
+      fontSize: 11,
+      letterSpacing: 0.3,
+      fontFamily: 'NotoSans-Regular',
+    },
 
-  errorText: {
-    color: '#DC2626',
-    fontSize: 14,
-  },
+    stockHeadRight: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 26,
+    },
 
-  inlineLoader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    marginBottom: 10,
-  },
+    stockHeadText: {
+      color: colors.textMuted,
+      fontSize: 11,
+      letterSpacing: 0.3,
+      width: 72,
+      textAlign: 'right',
+      fontFamily: 'NotoSans-Regular',
+    },
 
-  inlineLoaderText: {
-    fontSize: 12,
-    color: '#667085',
-  },
+    stockRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingVertical: 11,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
 
-  tableCard: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#DDE3EA',
-    borderRadius: 18,
-    overflow: 'hidden',
-  },
+    listRowLast: {
+      borderBottomWidth: 0,
+    },
 
-  tableHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    backgroundColor: '#F8FAFC',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E6EBF1',
-  },
+    stockLeft: {
+      flex: 1,
+      paddingRight: 8,
+    },
 
-  headerCell: {
-    fontSize: 12,
-    color: '#8A94A6',
-    letterSpacing: 0.2,
-  },
+    stockRight: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
 
-  numericHeaderCell: {
-    textAlign: 'right',
-  },
+    ticker: {
+      color: colors.textPrimary,
+      fontSize: 14,
+      fontFamily: 'NotoSans-ExtraBold',
+    },
 
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 13,
-  },
+    company: {
+      color: colors.textMuted,
+      fontSize: 11,
+      marginTop: 2,
+      fontFamily: 'NotoSans-Regular',
+    },
 
-  rowBorder: {
-    borderBottomWidth: 1,
-    borderBottomColor: '#EEF2F6',
-  },
+    priceText: {
+      color: colors.textPrimary,
+      fontSize: 12,
+      width: 92,
+      textAlign: 'right',
+      fontFamily: 'NotoSans-Regular',
+    },
 
-  symbolCol: {
-    flex: 1,
-    minWidth: 0,
-    paddingRight: 12,
-  },
+    changePill: {
+      minWidth: 82,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      borderRadius: 999,
+      borderWidth: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 3,
+    },
 
-  priceCol: {
-    width: 96,
-    alignItems: 'flex-end',
-    marginRight: 12,
-    flexShrink: 0,
-  },
+    changePillUp: {
+      backgroundColor: 'rgba(73, 209, 141, 0.12)',
+      borderColor: 'rgba(73, 209, 141, 0.45)',
+    },
 
-  changeCol: {
-    width: 92,
-    alignItems: 'flex-end',
-    flexShrink: 0,
-  },
+    changePillDown: {
+      backgroundColor: 'rgba(240, 140, 140, 0.12)',
+      borderColor: 'rgba(240, 140, 140, 0.45)',
+    },
 
-  symbolText: {
-    fontSize: 16,
-    color: '#2B313B',
-    marginBottom: 4,
-  },
+    changeText: {
+      fontSize: 11,
+      fontFamily: 'NotoSans-Medium',
+    },
 
-  companyText: {
-    fontSize: 12,
-    color: '#8A94A6',
-  },
+    centerState: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      paddingVertical: 18,
+    },
 
-  priceText: {
-    width: '100%',
-    fontSize: 14,
-    color: '#374151',
-    textAlign: 'right',
-  },
+    stateText: {
+      color: colors.textMuted,
+      fontSize: 12,
+      fontFamily: 'NotoSans-Regular',
+    },
 
-  changePill: {
-    width: '100%',
-    minWidth: 0,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-  },
+    errorText: {
+      color: colors.negative,
+      fontSize: 12,
+      textAlign: 'center',
+      fontFamily: 'NotoSans-Regular',
+    },
 
-  changePillUp: {
-    backgroundColor: '#ECFDF3',
-    borderColor: '#B7E6C7',
-  },
+    paginationBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 12,
+      marginTop: 12,
+    },
 
-  changePillDown: {
-    backgroundColor: '#FEF2F2',
-    borderColor: '#F5C2C7',
-  },
+    pageBtn: {
+      minWidth: 98,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 14,
+      paddingVertical: 11,
+      borderRadius: 14,
+      backgroundColor: colors.textPrimary,
+    },
 
-  changePillFlat: {
-    backgroundColor: '#F3F4F6',
-    borderColor: '#E5E7EB',
-  },
+    pageBtnDisabled: {
+      backgroundColor: colors.surfaceAlt,
+    },
 
-  changePillText: {
-    fontSize: 12,
-  },
+    pageBtnText: {
+      fontSize: 12,
+      color: '#FFFFFF',
+      fontFamily: 'NotoSans-SemiBold',
+    },
 
-  changeTextUp: {
-    color: '#16A34A',
-  },
+    pageBtnTextDisabled: {
+      color: colors.textMuted,
+    },
 
-  changeTextDown: {
-    color: '#DC2626',
-  },
+    paginationCenter: {
+      flex: 1,
+      alignItems: 'center',
+    },
 
-  changeTextFlat: {
-    color: '#6B7280',
-  },
+    pageText: {
+      fontSize: 14,
+      color: colors.textPrimary,
+      marginBottom: 2,
+      fontFamily: 'NotoSans-SemiBold',
+    },
 
-  pagination: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 14,
-  },
-
-  pageBtn: {
-    backgroundColor: '#101828',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-
-  pageBtnDisabled: {
-    backgroundColor: '#D0D5DD',
-  },
-
-  pageBtnText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-  },
-
-  pageText: {
-    fontSize: 12,
-    color: '#667085',
-  },
-});
+    pageMeta: {
+      fontSize: 11,
+      color: colors.textMuted,
+      fontFamily: 'NotoSans-Regular',
+    },
+  });
 
 export default SectorDetailScreen;

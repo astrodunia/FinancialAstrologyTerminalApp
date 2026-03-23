@@ -56,7 +56,7 @@ const AppNavigation = () => {
        <NavigationContainer linking={linking}>
           <Stack.Navigator
             key={token ? 'app-stack' : 'auth-stack'}
-            screenOptions={{ headerShown: false }}
+            screenOptions={{ headerShown: false, animation: 'none' }}
           >
             {token ? (
               <>

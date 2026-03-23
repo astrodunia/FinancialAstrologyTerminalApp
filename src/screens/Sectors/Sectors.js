@@ -1,60 +1,33 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import {
-  ArrowLeft,
-  Crown,
-  BarChart3,
-  Layers3,
-  Sprout,
-  ChevronRight,
-} from 'lucide-react-native';
+import { ChevronRight } from 'lucide-react-native';
 import AppText from '../../components/AppText';
 import BottomTabs from '../../components/BottomTabs';
 import GradientBackground from '../../components/GradientBackground';
-import { SECTORS } from '../../data/sectors/sectorConfig';
-
-const marketCaps = [
-  {
-    key: 'mega',
-    title: 'Mega Cap',
-    subtitle: '~$200B+',
-    icon: Crown,
-    color: '#EAB308',
-  },
-  {
-    key: 'large',
-    title: 'Large Cap',
-    subtitle: '~$10B–$200B',
-    icon: BarChart3,
-    color: '#5B7CFA',
-  },
-  {
-    key: 'mid',
-    title: 'Mid Cap',
-    subtitle: '~$2B–$10B',
-    icon: Layers3,
-    color: '#28C7A1',
-  },
-  {
-    key: 'small',
-    title: 'Small Cap',
-    subtitle: '~<$2B',
-    icon: Sprout,
-    color: '#7C8596',
-  },
-];
-
-const goBackOrFallback = (navigation, fallbackScreen) => {
-  if (navigation.canGoBack()) {
-    navigation.goBack();
-    return;
-  }
-
-  navigation.navigate(fallbackScreen);
-};
+import HomeHeader from '../../components/HomeHeader';
+import { SECTOR_COLLECTION } from '../../data/sectors/sectorUniverse';
+import { useUser } from '../../store/UserContext';
+import { MAIN_TAB_ROUTES, useHorizontalSwipe } from '../../navigation/useHorizontalSwipe';
 
 const SectorHubScreen = ({ navigation }) => {
-  const styles = createStyles();
+  const { theme, themeColors, user } = useUser();
+  const styles = createStyles(themeColors, theme);
+  const [searchQuery, setSearchQuery] = useState('');
+  const profileName = user?.displayName || user?.name || 'Trader';
+  const swipeHandlers = useHorizontalSwipe(MAIN_TAB_ROUTES, 'Sectors', (route) => navigation.navigate(route));
+
+  const visibleSectors = useMemo(() => {
+    const normalized = searchQuery.trim().toLowerCase();
+    if (!normalized) return SECTOR_COLLECTION;
+
+    return SECTOR_COLLECTION.filter((item) => {
+      return (
+        item.name.toLowerCase().includes(normalized) ||
+        item.apiSectorName.toLowerCase().includes(normalized) ||
+        item.tickers.some((ticker) => ticker.toLowerCase().includes(normalized))
+      );
+    });
+  }, [searchQuery]);
 
   const openSector = (sector) => {
     navigation.navigate('SectorDetail', {
@@ -62,44 +35,25 @@ const SectorHubScreen = ({ navigation }) => {
     });
   };
 
-  const openMarketCap = (cap) => {
-    navigation.navigate('MarketCapDetail', {
-      marketCap: cap.key,
-      title: cap.title,
-    });
-  };
-
   return (
-    <View style={styles.safeArea}>
+    <View style={styles.safeArea} {...swipeHandlers}>
       <GradientBackground>
         <View style={styles.screen}>
-          <View style={styles.header}>
-            <View style={styles.headerLeft}>
-              <Pressable
-                style={styles.backButton}
-                hitSlop={10}
-                onPress={() => goBackOrFallback(navigation, 'Home')}
-              >
-                <ArrowLeft size={18} color="#344054" />
-              </Pressable>
-              <View>
-                <AppText style={styles.headerTitle}>Sectors</AppText>
-                <AppText style={styles.headerSub}>
-                  Tap a sector to view tickers, charts, and insights.
-                </AppText>
-              </View>
-            </View>
-          </View>
+          <HomeHeader
+            themeColors={themeColors}
+            profileName={profileName}
+            searchQuery={searchQuery}
+            onChangeSearchQuery={setSearchQuery}
+            onPressProfile={() => navigation.navigate('Profile')}
+            onPressGlobalIndices={() => navigation.navigate('GlobalIndices')}
+          />
 
           <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
             <View style={styles.section}>
-              <AppText style={styles.sectionTitle}>Sectors</AppText>
-              <AppText style={styles.sectionSub}>
-                Browse all sector dashboards in a mobile-friendly view.
-              </AppText>
+              <View style={styles.sectionHeaderRow} />
 
               <View style={styles.grid}>
-                {SECTORS.map((item) => {
+                {visibleSectors.map((item) => {
                   const Icon = item.icon;
 
                   return (
@@ -108,54 +62,79 @@ const SectorHubScreen = ({ navigation }) => {
                       style={styles.card}
                       onPress={() => openSector(item)}
                     >
-                      <View style={[styles.iconWrap, { backgroundColor: item.color }]}>
-                        <Icon size={18} color="#FFFFFF" />
+                      <View style={styles.cardGlow} />
+                      <View style={[styles.cardOrb, { backgroundColor: item.color }]} />
+
+                      <View style={styles.cardTopRow}>
+                        <View style={styles.cardTitleRow}>
+                          <View style={[styles.iconWrap, { backgroundColor: item.color }]}>
+                            <Icon size={18} color="#FFFFFF" />
+                          </View>
+
+                          <View style={styles.titleBlock}>
+                            <AppText style={styles.cardTitle}>
+                              {item.name}
+                            </AppText>
+                            <AppText style={styles.cardSub}>
+                              {item.apiSectorName}
+                            </AppText>
+                          </View>
+                        </View>
+
+                        <View style={styles.cardCountBadge}>
+                          <AppText style={styles.cardCountText}>
+                            {item.count} stocks
+                          </AppText>
+                        </View>
                       </View>
 
-                      <View style={styles.cardBody}>
-                        <AppText style={styles.cardTitle}>{item.name}</AppText>
-                        <AppText style={styles.cardSub}>{item.subtitle}</AppText>
+                      <View style={styles.metricRow}>
+                        <View style={styles.metricPill}>
+                          <AppText style={styles.metricLabel}>Universe</AppText>
+                          <AppText style={styles.metricValue}>
+                            {item.count}
+                          </AppText>
+                        </View>
+
+                        <View style={styles.metricPill}>
+                          <AppText style={styles.metricLabel}>Pages</AppText>
+                          <AppText style={styles.metricValue}>
+                            {item.totalPages}
+                          </AppText>
+                        </View>
                       </View>
 
-                      <View style={styles.arrowWrap}>
-                        <ChevronRight size={16} color="#98A2B3" />
+                      <View style={styles.previewRow}>
+                        {item.preview.map((ticker) => (
+                          <View key={ticker} style={styles.previewChip}>
+                            <AppText style={styles.previewChipText}>
+                              {ticker}
+                            </AppText>
+                          </View>
+                        ))}
+                      </View>
+
+                      <View style={styles.cardFooter}>
+                        <AppText style={styles.cardFooterText}>
+                          Browse sector
+                        </AppText>
+                        <ChevronRight size={18} color={themeColors.textPrimary} />
                       </View>
                     </Pressable>
                   );
                 })}
               </View>
-            </View>
 
-            <View style={styles.section}>
-              <AppText style={styles.sectionTitle}>Market Cap</AppText>
-              <AppText style={styles.sectionSub}>
-                Jump to universes by size: mega, large, mid, or small cap.
-              </AppText>
-
-              <View style={styles.marketCapGrid}>
-                {marketCaps.map((item) => {
-                  const Icon = item.icon;
-
-                  return (
-                    <Pressable
-                      key={item.key}
-                      style={styles.capCard}
-                      onPress={() => openMarketCap(item)}
-                    >
-                      <View style={[styles.capIconWrap, { backgroundColor: item.color }]}>
-                        <Icon size={16} color="#FFFFFF" />
-                      </View>
-
-                      <AppText style={styles.capTitle}>{item.title}</AppText>
-                      <AppText style={styles.capSub}>{item.subtitle}</AppText>
-
-                      <View style={styles.capArrow}>
-                        <ChevronRight size={14} color="#98A2B3" />
-                      </View>
-                    </Pressable>
-                  );
-                })}
-              </View>
+              {!visibleSectors.length ? (
+                <View style={styles.emptyState}>
+                  <AppText style={styles.emptyTitle}>
+                    No sectors found
+                  </AppText>
+                  <AppText style={styles.emptyText}>
+                    Search by sector name or ticker from the header.
+                  </AppText>
+                </View>
+              ) : null}
             </View>
           </ScrollView>
 
@@ -166,174 +145,249 @@ const SectorHubScreen = ({ navigation }) => {
   );
 };
 
-const createStyles = () =>
+const createStyles = (colors, theme) =>
   StyleSheet.create({
     safeArea: {
       flex: 1,
-      backgroundColor: '#F8FAFC',
+      backgroundColor: colors.background,
     },
 
     screen: {
       flex: 1,
-      backgroundColor: '#F8FAFC',
-    },
-
-    header: {
-      paddingHorizontal: 16,
-      paddingTop: 20,
-      paddingBottom: 12,
-      borderBottomWidth: 1,
-      borderBottomColor: '#EAECF0',
-      backgroundColor: '#F8FAFC',
-    },
-
-    headerLeft: {
-      flexDirection: 'row',
-      alignItems: 'flex-start',
-    },
-
-    backButton: {
-      width: 34,
-      height: 34,
-      borderRadius: 10,
-      backgroundColor: '#FFFFFF',
-      borderWidth: 1,
-      borderColor: '#EAECF0',
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginRight: 10,
-      marginTop: 2,
-    },
-
-    headerTitle: {
-      fontSize: 22,
-      color: '#1D2939',
-      fontWeight: '800',
-      marginBottom: 2,
-    },
-
-    headerSub: {
-      fontSize: 13,
-      color: '#667085',
-      lineHeight: 20,
-      maxWidth: 290,
     },
 
     content: {
-      paddingHorizontal: 14,
-      paddingTop: 16,
+      paddingHorizontal: 16,
+      paddingTop: 12,
       paddingBottom: 120,
     },
 
     section: {
-      marginBottom: 26,
+      marginBottom: 24,
+    },
+
+    sectionHeaderRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 10,
+      marginBottom: 14,
     },
 
     sectionTitle: {
-      fontSize: 18,
-      color: '#1D2939',
-      fontWeight: '800',
-      marginBottom: 4,
+      fontFamily: 'NotoSans-ExtraBold',
+      fontSize: 16,
+      lineHeight: 20,
+      color: colors.textPrimary,
     },
 
-    sectionSub: {
-      fontSize: 13,
-      color: '#667085',
-      lineHeight: 20,
-      marginBottom: 14,
+    sectionMeta: {
+      fontFamily: 'NotoSans-Medium',
+      fontSize: 11,
+      lineHeight: 14,
+      color: colors.textMuted,
     },
 
     grid: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      justifyContent: 'space-between',
+      gap: 14,
     },
 
     card: {
-      width: '48.2%',
-      minHeight: 144,
-      backgroundColor: '#FFFFFF',
-      borderRadius: 18,
+      position: 'relative',
+      overflow: 'hidden',
+      borderRadius: 24,
+      paddingHorizontal: 14,
+      paddingTop: 14,
+      paddingBottom: 12,
       borderWidth: 1,
-      borderColor: '#EEF2F6',
-      padding: 14,
-      marginBottom: 12,
+      borderColor: colors.border,
+      backgroundColor: theme === 'dark' ? 'rgba(14,17,25,0.95)' : 'rgba(255,255,255,0.95)',
+      shadowColor: '#000000',
+      shadowOpacity: theme === 'dark' ? 0.22 : 0.08,
+      shadowRadius: 18,
+      shadowOffset: { width: 0, height: 10 },
+      elevation: 5,
+    },
+
+    cardGlow: {
+      position: 'absolute',
+      top: -24,
+      right: -18,
+      width: 110,
+      height: 110,
+      borderRadius: 55,
+      backgroundColor: colors.accent,
+      opacity: theme === 'dark' ? 0.08 : 0.05,
+    },
+
+    cardOrb: {
+      position: 'absolute',
+      bottom: -24,
+      right: -16,
+      width: 76,
+      height: 76,
+      borderRadius: 38,
+      opacity: theme === 'dark' ? 0.12 : 0.08,
+    },
+
+    cardTopRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
       justifyContent: 'space-between',
+      gap: 10,
+      marginBottom: 12,
+    },
+
+    cardTitleRow: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 10,
+      paddingRight: 6,
+    },
+
+    titleBlock: {
+      flex: 1,
+      minWidth: 0,
     },
 
     iconWrap: {
-      width: 42,
-      height: 42,
-      borderRadius: 21,
+      width: 46,
+      height: 46,
+      borderRadius: 15,
       alignItems: 'center',
       justifyContent: 'center',
-      marginBottom: 14,
+      shadowColor: '#000000',
+      shadowOpacity: 0.14,
+      shadowRadius: 10,
+      shadowOffset: { width: 0, height: 4 },
+      elevation: 2,
     },
 
-    cardBody: {
-      flex: 1,
+    cardCountBadge: {
+      paddingHorizontal: 9,
+      paddingVertical: 6,
+      borderRadius: 999,
+      backgroundColor: theme === 'dark' ? 'rgba(255,255,255,0.055)' : 'rgba(13,27,42,0.035)',
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+
+    cardCountText: {
+      fontFamily: 'NotoSans-Medium',
+      fontSize: 10,
+      lineHeight: 12,
+      color: colors.textMuted,
     },
 
     cardTitle: {
+      fontFamily: 'NotoSans-ExtraBold',
       fontSize: 15,
-      color: '#101828',
-      fontWeight: '700',
-      marginBottom: 4,
+      lineHeight: 18,
+      color: colors.textPrimary,
+      marginBottom: 3,
     },
 
     cardSub: {
+      fontFamily: 'NotoSans-Medium',
+      fontSize: 11,
+      lineHeight: 16,
+      color: colors.textMuted,
+    },
+
+    metricRow: {
+      flexDirection: 'row',
+      gap: 8,
+      marginBottom: 12,
+    },
+
+    metricPill: {
+      flex: 1,
+      borderRadius: 14,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: theme === 'dark' ? 'rgba(255,255,255,0.04)' : 'rgba(13,27,42,0.03)',
+    },
+
+    metricLabel: {
+      fontFamily: 'NotoSans-Medium',
+      fontSize: 10,
+      lineHeight: 12,
+      color: colors.textMuted,
+      textTransform: 'uppercase',
+      letterSpacing: 0.6,
+      marginBottom: 2,
+    },
+
+    metricValue: {
+      fontFamily: 'NotoSans-SemiBold',
       fontSize: 12,
-      color: '#667085',
-      lineHeight: 18,
+      lineHeight: 15,
+      color: colors.textPrimary,
     },
 
-    arrowWrap: {
-      alignSelf: 'flex-end',
-      marginTop: 10,
-    },
-
-    marketCapGrid: {
+    previewRow: {
       flexDirection: 'row',
       flexWrap: 'wrap',
-      justifyContent: 'space-between',
+      gap: 6,
+      marginBottom: 12,
     },
 
-    capCard: {
-      width: '48.2%',
-      backgroundColor: '#FFFFFF',
-      borderRadius: 18,
+    previewChip: {
+      paddingHorizontal: 8,
+      paddingVertical: 6,
+      borderRadius: 999,
+      backgroundColor: theme === 'dark' ? 'rgba(255,255,255,0.045)' : 'rgba(13,27,42,0.04)',
       borderWidth: 1,
-      borderColor: '#EEF2F6',
-      padding: 14,
-      marginBottom: 12,
-      minHeight: 118,
+      borderColor: colors.border,
     },
 
-    capIconWrap: {
-      width: 38,
-      height: 38,
-      borderRadius: 19,
+    previewChipText: {
+      fontFamily: 'NotoSans-Medium',
+      fontSize: 10,
+      lineHeight: 12,
+      color: colors.textPrimary,
+    },
+
+    cardFooter: {
+      flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'center',
-      marginBottom: 12,
+      justifyContent: 'space-between',
+      paddingTop: 6,
     },
 
-    capTitle: {
+    cardFooterText: {
+      fontFamily: 'NotoSans-SemiBold',
+      fontSize: 11,
+      lineHeight: 14,
+      color: colors.textPrimary,
+      letterSpacing: 0.2,
+    },
+
+    emptyState: {
+      marginTop: 12,
+      padding: 20,
+      borderRadius: 22,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: theme === 'dark' ? 'rgba(18,22,30,0.72)' : 'rgba(255,255,255,0.8)',
+    },
+
+    emptyTitle: {
+      fontFamily: 'NotoSans-SemiBold',
       fontSize: 15,
-      color: '#101828',
-      fontWeight: '700',
+      lineHeight: 18,
+      color: colors.textPrimary,
       marginBottom: 4,
     },
 
-    capSub: {
-      fontSize: 12,
-      color: '#667085',
-      lineHeight: 18,
-    },
-
-    capArrow: {
-      alignSelf: 'flex-end',
-      marginTop: 8,
+    emptyText: {
+      fontFamily: 'NotoSans-Regular',
+      fontSize: 13,
+      lineHeight: 20,
+      color: colors.textMuted,
     },
   });
 

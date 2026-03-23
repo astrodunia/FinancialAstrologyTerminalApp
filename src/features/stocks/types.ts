@@ -101,6 +101,16 @@ export interface StockAlert {
   raw: Record<string, unknown>;
 }
 
+export interface TickerSearchItem {
+  symbol: string;
+  name: string;
+  exchange: string;
+  type: string;
+  market: string;
+  active: boolean | null;
+  raw: Record<string, unknown>;
+}
+
 export interface FundamentalsBundle {
   info: StockInfo | null;
   balanceSheet: Record<string, unknown>[];

@@ -10,6 +10,10 @@ import {
   FlaskConical,
   Building2,
   Zap,
+  Crown,
+  BarChart3,
+  Layers3,
+  Sprout,
 } from 'lucide-react-native';
 
 export const SECTORS = [
@@ -100,6 +104,38 @@ export const SECTORS = [
     subtitle: 'Utilities dashboard',
     icon: Zap,
     color: '#EAB308',
+  },
+  {
+    name: 'Mega Cap',
+    slug: 'mega-cap',
+    apiSectorName: 'Mega Cap',
+    subtitle: 'Mega Cap dashboard',
+    icon: Crown,
+    color: '#F5B700',
+  },
+  {
+    name: 'Large Cap',
+    slug: 'large-cap',
+    apiSectorName: 'Large Cap',
+    subtitle: 'Large Cap dashboard',
+    icon: BarChart3,
+    color: '#4F7CFF',
+  },
+  {
+    name: 'Mid Cap',
+    slug: 'mid-cap',
+    apiSectorName: 'Mid Cap',
+    subtitle: 'Mid Cap dashboard',
+    icon: Layers3,
+    color: '#2BC9A5',
+  },
+  {
+    name: 'Small Cap',
+    slug: 'small-cap',
+    apiSectorName: 'Small Cap',
+    subtitle: 'Small Cap dashboard',
+    icon: Sprout,
+    color: '#FB7185',
   },
 ];
 

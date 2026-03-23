@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { Globe, Search, Sparkles, UserCircle2 } from 'lucide-react-native';
 import AppText from './AppText';
@@ -161,6 +161,90 @@ const createStyles = (colors) =>
       color: colors.textPrimary,
       fontFamily: FONT.semiBold,
     },
+
+    searchResultsCard: {
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+      overflow: 'hidden',
+    },
+
+    searchResultRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 10,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: colors.border,
+    },
+
+    searchResultRowFirst: {
+      borderTopWidth: 0,
+    },
+
+    searchResultMain: {
+      flex: 1,
+      minWidth: 0,
+      gap: 3,
+    },
+
+    searchResultSymbol: {
+      fontSize: 15,
+      color: colors.textPrimary,
+      fontFamily: FONT.semiBold,
+    },
+
+    searchResultName: {
+      fontSize: 11,
+      color: colors.textMuted,
+      fontFamily: FONT.regular,
+    },
+
+    searchResultMeta: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'flex-end',
+      gap: 6,
+      flexShrink: 0,
+    },
+
+    searchMetaChip: {
+      minWidth: 34,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceAlt,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+
+    searchMetaChipText: {
+      fontSize: 10,
+      color: colors.textPrimary,
+      fontFamily: FONT.semiBold,
+    },
+
+    searchStateRow: {
+      paddingHorizontal: 12,
+      paddingVertical: 12,
+    },
+
+    searchStateText: {
+      fontSize: 11,
+      color: colors.textMuted,
+      fontFamily: FONT.medium,
+    },
+
+    searchErrorText: {
+      fontSize: 11,
+      color: colors.negative,
+      fontFamily: FONT.medium,
+    },
   });
 
 export default function HomeHeader({
@@ -170,9 +254,27 @@ export default function HomeHeader({
   onChangeSearchQuery,
   onPressProfile,
   onPressGlobalIndices,
+  searchResults = [],
+  searchLoading = false,
+  searchError = '',
+  showSearchResults = false,
+  onPressSearchResult,
+  onSubmitSearch,
 }) {
   const styles = useMemo(() => createStyles(themeColors), [themeColors]);
   const displayName = profileName || 'Trader';
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const blurTimeoutRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (blurTimeoutRef.current) {
+        clearTimeout(blurTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const shouldShowSearchPanel = isSearchFocused && showSearchResults;
 
   return (
     <View style={styles.header}>
@@ -205,7 +307,21 @@ export default function HomeHeader({
           <AppTextInput
             value={searchQuery}
             onChangeText={onChangeSearchQuery}
-            placeholder="Search top 20 stocks"
+            onFocus={() => {
+              if (blurTimeoutRef.current) {
+                clearTimeout(blurTimeoutRef.current);
+              }
+              setIsSearchFocused(true);
+            }}
+            onBlur={() => {
+              blurTimeoutRef.current = setTimeout(() => {
+                setIsSearchFocused(false);
+              }, 120);
+            }}
+            onSubmitEditing={() => onSubmitSearch?.()}
+            autoCapitalize="characters"
+            autoCorrect={false}
+            placeholder="Search stocks or companies"
             placeholderTextColor={themeColors.textMuted}
             style={styles.searchInput}
           />
@@ -216,6 +332,61 @@ export default function HomeHeader({
           <AppText style={styles.secondaryButtonText}>Indices</AppText>
         </Pressable>
       </View>
+
+      {shouldShowSearchPanel ? (
+        <View style={styles.searchResultsCard}>
+          {searchLoading ? (
+            <View style={styles.searchStateRow}>
+              <AppText style={styles.searchStateText}>Loading...</AppText>
+            </View>
+          ) : null}
+
+          {!searchLoading && searchError ? (
+            <View style={styles.searchStateRow}>
+              <AppText style={styles.searchErrorText}>{searchError}</AppText>
+            </View>
+          ) : null}
+
+          {!searchLoading && !searchError && !searchResults.length ? (
+            <View style={styles.searchStateRow}>
+              <AppText style={styles.searchStateText}>No matches found</AppText>
+            </View>
+          ) : null}
+
+          {!searchLoading && !searchError
+            ? searchResults.map((item, index) => (
+                <Pressable
+                  key={`${item.symbol}-${index}`}
+                  style={[styles.searchResultRow, index === 0 && styles.searchResultRowFirst]}
+                  onPress={() => {
+                    setIsSearchFocused(false);
+                    onPressSearchResult?.(item);
+                  }}
+                >
+                  <View style={styles.searchResultMain}>
+                    <AppText style={styles.searchResultSymbol}>{item.symbol}</AppText>
+                    <AppText style={styles.searchResultName} numberOfLines={1}>
+                      {item.name || item.exchange || item.type || 'Open ticker'}
+                    </AppText>
+                  </View>
+
+                  <View style={styles.searchResultMeta}>
+                    {item.type ? (
+                      <View style={styles.searchMetaChip}>
+                        <AppText style={styles.searchMetaChipText}>{item.type}</AppText>
+                      </View>
+                    ) : null}
+                    {item.exchange ? (
+                      <View style={styles.searchMetaChip}>
+                        <AppText style={styles.searchMetaChipText}>{item.exchange}</AppText>
+                      </View>
+                    ) : null}
+                  </View>
+                </Pressable>
+              ))
+            : null}
+        </View>
+      ) : null}
     </View>
   );
 }

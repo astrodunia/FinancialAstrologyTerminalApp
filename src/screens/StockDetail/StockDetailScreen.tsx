@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -10,10 +10,9 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import Svg, { Defs, LinearGradient, Line, Path, Polyline, Rect, Stop } from 'react-native-svg';
+import Svg, { Defs, LinearGradient, Line, Path, Stop } from 'react-native-svg';
 import {
   Activity,
-  ArrowUpRight,
   BarChart3,
   Bell,
   Bookmark,
@@ -32,12 +31,12 @@ import {
 } from 'lucide-react-native';
 import AppText from '../../components/AppText';
 import GradientBackground from '../../components/GradientBackground';
+import { useHorizontalSwipe } from '../../navigation/useHorizontalSwipe';
 import { useUser } from '../../store/UserContext';
 import {
   CHART_TIMEFRAME_OPTIONS,
   DEFAULT_CHART_TIMEFRAME,
   DEFAULT_STOCK_TAB,
-  buildStockDetailPath,
   normalizeChartTimeframe,
   normalizeStockSymbol,
   normalizeStockTab,
@@ -83,20 +82,6 @@ const formatCurrency = (value: number | null, currency = 'USD') => {
     }).format(value);
   } catch {
     return `${currency || '$'} ${value.toFixed(2)}`;
-  }
-};
-
-const formatCompactCurrency = (value: number | null, currency = 'USD') => {
-  if (value == null || Number.isNaN(value)) return '--';
-  try {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: currency || 'USD',
-      notation: 'compact',
-      maximumFractionDigits: 2,
-    }).format(value);
-  } catch {
-    return formatCompact(value);
   }
 };
 
@@ -154,23 +139,6 @@ const chartPath = (points: StockHistoryPoint[], width: number, height: number) =
     .join(' ');
 };
 
-const chartPolyline = (points: StockHistoryPoint[], width: number, height: number) => {
-  if (!points.length) return '';
-  const values = points.map((item) => item.value);
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const range = max - min || 1;
-  const step = points.length === 1 ? 0 : width / (points.length - 1);
-
-  return points
-    .map((point, index) => {
-      const x = index * step;
-      const y = height - ((point.value - min) / range) * height;
-      return `${x.toFixed(2)},${y.toFixed(2)}`;
-    })
-    .join(' ');
-};
-
 const downsampleHistoryForChart = (points: StockHistoryPoint[] | null, timeframe: string) => {
   if (!points?.length) return [];
 
@@ -199,45 +167,6 @@ const downsampleHistoryForChart = (points: StockHistoryPoint[] | null, timeframe
   return sampled;
 };
 
-const toMetrics = (info: StockInfo | null, company: CompanyProfile | null) => [
-  { label: 'Exchange', value: info?.exchange || company?.exchange || '--' },
-  { label: 'Sector', value: info?.sector || company?.sector || '--' },
-  { label: 'Industry', value: info?.industry || company?.industry || '--' },
-  { label: 'Market Cap', value: formatCompact(info?.marketCap ?? null) },
-  {
-    label: 'Day Range',
-    value:
-      info?.regularMarketDayLow != null && info?.regularMarketDayHigh != null
-        ? `${formatCurrency(info.regularMarketDayLow, info.currency)} - ${formatCurrency(
-            info.regularMarketDayHigh,
-            info.currency,
-          )}`
-        : '--',
-  },
-  {
-    label: '52W Range',
-    value:
-      info?.fiftyTwoWeekLow != null && info?.fiftyTwoWeekHigh != null
-        ? `${formatCurrency(info.fiftyTwoWeekLow, info.currency)} - ${formatCurrency(
-            info.fiftyTwoWeekHigh,
-            info.currency,
-          )}`
-        : '--',
-  },
-  { label: 'Volume', value: formatCompact(info?.regularMarketVolume ?? null) },
-  { label: 'Avg Volume', value: formatCompact(info?.averageDailyVolume3Month ?? null) },
-  { label: 'P/E', value: info?.trailingPE != null ? info.trailingPE.toFixed(2) : '--' },
-  { label: 'Dividend Yield', value: formatPercent(info?.dividendYield ?? null) },
-  {
-    label: 'Analyst Target',
-    value: info?.targetMeanPrice != null ? formatCurrency(info.targetMeanPrice, info.currency) : '--',
-  },
-  {
-    label: 'Analyst Count',
-    value: info?.numberOfAnalystOpinions != null ? `${info.numberOfAnalystOpinions}` : '--',
-  },
-];
-
 const OverviewTab = ({
   info,
   company,
@@ -259,7 +188,6 @@ const OverviewTab = ({
   const isOpen =
     (info?.marketState || '').toLowerCase().includes('regular') || (info?.marketState || '').toLowerCase() === 'open';
   const change = info?.regularMarketChange;
-  const changePct = info?.regularMarketChangePercent;
   const isUp = (change ?? 0) >= 0;
   const chartColor = isUp ? themeColors.positive : themeColors.negative;
   const updatedAt = sparkline?.[sparkline.length - 1]?.timestamp
@@ -794,7 +722,7 @@ const humanizeFieldLabel = (value: string) =>
     .trim()
     .replace(/\b\w/g, (char) => char.toUpperCase());
 
-const formatFundamentalValue = (key: string, value: unknown, currency?: string) => {
+const formatFundamentalValue = (key: string, value: unknown, _currency?: string) => {
   if (value == null) return '--';
   if (typeof value === 'number') {
     if (!Number.isFinite(value)) return '--';
@@ -1448,12 +1376,6 @@ const AlertsTab = ({
   );
 };
 
-const Sparkline = ({ points, color }: { points: StockHistoryPoint[]; color: string }) => (
-  <Svg width="100%" height={90} viewBox="0 0 320 90">
-    <Polyline fill="none" stroke={color} strokeWidth={3} points={chartPolyline(points, 320, 82)} strokeLinejoin="round" strokeLinecap="round" />
-  </Svg>
-);
-
 const buildAreaPath = (points: StockHistoryPoint[], width: number, height: number) => {
   if (!points.length) return '';
   const line = chartPath(points, width, height);
@@ -1470,6 +1392,8 @@ const MainChart = ({
   color: string;
   tall?: boolean;
 }) => {
+  const { themeColors } = useUser() as any;
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
   const { width } = useWindowDimensions();
   const chartWidth = Math.max(width - 72, 240);
   const chartHeight = tall ? 372 : 292;
@@ -1504,47 +1428,11 @@ const MainChart = ({
         <Path d={areaPath} fill="url(#chartAreaGradient)" />
         <Path d={path} fill="none" stroke={softenedColor} strokeOpacity={0.92} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
       </Svg>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 }}>
-        <AppText style={{ fontSize: 11, color: '#94A3B8', fontFamily: FONT.regular }}>{formatCurrency(min)}</AppText>
-        <AppText style={{ fontSize: 11, color: '#94A3B8', fontFamily: FONT.regular }}>{formatCurrency(max)}</AppText>
+      <View style={styles.chartLegendRow}>
+        <AppText style={styles.chartLegendText}>{formatCurrency(min)}</AppText>
+        <AppText style={styles.chartLegendText}>{formatCurrency(max)}</AppText>
       </View>
     </View>
-  );
-};
-
-const BarsPreview = ({ rows, color }: { rows: Record<string, unknown>[]; color: string }) => {
-  const usable = rows
-    .slice(0, 5)
-    .map((row, index) => {
-      const key = findFirstNumericKey([row]);
-      const value = typeof row[key] === 'number' ? row[key] : Number(row[key]);
-      return {
-        label: String(row.period || row.date || row.year || index + 1),
-        value: Number.isFinite(value) ? value : 0,
-      };
-    })
-    .filter((item) => Number.isFinite(item.value));
-
-  if (!usable.length) return null;
-
-  const max = Math.max(...usable.map((item) => item.value), 1);
-
-  return (
-    <Svg width="100%" height={180} viewBox="0 0 320 180">
-      {usable.map((item, index) => {
-        const barWidth = 34;
-        const gap = 24;
-        const x = 18 + index * (barWidth + gap);
-        const height = (item.value / max) * 110;
-        const y = 130 - height;
-
-        return (
-          <React.Fragment key={item.label}>
-            <Rect x={x} y={y} width={barWidth} height={height} rx={8} fill={color} />
-          </React.Fragment>
-        );
-      })}
-    </Svg>
   );
 };
 
@@ -1657,6 +1545,10 @@ const StockDetailScreen = ({ route }: any) => {
     () => ['overview', 'chart', 'fundamentals', 'news', ...(token ? ['alerts'] : [])],
     [token],
   );
+  const handleTabChange = useCallback((nextTab: string) => {
+    setActiveTab(nextTab);
+  }, []);
+  const tabSwipeHandlers = useHorizontalSwipe(visibleTabs, activeTab, handleTabChange);
 
   return (
     <View style={styles.screen}>
@@ -1707,7 +1599,12 @@ const StockDetailScreen = ({ route }: any) => {
           })}
         </ScrollView>
 
-        <ScrollView style={styles.contentScroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          style={styles.contentScroll}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          {...tabSwipeHandlers}
+        >
           <View key={`${symbol}-${activeTab}-${activeTab === 'chart' ? chartTimeframe : 'base'}`}>
             <TabContent
               activeTab={activeTab}
@@ -1830,6 +1727,16 @@ const createStyles = (colors: Record<string, string>) =>
     },
     contentScroll: {
       flex: 1,
+    },
+    chartLegendRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      marginTop: 6,
+    },
+    chartLegendText: {
+      fontSize: 11,
+      color: '#94A3B8',
+      fontFamily: FONT.regular,
     },
     scrollContent: {
       paddingHorizontal: 10,

@@ -20,6 +20,8 @@ const TABS = [
   { label: 'Calculators', route: 'Calculators', icon: Calculator },
 ];
 
+export const FOOTER_TAB_ROUTES = TABS.map((item) => item.route);
+
 const BottomTabs = ({ activeRoute, navigation }) => {
   const { themeColors } = useUser();
   const styles = createStyles(themeColors);
