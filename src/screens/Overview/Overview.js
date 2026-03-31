@@ -8,22 +8,25 @@ import {
   ScrollView,
   StatusBar,
   StyleSheet,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import {
-  ArrowDownRight,
-  ArrowUpRight,
+  Activity,
+  Info,
   MoonStar,
   RefreshCcw,
   UserCircle,
 } from 'lucide-react-native';
+import Svg, { Defs, LinearGradient, Line, Rect, Stop, Text as SvgText } from 'react-native-svg';
 import AppText from '../../components/AppText';
 import BottomTabs from '../../components/BottomTabs';
 import GradientBackground from '../../components/GradientBackground';
-import { API_BASE_URL, useUser } from '../../store/UserContext';
+import { useUser } from '../../store/UserContext';
 import { MAIN_TAB_ROUTES, useHorizontalSwipe } from '../../navigation/useHorizontalSwipe';
 
 const LIVE_API_BASE = 'https://finance.rajeevprakash.com';
+const OVERVIEW_API_BASE = LIVE_API_BASE;
 const TICKER_SYMBOLS = ['MSFT', 'NVDA', 'GOOGL', 'AMZN', 'META', 'TSLA'];
 const MOVER_SYMBOLS = ['NVDA', 'META', 'TSLA', 'AVGO', 'PLTR', 'AMZN', 'MA', 'GOOGL'];
 
@@ -78,15 +81,33 @@ const PLANETARY_EVENTS = [
   },
 ];
 
+const mapObjectRowsWithSymbol = (record) => {
+  if (!record || typeof record !== 'object' || Array.isArray(record)) return [];
+
+  return Object.entries(record)
+    .map(([key, value]) => {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+      const row = value;
+      const hasSymbol = Boolean(row?.symbol || row?.ticker || row?.code || row?.instrument || row?.s);
+      if (hasSymbol) return row;
+      return {
+        ...row,
+        symbol: key,
+        ticker: key,
+      };
+    })
+    .filter(Boolean);
+};
+
 const toArray = (payload) => {
   if (Array.isArray(payload)) return payload;
   if (Array.isArray(payload?.data)) return payload.data;
   if (Array.isArray(payload?.items)) return payload.items;
   if (Array.isArray(payload?.result)) return payload.result;
-  if (payload?.data && typeof payload.data === 'object') return Object.values(payload.data);
+  if (payload?.data && typeof payload.data === 'object') return mapObjectRowsWithSymbol(payload.data);
   if (payload && typeof payload === 'object') {
     const vals = Object.values(payload);
-    if (vals.length && vals.every((v) => typeof v === 'object')) return vals;
+    if (vals.length && vals.every((v) => typeof v === 'object')) return mapObjectRowsWithSymbol(payload);
   }
   return [];
 };
@@ -107,6 +128,68 @@ const pctFromChange = (price, change) => {
   const prev = price - change;
   if (!prev) return null;
   return (change / prev) * 100;
+};
+
+const toEpochMs = (value) => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value < 1e12 ? value * 1000 : value;
+  if (typeof value === 'string') {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) return numeric < 1e12 ? numeric * 1000 : numeric;
+    const parsed = new Date(value).getTime();
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+};
+
+const extractHistoryPoints = (payload) => {
+  const source = payload?.data || payload || {};
+
+  const closeMap = source?.Close || source?.close;
+  if (closeMap && typeof closeMap === 'object' && !Array.isArray(closeMap)) {
+    return Object.entries(closeMap)
+      .map(([ts, closeValue]) => {
+        const timestamp = toEpochMs(ts);
+        const close = toNumber(closeValue);
+        if (timestamp == null || close == null) return null;
+        return { timestamp, close };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.timestamp - b.timestamp);
+  }
+
+  const timestamps = Array.isArray(source?.timestamp) ? source.timestamp : [];
+  const quote = Array.isArray(source?.indicators?.quote) ? source.indicators.quote[0] : source?.quote || {};
+  const closes = Array.isArray(quote?.close) ? quote.close : [];
+  if (timestamps.length && closes.length) {
+    return timestamps
+      .map((ts, idx) => {
+        const timestamp = toEpochMs(ts);
+        const close = toNumber(closes[idx]);
+        if (timestamp == null || close == null) return null;
+        return { timestamp, close };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.timestamp - b.timestamp);
+  }
+
+  const rows = toArray(source);
+  return rows
+    .map((row) => {
+      const timestamp = toEpochMs(row?.timestamp ?? row?.date ?? row?.datetime ?? row?.time);
+      const close = toNumber(row?.close ?? row?.adjclose ?? row?.value ?? row?.price);
+      if (timestamp == null || close == null) return null;
+      return { timestamp, close };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.timestamp - b.timestamp);
+};
+
+const calcReturnFromPoints = (points) => {
+  if (!Array.isArray(points) || points.length < 2) return null;
+  const first = points.find((point) => point?.close != null && point.close > 0);
+  const last = [...points].reverse().find((point) => point?.close != null && point.close > 0);
+  if (!first || !last || first.close <= 0) return null;
+  return ((last.close - first.close) / first.close) * 100;
 };
 
 
@@ -221,7 +304,7 @@ const fetchMarketRows = async (symbols, signal) => {
     return cp != null && Math.abs(cp) > 0.000001;
   }).length;
 
-  const batchUrl = `${LIVE_API_BASE}/api/market/indices?symbols=${unique.join(',')}`;
+  const batchUrl = `${OVERVIEW_API_BASE}/api/market/indices?symbols=${unique.join(',')}`;
   const batchRows = await parseRows(batchUrl);
 
   const matchedInBatch = unique.filter((sym) => !!findBySymbol(batchRows, sym)).length;
@@ -229,7 +312,7 @@ const fetchMarketRows = async (symbols, signal) => {
   if (batchLooksGood) return batchRows;
 
   const singles = await Promise.all(unique.map(async (sym) => {
-    const u = `${LIVE_API_BASE}/api/market/indices?symbols=${encodeURIComponent(sym)}`;
+    const u = `${OVERVIEW_API_BASE}/api/market/indices?symbols=${encodeURIComponent(sym)}`;
     return parseRows(u);
   }));
   const mergedPrimary = dedupRows([...batchRows, ...singles.flat()]);
@@ -265,6 +348,7 @@ const getUsSession = () => {
 
 const Overview = ({ navigation }) => {
   const { theme, themeColors } = useUser();
+  const { width: windowWidth } = useWindowDimensions();
   const isLight = theme === 'light';
   const styles = useMemo(() => createStyles(themeColors, isLight), [themeColors, isLight]);
   const swipeHandlers = useHorizontalSwipe(MAIN_TAB_ROUTES, 'Overview', (route) => navigation.navigate(route));
@@ -276,6 +360,8 @@ const Overview = ({ navigation }) => {
   const [session, setSession] = useState(() => getUsSession());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [isRefreshingBreadth, setIsRefreshingBreadth] = useState(false);
+  const [sectorChartViewportWidth, setSectorChartViewportWidth] = useState(0);
 
   const tickerAbortRef = useRef(null);
   const moversAbortRef = useRef(null);
@@ -316,31 +402,59 @@ const Overview = ({ navigation }) => {
       const rows = await fetchMarketRows(MOVER_SYMBOLS, ac.signal);
       if (!rows.length) throw new Error('Movers API failed');
 
-      const mapped = MOVER_SYMBOLS.map((symbol) => {
-        const match = findBySymbol(rows, symbol);
+      const mapRowToMover = (symbol, match) => {
+        if (!symbol || !match) return null;
         const rawName = match?.name ?? match?.shortName ?? match?.longName;
-        const company = typeof rawName === 'string' ? rawName : (COMPANY_FALLBACK[symbol] || `${symbol} Corp.`);
+        const fallbackCompany = COMPANY_FALLBACK[symbol] || `${symbol} Corp.`;
+        const rawCompany = typeof rawName === 'string' ? rawName.trim() : '';
+        const company =
+          rawCompany && normalizeSymbol(rawCompany) !== normalizeSymbol(symbol)
+            ? rawCompany
+            : fallbackCompany;
         const price = pickNumber(match, ['price','value','lastPrice','last','ltp','close','regularMarketPrice']);
         const change = pickNumber(match, ['priceChange','change','delta','regularMarketChange','netChange']);
         const cp = pickNumber(match, ['changePercent','percentChange','change_percentage','change_percent','pChange','regularMarketChangePercent','pct','percent']);
         const derivedPct = pctFromChange(price, change);
         const changePercent = (cp != null && Math.abs(cp) > 0.000001) ? cp : (derivedPct != null ? derivedPct : cp);
+        const marketCap = pickNumber(match, ['marketCap','mcap','market_cap','marketcap','mc','market_capitalization','cap']);
+        const volume = pickNumber(match, ['volume','vol','totalVolume','avgVolume','regularMarketVolume','total_volume','sharesTraded','avgVol','v']);
+        const hasSignal = changePercent != null || price != null || marketCap != null || volume != null;
+        if (!hasSignal) return null;
 
         return {
           symbol,
           company,
-          changePercent,
-          marketCap: pickNumber(match, ['marketCap','mcap','market_cap','marketcap','mc']),
-          volume: pickNumber(match, ['volume','vol','totalVolume','avgVolume','regularMarketVolume']),
+          changePercent: changePercent ?? 0,
+          marketCap,
+          volume,
         };
-      }).filter((item) => item.changePercent != null);
+      };
 
-      setMovers((prev) => (mapped.length ? mapped : prev).sort((a, b) => (b.changePercent || 0) - (a.changePercent || 0)).slice(0, 8));
+      const mappedPreferred = MOVER_SYMBOLS.map((symbol) => mapRowToMover(symbol, findBySymbol(rows, symbol))).filter(Boolean);
+      const mappedFallback = rows
+        .map((row) => {
+          const symbol = normalizeSymbol(row?.symbol || row?.ticker || row?.code || row?.index || row?.instrument || row?.s);
+          return mapRowToMover(symbol, row);
+        })
+        .filter(Boolean);
+
+      setMovers((prev) => {
+        const source = mappedPreferred.length ? mappedPreferred : mappedFallback.length ? mappedFallback : prev;
+        return [...source]
+          .sort((a, b) => (a.changePercent || 0) - (b.changePercent || 0))
+          .slice(0, 8)
+          .map((item) => ({
+            symbol: item.symbol,
+            company: item.company,
+            changePercent: item.changePercent ?? 0,
+            marketCap: item.marketCap,
+            volume: item.volume,
+          }));
+      });
       setError('');
     } catch (err) {
       if (String(err?.message || '').toLowerCase().includes('abort')) return;
       setError('Unable to load live movers right now.');
-      setMovers([]);
     }
   }, []);
 
@@ -351,8 +465,30 @@ const Overview = ({ navigation }) => {
 
     try {
       const symbols = SECTOR_META.map((item) => item.ticker);
-      const rows = await fetchMarketRows(symbols, ac.signal);
-      if (!rows.length) throw new Error('Sectors API failed');
+      const [rows, oneYearPerfPairs] = await Promise.all([
+        fetchMarketRows(symbols, ac.signal).catch(() => []),
+        Promise.all(
+          symbols.map(async (symbol) => {
+            try {
+              const historyUrl = `${OVERVIEW_API_BASE}/api/tagx/stocks/${encodeURIComponent(symbol)}/history?period=1y&interval=1d`;
+              const historyResponse = await fetch(historyUrl, {
+                signal: ac.signal,
+                headers: { Accept: 'application/json' },
+              });
+              if (!historyResponse.ok) return [symbol, null];
+              const historyPayload = await historyResponse.json().catch(() => null);
+              const perf = calcReturnFromPoints(extractHistoryPoints(historyPayload));
+              return [symbol, perf];
+            } catch {
+              return [symbol, null];
+            }
+          }),
+        ),
+      ]);
+      const oneYearPerfMap = new Map(oneYearPerfPairs);
+      if (!rows.length && ![...oneYearPerfMap.values()].some((value) => value != null)) {
+        throw new Error('Sectors API failed');
+      }
 
       setSectors((prev) => {
         const mapped = SECTOR_META.map((base) => {
@@ -361,9 +497,10 @@ const Overview = ({ navigation }) => {
           const change = pickNumber(match, ['priceChange','change','delta','regularMarketChange','netChange']);
           const cp = pickNumber(match, ['changePercent','percentChange','change_percentage','change_percent','pChange','regularMarketChangePercent','pct','percent']);
           const derivedPct = pctFromChange(price, change);
-        const perf = (cp != null && Math.abs(cp) > 0.000001) ? cp : (derivedPct != null ? derivedPct : cp);
+          const intradayPerf = (cp != null && Math.abs(cp) > 0.000001) ? cp : (derivedPct != null ? derivedPct : cp);
+          const oneYearPerf = oneYearPerfMap.get(base.ticker);
           const prevItem = prev.find((s) => s.ticker === base.ticker);
-          const resolved = perf != null ? perf : (prevItem?.perf ?? 0);
+          const resolved = oneYearPerf != null ? oneYearPerf : (intradayPerf != null ? intradayPerf : (prevItem?.perf ?? 0));
           return {
             ...base,
             perf: resolved,
@@ -382,24 +519,47 @@ const Overview = ({ navigation }) => {
     breadthAbortRef.current?.abort();
     const ac = new AbortController();
     breadthAbortRef.current = ac;
+    setIsRefreshingBreadth(true);
 
     try {
-      const res = await fetch(`${API_BASE_URL}/api/tagx/global-indices`, {
+      const cacheBustUrl = `${OVERVIEW_API_BASE}/api/tagx/global-indices?t=${Date.now()}`;
+      const res = await fetch(cacheBustUrl, {
         signal: ac.signal,
-        headers: { Accept: 'application/json' },
+        headers: {
+          Accept: 'application/json',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          Pragma: 'no-cache',
+        },
       });
       if (!res.ok) return;
       const payload = await res.json();
       const rows = toArray(payload);
       const valid = rows
-        .map((item) => toNumber(item?.priceChange ?? item?.change ?? item?.delta))
+        .map((item) =>
+          pickNumber(item, [
+            'priceChange',
+            'change',
+            'delta',
+            'netChange',
+            'regularMarketChange',
+            'changePercent',
+            'percentChange',
+            'regularMarketChangePercent',
+            'pChange',
+            'pct',
+            'percent',
+          ]),
+        )
         .filter((value) => value != null);
 
+      if (!valid.length) return;
       const up = valid.filter((value) => value > 0).length;
       const down = valid.filter((value) => value < 0).length;
       setBreadth({ up, down, total: valid.length });
     } catch (err) {
       if (String(err?.message || '').toLowerCase().includes('abort')) return;
+    } finally {
+      setIsRefreshingBreadth(false);
     }
   }, []);
 
@@ -452,6 +612,52 @@ const Overview = ({ navigation }) => {
         score: (5 + ((Math.abs(item.perf || 0) / max) * 3.5)).toFixed(1),
       }));
   }, [sectors]);
+
+  const sectorChartData = useMemo(() => {
+    return [...sectors].sort((a, b) => (b.perf || 0) - (a.perf || 0));
+  }, [sectors]);
+
+  const sectorChartModel = useMemo(() => {
+    const data = sectorChartData;
+    const viewport = Math.max(260, sectorChartViewportWidth || (windowWidth - 48));
+    const left = 42;
+    const right = 28;
+    const top = 8;
+    const plotHeight = 126;
+    const bottom = 92;
+    const slotWidth = viewport >= 900 ? 76 : viewport >= 600 ? 68 : 58;
+    const plotWidth = Math.max(viewport - left - right, Math.max(data.length * slotWidth, 320));
+    const width = left + plotWidth + right;
+    const height = top + plotHeight + bottom;
+
+    const values = data.map((item) => item?.perf || 0);
+    const rawMin = values.length ? Math.min(...values, 0) : -6;
+    const rawMax = values.length ? Math.max(...values, 0) : 40;
+    const min = Math.floor(Math.min(rawMin, -6) / 2) * 2;
+    const max = Math.ceil(Math.max(rawMax, 40) / 2) * 2;
+    const range = Math.max(1, max - min);
+    const yFor = (value) => top + ((max - value) / range) * plotHeight;
+    const baselineY = yFor(0);
+
+    const tickCount = 4;
+    const ticks = Array.from({ length: tickCount }, (_, idx) => max - (idx * range) / (tickCount - 1));
+
+    return {
+      data,
+      width,
+      height,
+      left,
+      right,
+      top,
+      bottom,
+      plotHeight,
+      plotWidth,
+      slotWidth: plotWidth / Math.max(data.length, 1),
+      yFor,
+      baselineY,
+      ticks,
+    };
+  }, [sectorChartData, sectorChartViewportWidth, windowWidth]);
 
   const openNewsletter = useCallback(async () => {
     try {
@@ -532,7 +738,17 @@ const Overview = ({ navigation }) => {
               <View style={styles.card}>
                 <View style={styles.cardHead}>
                   <AppText style={styles.cardTitle}>Cosmic Market Pulse</AppText>
-                  <Pressable style={styles.refreshBtn} onPress={fetchBreadth}><RefreshCcw size={13} color={themeColors.textPrimary} /></Pressable>
+                  <Pressable
+                    style={[styles.refreshBtn, isRefreshingBreadth && styles.refreshBtnDisabled]}
+                    onPress={fetchBreadth}
+                    disabled={isRefreshingBreadth}
+                  >
+                    {isRefreshingBreadth ? (
+                      <ActivityIndicator size="small" color={themeColors.textPrimary} />
+                    ) : (
+                      <RefreshCcw size={13} color={themeColors.textPrimary} />
+                    )}
+                  </Pressable>
                 </View>
                 <View style={styles.progressRow}><AppText style={styles.progressLabel}>Planetary Alignment</AppText><AppText style={styles.progressValue}>{`${cosmic.alignment}%`}</AppText></View>
                 <View style={styles.progressTrack}><View style={[styles.progressFill, { width: `${cosmic.alignment}%` }]} /></View>
@@ -553,23 +769,37 @@ const Overview = ({ navigation }) => {
 
           <View style={styles.twoColRow}>
             <View style={[styles.card, styles.colCard]}>
-              <View style={styles.cardHead}><AppText style={styles.cardTitle}>Top Movers + Astro Intelligence</AppText><AppText style={styles.cardTag}>Watchlist Universe - Liquid</AppText></View>
+              <View style={styles.moversHead}>
+                <View style={styles.moversHeadTopRow}>
+                  <View style={styles.moversHeadTitleWrap}>
+                    <Activity size={17} color={themeColors.positive} />
+                    <AppText style={styles.moversTitle}>Top Movers + Astro Intelligence</AppText>
+                  </View>
+                  <View style={styles.moversInfoBtn}>
+                    <Info size={14} color={themeColors.textMuted} />
+                  </View>
+                </View>
+                <View style={styles.moversChip}>
+                  <AppText style={styles.moversChipText}>Watchlist Universe • Liquid</AppText>
+                </View>
+              </View>
               {loading && <View style={styles.loadingRow}><ActivityIndicator size="small" color={themeColors.textPrimary} /><AppText style={styles.loadingText}>Loading live symbols...</AppText></View>}
               {!!error && <AppText style={styles.errorText}>{error}</AppText>}
-              {!loading && movers.map((item) => {
+              {!loading && movers.map((item, index) => {
                 const isUp = (item.changePercent || 0) >= 0;
                 return (
-                  <Pressable key={item.symbol} style={styles.moverRow} onPress={() => navigation.navigate('GlobalIndices', { symbol: item.symbol })}>
-                    <View>
+                  <Pressable
+                    key={item.symbol}
+                    style={[styles.moverRow, index % 2 === 1 && styles.moverRowAlt]}
+                    onPress={() => navigation.navigate('GlobalIndices', { symbol: item.symbol })}
+                  >
+                    <View style={styles.moverLeft}>
                       <AppText style={styles.moverSymbol}>{item.symbol}</AppText>
                       <AppText style={styles.moverSub}>{item.company}</AppText>
                     </View>
                     <View style={styles.moverRight}>
-                      <View style={styles.moverPctRow}>
-                        {isUp ? <ArrowUpRight size={13} color={themeColors.positive} /> : <ArrowDownRight size={13} color={themeColors.negative} />}
-                        <AppText style={[styles.moverPct, isUp ? styles.goodText : styles.badText]}>{fmtPct(item.changePercent)}</AppText>
-                      </View>
-                      <AppText style={styles.moverPrice}>{`${fmtCompactMoney(item.marketCap)} - Vol ${fmtCompactVol(item.volume)}`}</AppText>
+                      <AppText style={[styles.moverPct, isUp ? styles.goodText : styles.badText]}>{fmtPct(item.changePercent)}</AppText>
+                      <AppText style={styles.moverPrice}>{`${fmtCompactMoney(item.marketCap)} • Vol ${fmtCompactVol(item.volume)}`}</AppText>
                     </View>
                   </Pressable>
                 );
@@ -578,13 +808,104 @@ const Overview = ({ navigation }) => {
 
             <View style={[styles.card, styles.colCard]}>
               <View style={styles.cardHead}><AppText style={styles.cardTitle}>Sector Astro-Performance Matrix Last 1 Year</AppText></View>
-              <View style={styles.chartWrap}>
-                {sectors.map((item) => (
-                  <View key={item.ticker} style={styles.barCol}>
-                    <View style={styles.barTrack}><View style={[styles.barFill, { height: `${Math.min(Math.abs(item.value || 0) * 12, 100)}%` }]} /></View>
-                    <AppText style={styles.barLabel} numberOfLines={1}>{item.name}</AppText>
-                  </View>
-                ))}
+              <View
+                style={styles.sectorChartFrame}
+                onLayout={(event) => setSectorChartViewportWidth(event.nativeEvent.layout.width)}
+              >
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.sectorChartScrollContent}>
+                  <Svg width={sectorChartModel.width} height={sectorChartModel.height}>
+                    <Defs>
+                      <LinearGradient id="sectorBarGradient" x1="0" y1="0" x2="0" y2="1">
+                        <Stop offset="0%" stopColor={isLight ? '#7C3AED' : '#A78BFA'} stopOpacity="0.95" />
+                        <Stop offset="100%" stopColor={isLight ? '#C4B5FD' : '#DDD6FE'} stopOpacity="0.9" />
+                      </LinearGradient>
+                    </Defs>
+
+                    {sectorChartModel.ticks.map((tick) => {
+                      const y = sectorChartModel.yFor(tick);
+                      return (
+                        <React.Fragment key={`tick-${tick}`}>
+                          <Line
+                            x1={sectorChartModel.left}
+                            y1={y}
+                            x2={sectorChartModel.left + sectorChartModel.plotWidth}
+                            y2={y}
+                            stroke={isLight ? '#d5dae6' : '#3a415c'}
+                            strokeWidth="1"
+                          />
+                          <SvgText
+                            x={sectorChartModel.left - 5}
+                            y={y + 4}
+                            fontSize="11"
+                            fill={themeColors.textMuted}
+                            textAnchor="end"
+                          >
+                            {`${Math.round(tick)}%`}
+                          </SvgText>
+                        </React.Fragment>
+                      );
+                    })}
+
+                    <Line
+                      x1={sectorChartModel.left}
+                      y1={sectorChartModel.baselineY}
+                      x2={sectorChartModel.left + sectorChartModel.plotWidth}
+                      y2={sectorChartModel.baselineY}
+                      stroke={isLight ? '#7f8799' : '#9ba3b5'}
+                      strokeWidth="1.2"
+                    />
+                    <Line
+                      x1={sectorChartModel.left}
+                      y1={sectorChartModel.top}
+                      x2={sectorChartModel.left}
+                      y2={sectorChartModel.top + sectorChartModel.plotHeight}
+                      stroke={isLight ? '#7f8799' : '#9ba3b5'}
+                      strokeWidth="1.2"
+                    />
+                    <Line
+                      x1={sectorChartModel.left + sectorChartModel.plotWidth}
+                      y1={sectorChartModel.top}
+                      x2={sectorChartModel.left + sectorChartModel.plotWidth}
+                      y2={sectorChartModel.top + sectorChartModel.plotHeight}
+                      stroke={isLight ? '#7f8799' : '#9ba3b5'}
+                      strokeWidth="1.2"
+                    />
+
+                    {sectorChartModel.data.map((item, index) => {
+                      const x = sectorChartModel.left + (index * sectorChartModel.plotWidth) / Math.max(sectorChartModel.data.length, 1);
+                      const barWidth = Math.max(14, sectorChartModel.slotWidth * 0.78);
+                      const centeredX = x + (sectorChartModel.slotWidth - barWidth) / 2;
+                      const valueY = sectorChartModel.yFor(item.perf || 0);
+                      const y = (item.perf || 0) >= 0 ? valueY : sectorChartModel.baselineY;
+                      const h = Math.max(2, Math.abs(sectorChartModel.baselineY - valueY));
+                      const labelX = x + sectorChartModel.slotWidth / 2;
+                      const labelY = sectorChartModel.top + sectorChartModel.plotHeight + 36;
+
+                      return (
+                        <React.Fragment key={item.ticker}>
+                          <Rect
+                            x={centeredX}
+                            y={y}
+                            width={barWidth}
+                            height={h}
+                            rx="4"
+                            fill="url(#sectorBarGradient)"
+                          />
+                          <SvgText
+                            x={labelX}
+                            y={labelY}
+                            fontSize="11"
+                            fill={themeColors.textMuted}
+                            textAnchor="end"
+                            transform={`rotate(-32 ${labelX} ${labelY})`}
+                          >
+                            {item.ticker}
+                          </SvgText>
+                        </React.Fragment>
+                      );
+                    })}
+                  </Svg>
+                </ScrollView>
               </View>
               <View style={styles.sectorList}>
                 {sectorLegend.map((item) => (
@@ -695,6 +1016,9 @@ const createStyles = (colors, isLight) =>
       justifyContent: 'center',
       backgroundColor: colors.surfaceAlt,
     },
+    refreshBtnDisabled: {
+      opacity: 0.7,
+    },
     eventItem: {
       borderRadius: 8,
       borderWidth: 1,
@@ -726,36 +1050,62 @@ const createStyles = (colors, isLight) =>
     loadingRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
     loadingText: { color: colors.textMuted, fontSize: 13 },
     errorText: { color: colors.negative, fontSize: 13 },
+    moversHead: { gap: 8, marginBottom: 4 },
+    moversHeadTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+    moversHeadTitleWrap: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 },
+    moversTitle: { color: colors.textPrimary, fontSize: 15 },
+    moversChip: {
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceAlt,
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      alignSelf: 'flex-start',
+    },
+    moversChipText: { color: colors.textPrimary, fontSize: 11 },
+    moversInfoBtn: {
+      width: 24,
+      height: 24,
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: colors.border,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.surfaceAlt,
+    },
     moverRow: {
       flexDirection: 'row',
       justifyContent: 'space-between',
-      alignItems: 'center',
-      borderBottomWidth: 1,
-      borderBottomColor: colors.border,
-      paddingBottom: 8,
-      marginBottom: 4,
+      alignItems: 'flex-start',
+      borderRadius: 10,
+      paddingHorizontal: 10,
+      paddingVertical: 10,
+      marginBottom: 6,
     },
-    moverSymbol: { color: colors.textPrimary, fontSize: 18 },
+    moverRowAlt: {
+      backgroundColor: colors.surfaceAlt,
+    },
+    moverLeft: { flex: 1, paddingRight: 8 },
+    moverSymbol: { color: colors.textPrimary, fontSize: 17 },
     moverSub: { color: colors.textMuted, fontSize: 12, marginTop: 2 },
     moverRight: { alignItems: 'flex-end' },
-    moverPrice: { color: colors.textMuted, fontSize: 12 },
-    moverPctRow: { flexDirection: 'row', alignItems: 'center', gap: 2, marginBottom: 2 },
-    moverPct: { fontSize: 14 },
+    moverPrice: { color: colors.textMuted, fontSize: 13, marginTop: 2 },
+    moverPct: { fontSize: 16 },
     goodText: { color: colors.positive },
     badText: { color: colors.negative },
     warnText: { color: '#f3c33c', fontSize: 12 },
-    chartWrap: { flexDirection: 'row', alignItems: 'flex-end', gap: 6, minHeight: 132 },
-    barCol: { flex: 1, alignItems: 'center', gap: 4 },
-    barTrack: {
-      width: '100%',
-      height: 84,
-      borderRadius: 4,
-      backgroundColor: isLight ? '#d8dfec' : '#2e3650',
-      justifyContent: 'flex-end',
-      overflow: 'hidden',
+    sectorChartFrame: {
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: isLight ? '#f7f8fc' : 'rgba(19, 23, 35, 0.65)',
     },
-    barFill: { width: '100%', backgroundColor: isLight ? '#2f65dc' : '#2d9dff' },
-    barLabel: { color: colors.textMuted, fontSize: 10, width: '100%', textAlign: 'center' },
+    sectorChartScrollContent: {
+      minWidth: '100%',
+      paddingRight: 14,
+      paddingBottom: 6,
+    },
     sectorList: { marginTop: 6, gap: 4 },
     sectorRowItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
     sectorLeft: { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, paddingRight: 8 },

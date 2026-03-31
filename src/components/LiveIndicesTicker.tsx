@@ -334,7 +334,7 @@ export default function LiveIndicesTicker({ onPressIndex }: Props) {
       >
         {status === 'loading' && !rows.length && INDEX_LIST.map((item) => <SkeletonCard key={item.id} styles={styles} colors={colors} />)}
 
-        {(status === 'ok' || rows.length) && cards.map((row) => {
+        {(status === 'ok' || rows.length > 0) && cards.map((row) => {
           const mood = classify(row.changePercent);
           const isUp = (row.change ?? 0) >= 0;
           return (
