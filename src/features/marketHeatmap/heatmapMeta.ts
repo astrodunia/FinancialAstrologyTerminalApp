@@ -44,7 +44,7 @@ export const HEATMAP_META: HeatmapMeta[] = [
     logoUrl: 'https://logo.clearbit.com/tesla.com',
   },
   {
-    symbol: 'BRK.A',
+    symbol: 'BRK-A',
     sector: 'Financial',
     astroStrength: 7.7,
     logoUrl: 'https://logo.clearbit.com/berkshirehathaway.com',

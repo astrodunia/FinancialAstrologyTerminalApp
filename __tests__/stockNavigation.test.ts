@@ -8,7 +8,7 @@ import {
 } from '../src/features/stocks/navigation';
 
 test('normalizes stock symbols to uppercase and trims whitespace', () => {
-  expect(normalizeStockSymbol(' brk.b ')).toBe('BRK.B');
+  expect(normalizeStockSymbol(' brk.b ')).toBe('BRK-B');
 });
 
 test('builds the web-shaped stock detail path', () => {

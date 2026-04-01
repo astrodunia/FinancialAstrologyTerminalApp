@@ -18,6 +18,7 @@ import {
   X,
 } from 'lucide-react-native';
 import AppText from '../../components/AppText';
+import { useUser } from '../../store/UserContext';
 import { HEATMAP_LEGEND_SECTORS } from './color';
 import { getHeatmapTileColors } from './color';
 import type { HeatmapQuote, HeatmapSector } from './types';
@@ -80,11 +81,12 @@ const HeatmapSkeleton = ({ styles }: { styles: any }) => (
 
 export default function MarketHeatmap({ items, loading, error, onPressSymbol, onRetry }: Props) {
   const { width: screenWidth } = useWindowDimensions();
+  const { theme, themeColors } = useUser();
   const [helpVisible, setHelpVisible] = useState(false);
   const [selectedSymbol, setSelectedSymbol] = useState<HeatmapQuote | null>(null);
   const heatmapWidth = Math.max(280, screenWidth - 56);
   const heatmapHeight = Math.max(340, Math.round(heatmapWidth * 0.7));
-  const styles = useMemo(() => createStyles(heatmapHeight), [heatmapHeight]);
+  const styles = useMemo(() => createStyles(heatmapHeight, themeColors, theme), [heatmapHeight, themeColors, theme]);
 
   const layouts = useMemo<TileLayout[]>(() => {
     if (!items.length) return [];
@@ -127,7 +129,7 @@ export default function MarketHeatmap({ items, loading, error, onPressSymbol, on
           <AppText style={styles.subtitle}>Colors show percentage move. Tile size tracks activity.</AppText>
         </View>
         <Pressable style={styles.infoButton} onPress={() => setHelpVisible(true)}>
-          <HelpCircle size={16} color="#667085" />
+          <HelpCircle size={16} color={themeColors.textMuted} />
         </Pressable>
       </View>
 
@@ -293,7 +295,7 @@ export default function MarketHeatmap({ items, loading, error, onPressSymbol, on
                   setSelectedSymbol(null);
                 }}
               >
-                <X size={16} color="#667085" />
+                <X size={16} color={themeColors.textMuted} />
               </Pressable>
             </View>
 
@@ -348,19 +350,19 @@ export default function MarketHeatmap({ items, loading, error, onPressSymbol, on
   );
 }
 
-const createStyles = (heatmapHeight: number) =>
+const createStyles = (heatmapHeight: number, colors: any, theme: string) =>
   StyleSheet.create({
     card: {
       borderRadius: 18,
       borderWidth: 1,
-      borderColor: 'rgba(13, 27, 42, 0.12)',
-      backgroundColor: 'rgba(255,255,255,0.92)',
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceGlass,
       padding: 12,
       shadowColor: '#000000',
-      shadowOpacity: 0.08,
+      shadowOpacity: theme === 'dark' ? 0.18 : 0.08,
       shadowRadius: 12,
       shadowOffset: { width: 0, height: 4 },
-      elevation: 2,
+      elevation: theme === 'dark' ? 4 : 2,
     },
     headerRow: {
       flexDirection: 'row',
@@ -371,14 +373,14 @@ const createStyles = (heatmapHeight: number) =>
     },
     title: {
       fontSize: 16,
-      color: '#0D1B2A',
+      color: colors.textPrimary,
       fontFamily: 'NotoSans-ExtraBold',
       marginBottom: 2,
     },
     subtitle: {
       fontSize: 11,
       lineHeight: 16,
-      color: '#5F6C7B',
+      color: colors.textMuted,
       fontFamily: 'NotoSans-Regular',
       maxWidth: 250,
     },
@@ -387,10 +389,10 @@ const createStyles = (heatmapHeight: number) =>
       height: 34,
       borderRadius: 12,
       borderWidth: 1,
-      borderColor: 'rgba(13, 27, 42, 0.12)',
+      borderColor: colors.border,
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: '#FFFFFF',
+      backgroundColor: colors.surface,
     },
     heatmapFrame: {
       width: '100%',
@@ -484,7 +486,7 @@ const createStyles = (heatmapHeight: number) =>
     },
     legendText: {
       fontSize: 11,
-      color: '#5F6C7B',
+      color: colors.textMuted,
       fontFamily: 'NotoSans-Regular',
     },
     sectorLegendRow: {
@@ -505,7 +507,7 @@ const createStyles = (heatmapHeight: number) =>
     },
     sectorLegendText: {
       fontSize: 11,
-      color: '#5F6C7B',
+      color: colors.textMuted,
       fontFamily: 'NotoSans-Regular',
     },
     centerState: {
@@ -517,7 +519,7 @@ const createStyles = (heatmapHeight: number) =>
     },
     errorText: {
       fontSize: 12,
-      color: '#CF3F58',
+      color: colors.negative,
       textAlign: 'center',
       fontFamily: 'NotoSans-Regular',
     },
@@ -525,25 +527,27 @@ const createStyles = (heatmapHeight: number) =>
       paddingHorizontal: 12,
       paddingVertical: 8,
       borderRadius: 12,
-      backgroundColor: '#0D1B2A',
+      backgroundColor: colors.textPrimary,
     },
     retryText: {
       fontSize: 12,
-      color: '#FFFFFF',
+      color: colors.background,
       fontFamily: 'NotoSans-SemiBold',
     },
     skeletonWrap: {
       gap: 0,
-      backgroundColor: '#FFFFFF',
+      backgroundColor: colors.surface,
+      borderRadius: 16,
+      overflow: 'hidden',
     },
     skeletonRow: {
       flexDirection: 'row',
       gap: 0,
     },
     skeletonTile: {
-      backgroundColor: '#E9EEF8',
+      backgroundColor: colors.surfaceAlt,
       borderWidth: 0.5,
-      borderColor: '#FFFFFF',
+      borderColor: colors.surface,
     },
     skeletonLarge: {
       height: 128,
@@ -559,15 +563,15 @@ const createStyles = (heatmapHeight: number) =>
     },
     modalBackdrop: {
       flex: 1,
-      backgroundColor: 'rgba(9, 20, 32, 0.34)',
+      backgroundColor: theme === 'dark' ? 'rgba(0, 0, 0, 0.68)' : 'rgba(9, 20, 32, 0.34)',
       justifyContent: 'flex-end',
       padding: 16,
     },
     bottomSheet: {
       borderRadius: 22,
-      backgroundColor: '#FFFFFF',
+      backgroundColor: colors.surface,
       borderWidth: 1,
-      borderColor: 'rgba(13, 27, 42, 0.12)',
+      borderColor: colors.border,
       padding: 16,
       gap: 12,
     },
@@ -579,7 +583,7 @@ const createStyles = (heatmapHeight: number) =>
     },
     sheetTitle: {
       fontSize: 16,
-      color: '#0D1B2A',
+      color: colors.textPrimary,
       fontFamily: 'NotoSans-ExtraBold',
     },
     closeButton: {
@@ -588,12 +592,12 @@ const createStyles = (heatmapHeight: number) =>
       borderRadius: 10,
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: '#F3F6FB',
+      backgroundColor: colors.surfaceAlt,
     },
     sheetBodyText: {
       fontSize: 13,
       lineHeight: 20,
-      color: '#5F6C7B',
+      color: colors.textMuted,
       fontFamily: 'NotoSans-Regular',
     },
     sheetInfoGrid: {
@@ -606,14 +610,14 @@ const createStyles = (heatmapHeight: number) =>
       borderRadius: 14,
       paddingHorizontal: 12,
       paddingVertical: 10,
-      backgroundColor: '#F5F8FD',
+      backgroundColor: colors.surfaceAlt,
       borderWidth: 1,
-      borderColor: 'rgba(13, 27, 42, 0.08)',
+      borderColor: colors.border,
     },
     sheetInfoLabel: {
       fontSize: 10,
       lineHeight: 12,
-      color: '#5F6C7B',
+      color: colors.textMuted,
       fontFamily: 'NotoSans-Medium',
       textTransform: 'uppercase',
       marginBottom: 4,
@@ -621,20 +625,20 @@ const createStyles = (heatmapHeight: number) =>
     sheetInfoValue: {
       fontSize: 13,
       lineHeight: 16,
-      color: '#0D1B2A',
+      color: colors.textPrimary,
       fontFamily: 'NotoSans-SemiBold',
     },
     sheetAction: {
       marginTop: 4,
       borderRadius: 14,
-      backgroundColor: '#0D1B2A',
+      backgroundColor: colors.textPrimary,
       paddingHorizontal: 14,
       paddingVertical: 12,
       alignItems: 'center',
       justifyContent: 'center',
     },
     sheetActionText: {
-      color: '#FFFFFF',
+      color: colors.background,
       fontSize: 13,
       fontFamily: 'NotoSans-SemiBold',
     },

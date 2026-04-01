@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import { Globe, Search, Sparkles, UserCircle2 } from 'lucide-react-native';
+import { Globe, Search, Sparkles } from 'lucide-react-native';
 import AppText from './AppText';
 import AppTextInput from './AppTextInput';
+import ProfileAvatarButton from './ProfileAvatarButton';
 
 const FONT = {
   regular: 'NotoSans-Regular',
@@ -289,16 +290,12 @@ export default function HomeHeader({
             </View>
           </View>
 
-          <AppText numberOfLines={1} style={styles.name}>
-            Hi, {displayName}
-          </AppText>
+          <AppText numberOfLines={1} style={styles.name}>{`Hi, ${displayName}`}</AppText>
 
           <AppText numberOfLines={1} style={styles.meta}>Live market overview</AppText>
         </View>
 
-        <Pressable style={styles.profileButton} onPress={onPressProfile}>
-          <UserCircle2 size={18} color={themeColors.background} />
-        </Pressable>
+        <ProfileAvatarButton onPress={onPressProfile} size={38} variant="accent" style={styles.profileButton} />
       </View>
 
       <View style={styles.bottomRow}>

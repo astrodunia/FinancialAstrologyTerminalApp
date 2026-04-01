@@ -11,10 +11,14 @@ import Portfolio from '../screens/Portfolio/Portfolio';
 import Overview from '../screens/Overview/Overview';
 import GlobalIndices from '../screens/GlobalIndices/GlobalIndices';
 import Profile from '../screens/Profile/Profile';
+import Plans from '../screens/Plans/Plans';
+import PrivacyPolicy from '../screens/PrivacyPolicy/PrivacyPolicy';
+import Support from '../screens/Support/Support';
 import ForgotPassword from '../screens/ForgotPassword/ForgotPassword';
 import Calculators from '../screens/Calculators/Calculators';
 import CalculatorTool from '../screens/Calculators/CalculatorTool';
 import StockDetailScreen from '../screens/StockDetail/StockDetailScreen';
+import IndexDetailScreen from '../screens/IndexDetail/IndexDetailScreen';
 import AppText from '../components/AppText';
 import { useUser } from '../store/UserContext';
 import SectorDetailScreen from '../screens/SectorDetail/SectorDetailScreen';
@@ -33,7 +37,11 @@ const linking = {
       Portfolio: 'portfolio',
       Overview: 'overview',
       GlobalIndices: 'global-indices',
+      IndexDetail: 'i/:symbol/:tf?',
       Profile: 'profile',
+      Plans: 'plans',
+      PrivacyPolicy: 'privacy-policy',
+      Support: 'support',
       StockDetail: 's/:symbol/:tab?/:tf?',
     },
   },
@@ -69,9 +77,13 @@ const AppNavigation = () => {
                 <Stack.Screen name="CalculatorTool" component={CalculatorTool} />
                 <Stack.Screen name="GlobalIndices" component={GlobalIndices} />
                 <Stack.Screen name="Profile" component={Profile} />
+                <Stack.Screen name="Plans" component={Plans} />
+                <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicy} />
+                <Stack.Screen name="Support" component={Support} />
 
                 <Stack.Screen name="SectorDetail" component={SectorDetailScreen} />
                 <Stack.Screen name="StockDetail" component={StockDetailScreen} />
+                <Stack.Screen name="IndexDetail" component={IndexDetailScreen} />
               </>
             ) : (
               <>

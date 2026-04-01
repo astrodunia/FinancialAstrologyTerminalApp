@@ -1,9 +1,9 @@
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { UserCircle } from 'lucide-react-native';
 import AppText from '../../components/AppText';
 import BottomTabs from '../../components/BottomTabs';
 import GradientBackground from '../../components/GradientBackground';
+import ProfileAvatarButton from '../../components/ProfileAvatarButton';
 import { useUser } from '../../store/UserContext';
 import { navigateToStockDetail } from '../../features/stocks/navigation';
 import { MAIN_TAB_ROUTES, useHorizontalSwipe } from '../../navigation/useHorizontalSwipe';
@@ -18,9 +18,7 @@ const Watchlist = ({ navigation }) => {
       <GradientBackground>
         <View style={styles.header}>
           <AppText style={styles.title}>Watchlist</AppText>
-          <Pressable style={styles.iconButton} onPress={() => navigation.navigate('Profile')}>
-            <UserCircle size={18} color={themeColors.textPrimary} />
-          </Pressable>
+          <ProfileAvatarButton style={styles.iconButton} onPress={() => navigation.navigate('Profile')} size={36} />
         </View>
 
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>

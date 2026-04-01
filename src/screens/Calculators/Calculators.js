@@ -1,6 +1,5 @@
 ﻿import React, { useMemo, useState } from 'react';
 import {
-  Alert,
   Linking,
   Platform,
   Pressable,
@@ -17,13 +16,14 @@ import {
   Search,
   Sparkles,
   TrendingUp,
-  UserCircle,
   Wallet,
 } from 'lucide-react-native';
 import AppText from '../../components/AppText';
 import AppTextInput from '../../components/AppTextInput';
+import AppDialog from '../../components/AppDialog';
 import BottomTabs from '../../components/BottomTabs';
 import GradientBackground from '../../components/GradientBackground';
+import ProfileAvatarButton from '../../components/ProfileAvatarButton';
 import { useUser } from '../../store/UserContext';
 import { MAIN_TAB_ROUTES, useHorizontalSwipe } from '../../navigation/useHorizontalSwipe';
 
@@ -458,6 +458,7 @@ const Calculators = ({ navigation }) => {
   const [query, setQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('all');
   const [viewMode, setViewMode] = useState('grid');
+  const [openFailedVisible, setOpenFailedVisible] = useState(false);
 
   const filteredSections = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -490,7 +491,7 @@ const Calculators = ({ navigation }) => {
     try {
       await Linking.openURL(url);
     } catch {
-      Alert.alert('Open failed', 'Unable to open link right now.');
+      setOpenFailedVisible(true);
     }
   };
 
@@ -519,9 +520,7 @@ const Calculators = ({ navigation }) => {
               >
                 <Grid3X3 size={14} color={themeColors.textPrimary} />
               </Pressable>
-              <Pressable style={styles.headerBtn} onPress={() => navigation.navigate('Profile')}>
-                <UserCircle size={15} color={themeColors.textPrimary} />
-              </Pressable>
+              <ProfileAvatarButton style={styles.headerBtn} onPress={() => navigation.navigate('Profile')} size={34} />
             </View>
           </View>
 
@@ -643,6 +642,20 @@ const Calculators = ({ navigation }) => {
             </View>
           </View>
         </ScrollView>
+
+        <AppDialog
+          visible={openFailedVisible}
+          title="Open Failed"
+          message="Unable to open link right now."
+          onRequestClose={() => setOpenFailedVisible(false)}
+          actions={[
+            {
+              label: 'Close',
+              variant: 'primary',
+              onPress: () => setOpenFailedVisible(false),
+            },
+          ]}
+        />
 
         <BottomTabs activeRoute="Calculators" navigation={navigation} />
       </GradientBackground>
@@ -1008,8 +1021,6 @@ const createStyles = (colors, isLight) =>
   });
 
 export default Calculators;
-
-
 
 
 
