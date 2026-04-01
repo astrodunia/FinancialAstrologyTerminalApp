@@ -74,6 +74,7 @@ const resolveApiBaseUrl = () => {
 };
 
 export const API_BASE_URL = resolveApiBaseUrl();
+export const LIVE_API_BASE = 'https://finance.rajeevprakash.com';
 export const buildApiUrl = (path = '') => {
   if (!path) return API_BASE_URL;
   if (/^https?:\/\//i.test(path)) return path;
@@ -87,3 +88,4 @@ export const API_BASE_URL_DEBUG = {
   hostOverride: normalizeHost(API_HOST_OVERRIDE) || null,
   metroHost: getHostFromScriptUrl() || null,
 };
+
