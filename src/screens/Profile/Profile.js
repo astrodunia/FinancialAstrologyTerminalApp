@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Image,
+  NativeModules,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,20 +11,30 @@ import {
 import {
   Eye,
   EyeOff,
+  ImagePlus,
+  LifeBuoy,
   Lock,
   LogOut,
   Mail,
-  RefreshCw,
+  Monitor,
+  MoonStar,
+  Palette,
+  Rocket,
   Save,
-  Smartphone,
+  ShieldCheck,
+  SunMedium,
+  Trash2,
   User as UserIcon,
   UserCircle,
 } from 'lucide-react-native';
+import DialogX from '../../components/DialogX';
 import AppText from '../../components/AppText';
 import AppTextInput from '../../components/AppTextInput';
 import BottomTabs from '../../components/BottomTabs';
 import GradientBackground from '../../components/GradientBackground';
 import { useUser } from '../../store/UserContext';
+
+const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
 
 const makeInitials = (name = '', email = '') => {
   const source = (name || email || 'U').trim();
@@ -32,13 +42,6 @@ const makeInitials = (name = '', email = '') => {
   if (!parts.length) return 'U';
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
-};
-
-const formatDateTime = (value) => {
-  if (!value) return 'Unknown';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value);
-  return date.toLocaleString();
 };
 
 const safeJson = async (res) => {
@@ -49,37 +52,53 @@ const safeJson = async (res) => {
   }
 };
 
-const Profile = ({ navigation }) => {
-  const {
-    user,
-    theme,
-    themeColors,
-    themePreference,
-    authFetch,
-    updateUserProfile,
-    logout,
-    setThemePreference,
-    toggleTheme,
-  } = useUser();
+const getImagePickerModule = () => {
+  try {
+    return require('react-native-image-picker');
+  } catch {
+    return null;
+  }
+};
 
+const getNativeImagePicker = () => {
+  if (NativeModules?.ImagePicker?.launchImageLibrary) {
+    return NativeModules.ImagePicker;
+  }
+
+  try {
+    const turboModule = require('react-native-image-picker/src/platforms/NativeImagePicker').default;
+    if (turboModule?.launchImageLibrary) {
+      return turboModule;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+};
+
+const THEME_OPTIONS = [
+  { key: 'system', label: 'System', description: 'Follow device appearance', Icon: Monitor },
+  { key: 'light', label: 'Light', description: 'Bright interface', Icon: SunMedium },
+  { key: 'dark', label: 'Dark', description: 'Low-glare interface', Icon: MoonStar },
+];
+
+const Profile = ({ navigation }) => {
+  const { user, themeColors, themePreference, setThemePreference, authFetch, updateUserProfile, updateProfileImage, logout } = useUser();
   const styles = useMemo(() => createStyles(themeColors), [themeColors]);
 
   const [account, setAccount] = useState({ name: user?.displayName || '', email: user?.email || '' });
   const [password, setPassword] = useState({ current: '', next: '', confirm: '' });
   const [showPwd, setShowPwd] = useState({ current: false, next: false, confirm: false });
-
   const [avatarUrl, setAvatarUrl] = useState('');
-  const [devices, setDevices] = useState([]);
-
-  const [loadingDevices, setLoadingDevices] = useState(false);
-  const [loadingAvatar, setLoadingAvatar] = useState(false);
+  const [loadingAvatar, setLoadingAvatar] = useState(true);
+  const [savingAvatar, setSavingAvatar] = useState(false);
   const [savingAccount, setSavingAccount] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
-  const [revokingDeviceId, setRevokingDeviceId] = useState('');
-
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
+  const [logoutDialogVisible, setLogoutDialogVisible] = useState(false);
 
   useEffect(() => {
     setAccount({ name: user?.displayName || '', email: user?.email || '' });
@@ -102,40 +121,137 @@ const Profile = ({ navigation }) => {
           ? json.image.url
           : '';
       setAvatarUrl(nextUrl || '');
+      await updateProfileImage(nextUrl || '');
     } catch {
       setAvatarUrl('');
+      await updateProfileImage('');
     } finally {
       setLoadingAvatar(false);
     }
-  }, [authFetch]);
-
-  const loadDevices = useCallback(async () => {
-    setLoadingDevices(true);
-    setError('');
-
-    try {
-      const res = await authFetch('/api/auth/devices');
-      const json = await safeJson(res);
-
-      if (!res.ok) {
-        throw new Error(json?.message || `Failed to load devices (${res.status})`);
-      }
-
-      const payload = json?.data || json;
-      const nextDevices = Array.isArray(payload?.devices) ? payload.devices : [];
-      setDevices(nextDevices);
-    } catch (e) {
-      setError(e?.message || 'Failed to load active devices.');
-      setDevices([]);
-    } finally {
-      setLoadingDevices(false);
-    }
-  }, [authFetch]);
+  }, [authFetch, updateProfileImage]);
 
   useEffect(() => {
     loadAvatar();
-    loadDevices();
-  }, [loadAvatar, loadDevices]);
+  }, [loadAvatar]);
+
+  const uploadAvatar = useCallback(
+    async (asset) => {
+      if (!asset?.uri) {
+        setError('Unable to read the selected image.');
+        return;
+      }
+
+      if (asset.fileSize && asset.fileSize > MAX_IMAGE_BYTES) {
+        setError('File is too large. Maximum size is 3 MB.');
+        return;
+      }
+
+      const type = String(asset.type || '').toLowerCase();
+      if (type && !/^image\/(jpeg|jpg|png|webp)$/.test(type)) {
+        setError('Unsupported image type. Use JPG, PNG or WEBP.');
+        return;
+      }
+
+      setSavingAvatar(true);
+      setError('');
+      setNotice('');
+
+      try {
+        const form = new FormData();
+        form.append('image', {
+          uri: asset.uri,
+          type: asset.type || 'image/jpeg',
+          name: asset.fileName || `profile-${Date.now()}.jpg`,
+        });
+
+        const res = await authFetch('/api/me/profile-image', {
+          method: 'POST',
+          body: form,
+        });
+        const json = await safeJson(res);
+
+        if (!res.ok) {
+          throw new Error(json?.error || json?.message || `Upload failed (${res.status})`);
+        }
+
+        const nextUrl =
+          typeof json?.image === 'string'
+            ? json.image
+            : typeof json?.image?.url === 'string'
+            ? json.image.url
+            : '';
+
+        setAvatarUrl(nextUrl || '');
+        await updateProfileImage(nextUrl || '');
+        setNotice('Profile image updated successfully.');
+      } catch (nextError) {
+        setError(nextError?.message || 'Failed to upload profile image.');
+      } finally {
+        setSavingAvatar(false);
+      }
+    },
+    [authFetch, updateProfileImage],
+  );
+
+  const pickAvatar = useCallback(async () => {
+    setError('');
+    setNotice('');
+
+    try {
+      const imagePicker = getImagePickerModule();
+      const nativeImagePicker = getNativeImagePicker();
+
+      if (!imagePicker?.launchImageLibrary || !nativeImagePicker) {
+        throw new Error('Image upload is not linked in the installed app build yet. Rebuild the app after installing native dependencies.');
+      }
+
+      const result = await imagePicker.launchImageLibrary({
+        mediaType: 'photo',
+        selectionLimit: 1,
+        includeBase64: false,
+        quality: 0.9,
+      });
+
+      if (result.didCancel) return;
+      if (result.errorCode) {
+        throw new Error(result.errorMessage || 'Unable to open image library.');
+      }
+
+      const asset = result.assets?.[0];
+      if (!asset) {
+        throw new Error('No image was selected.');
+      }
+
+      await uploadAvatar(asset);
+    } catch (nextError) {
+      setError(nextError?.message || 'Failed to select an image.');
+    }
+  }, [uploadAvatar]);
+
+  const removeAvatar = useCallback(async () => {
+    setSavingAvatar(true);
+    setError('');
+    setNotice('');
+
+    try {
+      const res = await authFetch('/api/me/profile-image', {
+        method: 'DELETE',
+      });
+      const json = await safeJson(res);
+
+      if (!res.ok) {
+        throw new Error(json?.error || json?.message || `Delete failed (${res.status})`);
+      }
+
+      setAvatarUrl('');
+      await updateProfileImage('');
+      setNotice('Profile image removed successfully.');
+    } catch (nextError) {
+      setError(nextError?.message || 'Failed to remove profile image.');
+    } finally {
+      setSavingAvatar(false);
+    }
+  }, [authFetch, updateProfileImage]);
 
   const saveAccount = async () => {
     setError('');
@@ -171,8 +287,8 @@ const Profile = ({ navigation }) => {
       const serverUser = json?.user || { name, email };
       await updateUserProfile(serverUser);
       setNotice(json?.msg || 'Profile updated successfully.');
-    } catch (e) {
-      setError(e?.message || 'Failed to update profile.');
+    } catch (nextError) {
+      setError(nextError?.message || 'Failed to update profile.');
     } finally {
       setSavingAccount(false);
     }
@@ -214,93 +330,15 @@ const Profile = ({ navigation }) => {
 
       setPassword({ current: '', next: '', confirm: '' });
       setNotice(json?.msg || 'Password changed successfully.');
-    } catch (e) {
-      setError(e?.message || 'Failed to change password.');
+    } catch (nextError) {
+      setError(nextError?.message || 'Failed to change password.');
     } finally {
       setSavingPassword(false);
     }
   };
 
-  const revokeDevice = useCallback(
-    async (device) => {
-      const targetDeviceId = device?.device_id;
-      if (!targetDeviceId) {
-        setError('Invalid device selected.');
-        return;
-      }
-
-      setError('');
-      setNotice('');
-      setRevokingDeviceId(targetDeviceId);
-
-      try {
-        const res = await authFetch('/api/auth/devices/revoke', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ device_id: targetDeviceId }),
-        });
-        const json = await safeJson(res);
-
-        if (!res.ok) {
-          throw new Error(json?.message || json?.error || `Failed to revoke device (${res.status})`);
-        }
-
-        setNotice(json?.message || json?.msg || 'Device logged out successfully.');
-        setDevices((currentDevices) =>
-          currentDevices.filter((currentDevice) => currentDevice?.device_id !== targetDeviceId),
-        );
-        await loadDevices();
-      } catch (e) {
-        setError(e?.message || 'Failed to revoke device.');
-      } finally {
-        setRevokingDeviceId('');
-      }
-    },
-    [authFetch, loadDevices],
-  );
-
-  const confirmRevokeDevice = useCallback(
-    (device) => {
-      const label = device?.label || `${device?.browser || 'Unknown browser'} on ${device?.os || 'Unknown OS'}`;
-      const isCurrent = Boolean(device?.is_current);
-
-      Alert.alert(
-        isCurrent ? 'Log Out This Device' : 'Log Out Device',
-        isCurrent ? 'This will log out this phone as well. Continue?' : `Log out ${label}?`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Log out',
-            style: 'destructive',
-            onPress: async () => {
-              await revokeDevice(device);
-              if (isCurrent) {
-                await logout();
-              }
-            },
-          },
-        ],
-      );
-    },
-    [logout, revokeDevice],
-  );
-
   const confirmLogout = () => {
-    Alert.alert('Logout', 'Are you sure you want to log out from this account?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Logout',
-        style: 'destructive',
-        onPress: async () => {
-          setLoggingOut(true);
-          try {
-            await logout();
-          } finally {
-            setLoggingOut(false);
-          }
-        },
-      },
-    ]);
+    setLogoutDialogVisible(true);
   };
 
   const initials = makeInitials(account.name, account.email);
@@ -309,7 +347,11 @@ const Profile = ({ navigation }) => {
     <View style={styles.safeArea}>
       <GradientBackground>
         <View style={styles.header}>
-          <AppText style={styles.title}>Profile</AppText>
+          <View style={styles.headerTextWrap}>
+            <AppText style={styles.title}>Profile</AppText>
+            <AppText style={styles.subtitle}>Keep your identity, image, and account access up to date.</AppText>
+          </View>
+
           <Pressable style={styles.iconButton} onPress={confirmLogout} disabled={loggingOut}>
             {loggingOut ? (
               <ActivityIndicator size="small" color={themeColors.textPrimary} />
@@ -320,54 +362,100 @@ const Profile = ({ navigation }) => {
         </View>
 
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-          {!!error && (
+          {error ? (
             <View style={styles.errorBanner}>
               <AppText style={styles.errorText}>{error}</AppText>
             </View>
-          )}
-          {!!notice && (
+          ) : null}
+
+          {notice ? (
             <View style={styles.okBanner}>
               <AppText style={styles.okText}>{notice}</AppText>
             </View>
-          )}
+          ) : null}
 
-          <View style={styles.profileCard}>
-            <View style={styles.avatarWrap}>
-              {avatarUrl ? (
-                <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
-              ) : (
-                <View style={styles.avatarFallback}>
-                  <UserCircle size={42} color={themeColors.textPrimary} />
-                  <AppText style={styles.avatarInitials}>{initials}</AppText>
-                </View>
-              )}
+          <View style={styles.heroCard}>
+            <View style={styles.heroGlow} />
+            <View style={styles.heroTopRow}>
+              <View style={styles.avatarWrap}>
+                {loadingAvatar ? (
+                  <View style={styles.avatarFallback}>
+                    <ActivityIndicator size="small" color={themeColors.textPrimary} />
+                  </View>
+                ) : avatarUrl ? (
+                  <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
+                ) : (
+                  <View style={styles.avatarFallback}>
+                    <UserCircle size={40} color={themeColors.textPrimary} />
+                    <AppText style={styles.avatarInitials}>{initials}</AppText>
+                  </View>
+                )}
+              </View>
+
+              <View style={styles.heroMeta}>
+                <AppText style={styles.profileName}>{account.name || 'Trader'}</AppText>
+                <AppText style={styles.profileMeta}>{account.email || 'No email available'}</AppText>
+               
+              </View>
             </View>
-            <View style={styles.profileMetaArea}>
-              <AppText style={styles.profileName}>{account.name || 'Trader'}</AppText>
-              <AppText style={styles.profileMeta}>{account.email || 'No email available'}</AppText>
-              <Pressable style={styles.reloadButton} onPress={loadAvatar} disabled={loadingAvatar}>
-                {loadingAvatar ? <ActivityIndicator size="small" color={themeColors.textPrimary} /> : <RefreshCw size={14} color={themeColors.textPrimary} />}
-                <AppText style={styles.reloadText}>Refresh image</AppText>
+
+            <View style={styles.avatarActions}>
+              <Pressable style={styles.primaryInlineButton} onPress={pickAvatar} disabled={savingAvatar}>
+                {savingAvatar ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <ImagePlus size={15} color="#FFFFFF" />
+                )}
+                <AppText style={styles.primaryInlineButtonText}>{savingAvatar ? 'Working...' : 'Upload photo'}</AppText>
+              </Pressable>
+
+              <Pressable
+                style={[styles.ghostInlineButton, (!avatarUrl || savingAvatar) && styles.ghostInlineButtonDisabled]}
+                onPress={removeAvatar}
+                disabled={!avatarUrl || savingAvatar}
+              >
+                <Trash2 size={15} color={themeColors.negative} />
+                <AppText style={styles.ghostInlineButtonText}>Remove</AppText>
               </Pressable>
             </View>
+
+            <AppText style={styles.heroHint}>Supported: JPG, PNG, WEBP. Max size: 3 MB.</AppText>
           </View>
 
           <View style={styles.card}>
-            <AppText style={styles.cardTitle}>Account details</AppText>
+            <AppText style={styles.cardTitle}>Account</AppText>
+            <AppText style={styles.cardDescription}>Keep your public identity and contact email current.</AppText>
+
             <View style={styles.inputGroup}>
               <AppText style={styles.inputLabel}>Full name</AppText>
               <View style={styles.inputWrap}>
                 <UserIcon size={16} color={themeColors.textMuted} />
-                <AppTextInput value={account.name} onChangeText={(value) => setAccount((s) => ({ ...s, name: value }))} style={styles.input} placeholder="Your name" placeholderTextColor={themeColors.textMuted} />
+                <AppTextInput
+                  value={account.name}
+                  onChangeText={(value) => setAccount((current) => ({ ...current, name: value }))}
+                  style={styles.input}
+                  placeholder="Your name"
+                  placeholderTextColor={themeColors.textMuted}
+                />
               </View>
             </View>
+
             <View style={styles.inputGroup}>
               <AppText style={styles.inputLabel}>Email</AppText>
               <View style={styles.inputWrap}>
                 <Mail size={16} color={themeColors.textMuted} />
-                <AppTextInput value={account.email} onChangeText={(value) => setAccount((s) => ({ ...s, email: value }))} style={styles.input} keyboardType="email-address" autoCapitalize="none" placeholder="you@example.com" placeholderTextColor={themeColors.textMuted} />
+                <AppTextInput
+                  value={account.email}
+                  onChangeText={(value) => setAccount((current) => ({ ...current, email: value }))}
+                  style={styles.input}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  placeholder="you@example.com"
+                  placeholderTextColor={themeColors.textMuted}
+                />
               </View>
             </View>
+
             <Pressable style={styles.primaryButton} onPress={saveAccount} disabled={savingAccount}>
               {savingAccount ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Save size={14} color="#FFFFFF" />}
               <AppText style={styles.primaryButtonText}>{savingAccount ? 'Saving...' : 'Save changes'}</AppText>
@@ -375,7 +463,8 @@ const Profile = ({ navigation }) => {
           </View>
 
           <View style={styles.card}>
-            <AppText style={styles.cardTitle}>Change password</AppText>
+            <AppText style={styles.cardTitle}>Password</AppText>
+            <AppText style={styles.cardDescription}>Update your password when you want to rotate account access.</AppText>
 
             {[
               { key: 'current', label: 'Current password' },
@@ -384,6 +473,7 @@ const Profile = ({ navigation }) => {
             ].map((item) => {
               const field = item.key;
               const visible = showPwd[field];
+
               return (
                 <View key={item.key} style={styles.inputGroup}>
                   <AppText style={styles.inputLabel}>{item.label}</AppText>
@@ -391,18 +481,14 @@ const Profile = ({ navigation }) => {
                     <Lock size={16} color={themeColors.textMuted} />
                     <AppTextInput
                       value={password[field]}
-                      onChangeText={(value) => setPassword((s) => ({ ...s, [field]: value }))}
+                      onChangeText={(value) => setPassword((current) => ({ ...current, [field]: value }))}
                       secureTextEntry={!visible}
                       style={styles.input}
                       placeholder={item.label}
                       placeholderTextColor={themeColors.textMuted}
                     />
-                    <Pressable onPress={() => setShowPwd((s) => ({ ...s, [field]: !visible }))}>
-                      {visible ? (
-                        <EyeOff size={16} color={themeColors.textMuted} />
-                      ) : (
-                        <Eye size={16} color={themeColors.textMuted} />
-                      )}
+                    <Pressable onPress={() => setShowPwd((current) => ({ ...current, [field]: !visible }))}>
+                      {visible ? <EyeOff size={16} color={themeColors.textMuted} /> : <Eye size={16} color={themeColors.textMuted} />}
                     </Pressable>
                   </View>
                 </View>
@@ -416,83 +502,103 @@ const Profile = ({ navigation }) => {
           </View>
 
           <View style={styles.card}>
-            <View style={styles.cardHeaderRow}>
-              <AppText style={styles.cardTitle}>Active devices</AppText>
-              <Pressable style={styles.smallActionButton} onPress={loadDevices} disabled={loadingDevices}>
-                {loadingDevices ? (
-                  <ActivityIndicator size="small" color={themeColors.textPrimary} />
-                ) : (
-                  <RefreshCw size={14} color={themeColors.textPrimary} />
-                )}
-                <AppText style={styles.smallActionText}>Refresh</AppText>
-              </Pressable>
-            </View>
+            <AppText style={styles.cardTitle}>Theme</AppText>
+            <AppText style={styles.cardDescription}>
+              Choose how the app looks. Your selection is saved on this device and applies immediately.
+            </AppText>
 
-            {!devices.length && !loadingDevices ? (
-              <AppText style={styles.emptyText}>No active devices found.</AppText>
-            ) : null}
-
-            {devices.map((device, index) => {
-              const deviceId = device?.device_id || `device-${index}`;
-              const label = device?.label || `${device?.browser || 'Unknown browser'} on ${device?.os || 'Unknown OS'}`;
-              const isCurrent = Boolean(device?.is_current);
-              const isRevoking = revokingDeviceId === device?.device_id;
-
-              return (
-                <View key={deviceId} style={styles.deviceRow}>
-                  <View style={styles.deviceMain}>
-                    <AppText style={styles.deviceTitle}>{label}</AppText>
-                    <AppText style={styles.deviceMeta}>Last seen: {formatDateTime(device?.last_seen)}</AppText>
-                    <AppText style={styles.deviceMeta}>IP: {device?.ip || '—'}</AppText>
-                  </View>
-                  <View style={styles.deviceActions}>
-                    {isCurrent ? <AppText style={styles.currentDeviceBadge}>Current</AppText> : null}
-                    <Pressable
-                      style={[styles.revokeButton, isRevoking && styles.revokeButtonDisabled]}
-                      onPress={() => confirmRevokeDevice(device)}
-                      disabled={isRevoking}
-                    >
-                      {isRevoking ? (
-                        <ActivityIndicator size="small" color={themeColors.negative} />
-                      ) : (
-                        <Smartphone size={14} color={themeColors.negative} />
-                      )}
-                      <AppText style={styles.revokeButtonText}>
-                        {isCurrent ? 'Log out here' : 'Log out'}
-                      </AppText>
-                    </Pressable>
-                  </View>
-                </View>
-              );
-            })}
-          </View>
-
-          <View style={styles.card}>
-            <AppText style={styles.cardTitle}>Appearance</AppText>
-            <View style={styles.themeRow}>
-              {[
-                { key: 'light', label: 'Light' },
-                { key: 'dark', label: 'Dark' },
-                { key: 'system', label: 'System' },
-              ].map((option) => {
+            <View style={styles.themeOptions}>
+              {THEME_OPTIONS.map((option) => {
+                const Icon = option.Icon;
                 const active = themePreference === option.key;
+
                 return (
                   <Pressable
                     key={option.key}
-                    style={[styles.themeChip, active && styles.themeChipActive]}
+                    style={[styles.themeOptionCard, active && styles.themeOptionCardActive]}
                     onPress={() => setThemePreference(option.key)}
                   >
-                    <AppText style={[styles.themeChipText, active && styles.themeChipTextActive]}>{option.label}</AppText>
+                    <View style={[styles.themeOptionIconWrap, active && styles.themeOptionIconWrapActive]}>
+                      <Icon size={16} color={active ? '#FFFFFF' : themeColors.accent} />
+                    </View>
+
+                    <View style={styles.themeOptionTextWrap}>
+                      <AppText style={styles.themeOptionTitle}>{option.label}</AppText>
+                      <AppText style={styles.themeOptionDescription}>{option.description}</AppText>
+                    </View>
+
+                    <View style={[styles.themeOptionRadio, active && styles.themeOptionRadioActive]}>
+                      {active ? <View style={styles.themeOptionRadioDot} /> : null}
+                    </View>
                   </Pressable>
                 );
               })}
             </View>
 
-            <Pressable style={styles.themeToggleButton} onPress={toggleTheme}>
-              <AppText style={styles.themeToggleText}>Toggle now (current: {theme})</AppText>
+            <View style={styles.themeHintRow}>
+              <Palette size={15} color={themeColors.accent} />
+              <AppText style={styles.themeHintText}>Switch between Light, Dark, or System.</AppText>
+            </View>
+          </View>
+
+          <View style={styles.card}>
+            <AppText style={styles.cardTitle}>Plans & billing</AppText>
+            <AppText style={styles.cardDescription}>
+              Compare plans, review pricing, and open billing actions from one place.
+            </AppText>
+
+            <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate('Plans')}>
+              <Rocket size={16} color={themeColors.accent} />
+              <AppText style={styles.secondaryButtonText}>Plans & pricing</AppText>
+            </Pressable>
+          </View>
+
+          <View style={styles.card}>
+            <AppText style={styles.cardTitle}>More help</AppText>
+            <AppText style={styles.cardDescription}>
+              Open the detailed pages below for privacy information and the support center.
+            </AppText>
+
+            <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate('PrivacyPolicy')}>
+              <ShieldCheck size={16} color={themeColors.accent} />
+              <AppText style={styles.secondaryButtonText}>Privacy & data</AppText>
+            </Pressable>
+
+            <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate('Support')}>
+              <LifeBuoy size={16} color={themeColors.accent} />
+              <AppText style={styles.secondaryButtonText}>Support & help</AppText>
             </Pressable>
           </View>
         </ScrollView>
+
+        <DialogX
+          visible={logoutDialogVisible}
+          tone="danger"
+          icon={LogOut}
+          title="Log Out Of This Device?"
+          message="You will be signed out on this device and will need to sign in again to access your account."
+          onRequestClose={() => setLogoutDialogVisible(false)}
+          actions={[
+            {
+              label: 'Cancel',
+              variant: 'ghost',
+              onPress: () => setLogoutDialogVisible(false),
+            },
+            {
+              label: 'Log Out',
+              variant: 'danger',
+              onPress: async () => {
+                setLogoutDialogVisible(false);
+                setLoggingOut(true);
+                try {
+                  await logout();
+                } finally {
+                  setLoggingOut(false);
+                }
+              },
+            },
+          ]}
+        />
 
         <BottomTabs navigation={navigation} />
       </GradientBackground>
@@ -511,70 +617,96 @@ const createStyles = (colors) =>
       paddingTop: 28,
       paddingBottom: 12,
       flexDirection: 'row',
+      alignItems: 'flex-start',
       justifyContent: 'space-between',
-      alignItems: 'center',
+      gap: 14,
+    },
+    headerTextWrap: {
+      flex: 1,
+      gap: 4,
     },
     title: {
       color: colors.textPrimary,
-      fontSize: 18,
+      fontSize: 24,
+      lineHeight: 30,
+    },
+    subtitle: {
+      color: colors.textMuted,
+      fontSize: 12,
+      lineHeight: 18,
     },
     iconButton: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
-      backgroundColor: colors.surfaceAlt,
-      alignItems: 'center',
-      justifyContent: 'center',
+      width: 40,
+      height: 40,
+      borderRadius: 12,
       borderWidth: 1,
       borderColor: colors.border,
+      backgroundColor: colors.surfaceGlass,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     content: {
       paddingHorizontal: 16,
       paddingBottom: 110,
-      gap: 14,
+      gap: 16,
     },
     errorBanner: {
-      backgroundColor: 'rgba(240, 140, 140, 0.14)',
-      borderRadius: 10,
+      borderRadius: 14,
       borderWidth: 1,
-      borderColor: 'rgba(240, 140, 140, 0.45)',
-      paddingHorizontal: 10,
-      paddingVertical: 8,
+      borderColor: 'rgba(207, 63, 88, 0.35)',
+      backgroundColor: 'rgba(207, 63, 88, 0.12)',
+      paddingHorizontal: 14,
+      paddingVertical: 12,
     },
     errorText: {
       color: colors.negative,
       fontSize: 12,
     },
     okBanner: {
-      backgroundColor: 'rgba(73, 209, 141, 0.14)',
-      borderRadius: 10,
+      borderRadius: 14,
       borderWidth: 1,
-      borderColor: 'rgba(73, 209, 141, 0.45)',
-      paddingHorizontal: 10,
-      paddingVertical: 8,
+      borderColor: 'rgba(25, 158, 99, 0.35)',
+      backgroundColor: 'rgba(25, 158, 99, 0.12)',
+      paddingHorizontal: 14,
+      paddingVertical: 12,
     },
     okText: {
       color: colors.positive,
       fontSize: 12,
     },
-    profileCard: {
-      backgroundColor: colors.surfaceGlass,
-      borderRadius: 16,
-      padding: 14,
+    heroCard: {
+      position: 'relative',
+      overflow: 'hidden',
+      borderRadius: 24,
       borderWidth: 1,
       borderColor: colors.border,
+      backgroundColor: colors.surfaceGlass,
+      padding: 18,
+      gap: 14,
+    },
+    heroGlow: {
+      position: 'absolute',
+      top: -18,
+      right: -10,
+      width: 120,
+      height: 120,
+      borderRadius: 60,
+      backgroundColor: colors.accent,
+      opacity: 0.08,
+    },
+    heroTopRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 12,
+      gap: 14,
     },
     avatarWrap: {
-      width: 84,
-      height: 84,
-      borderRadius: 42,
+      width: 92,
+      height: 92,
+      borderRadius: 46,
       overflow: 'hidden',
+      backgroundColor: colors.surfaceAlt,
       borderWidth: 1,
       borderColor: colors.border,
-      backgroundColor: colors.surfaceAlt,
     },
     avatarImage: {
       width: '100%',
@@ -584,208 +716,215 @@ const createStyles = (colors) =>
       flex: 1,
       alignItems: 'center',
       justifyContent: 'center',
-      gap: 2,
+      gap: 3,
     },
     avatarInitials: {
-      color: colors.textMuted,
-      fontSize: 11,
+      color: colors.textPrimary,
+      fontSize: 12,
     },
-    profileMetaArea: {
+    heroMeta: {
       flex: 1,
       gap: 5,
     },
     profileName: {
       color: colors.textPrimary,
-      fontSize: 17,
+      fontSize: 24,
+      lineHeight: 30,
     },
     profileMeta: {
       color: colors.textMuted,
-      fontSize: 12,
+      fontSize: 13,
     },
-    reloadButton: {
-      marginTop: 4,
+    profileSubtext: {
+      color: colors.textMuted,
+      fontSize: 12,
+      lineHeight: 18,
+    },
+    avatarActions: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 6,
-      alignSelf: 'flex-start',
-      backgroundColor: colors.surfaceAlt,
-      borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: 999,
-      paddingHorizontal: 10,
-      paddingVertical: 5,
+      gap: 10,
     },
-    reloadText: {
-      color: colors.textPrimary,
+    primaryInlineButton: {
+      flex: 1,
+      minHeight: 42,
+      borderRadius: 14,
+      backgroundColor: colors.accent,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      paddingHorizontal: 14,
+    },
+    primaryInlineButtonText: {
+      color: '#FFFFFF',
+      fontSize: 13,
+    },
+    ghostInlineButton: {
+      minHeight: 42,
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: 'rgba(207, 63, 88, 0.25)',
+      backgroundColor: 'rgba(207, 63, 88, 0.08)',
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      paddingHorizontal: 14,
+    },
+    ghostInlineButtonDisabled: {
+      opacity: 0.55,
+    },
+    ghostInlineButtonText: {
+      color: colors.negative,
+      fontSize: 13,
+    },
+    heroHint: {
+      color: colors.textMuted,
       fontSize: 11,
     },
     card: {
-      backgroundColor: colors.surfaceGlass,
-      borderRadius: 16,
-      padding: 14,
+      borderRadius: 20,
       borderWidth: 1,
       borderColor: colors.border,
-      gap: 10,
-    },
-    cardHeaderRow: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
+      backgroundColor: colors.surfaceGlass,
+      padding: 16,
+      gap: 14,
     },
     cardTitle: {
       color: colors.textPrimary,
+      fontSize: 16,
+    },
+    cardDescription: {
+      color: colors.textMuted,
+      fontSize: 13,
+      lineHeight: 19,
+      marginTop: -2,
+    },
+    themeOptions: {
+      gap: 10,
+    },
+    themeOptionCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceAlt,
+      paddingHorizontal: 12,
+      paddingVertical: 12,
+    },
+    themeOptionCardActive: {
+      borderColor: colors.accent,
+      backgroundColor: 'rgba(110, 89, 207, 0.10)',
+    },
+    themeOptionIconWrap: {
+      width: 34,
+      height: 34,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.surfaceGlass,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    themeOptionIconWrapActive: {
+      backgroundColor: colors.accent,
+      borderColor: colors.accent,
+    },
+    themeOptionTextWrap: {
+      flex: 1,
+      gap: 2,
+    },
+    themeOptionTitle: {
+      color: colors.textPrimary,
       fontSize: 14,
+      fontFamily: 'NotoSans-SemiBold',
+    },
+    themeOptionDescription: {
+      color: colors.textMuted,
+      fontSize: 11,
+      fontFamily: 'NotoSans-Regular',
+    },
+    themeOptionRadio: {
+      width: 18,
+      height: 18,
+      borderRadius: 999,
+      borderWidth: 1.5,
+      borderColor: colors.border,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    themeOptionRadioActive: {
+      borderColor: colors.accent,
+    },
+    themeOptionRadioDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 999,
+      backgroundColor: colors.accent,
+    },
+    themeHintRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    themeHintText: {
+      color: colors.textMuted,
+      fontSize: 11,
+      fontFamily: 'NotoSans-Regular',
     },
     inputGroup: {
-      gap: 6,
+      gap: 8,
     },
     inputLabel: {
-      color: colors.textMuted,
+      color: colors.textPrimary,
       fontSize: 12,
     },
     inputWrap: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 8,
+      gap: 10,
+      borderRadius: 14,
       borderWidth: 1,
       borderColor: colors.border,
-      borderRadius: 10,
       backgroundColor: colors.surfaceAlt,
-      paddingHorizontal: 10,
-      paddingVertical: 8,
+      paddingHorizontal: 12,
     },
     input: {
       flex: 1,
       color: colors.textPrimary,
-      fontSize: 13,
-      paddingVertical: 0,
+      paddingVertical: 11,
     },
     primaryButton: {
-      marginTop: 2,
+      minHeight: 46,
+      borderRadius: 14,
+      backgroundColor: colors.accent,
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
       gap: 8,
-      backgroundColor: colors.accent,
-      borderRadius: 10,
-      paddingVertical: 10,
-      borderWidth: 1,
-      borderColor: colors.accent,
     },
     primaryButtonText: {
       color: '#FFFFFF',
-      fontSize: 12,
+      fontSize: 13,
     },
-    smallActionButton: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 6,
-      backgroundColor: colors.surfaceAlt,
+    secondaryButton: {
+      minHeight: 46,
+      borderRadius: 14,
       borderWidth: 1,
       borderColor: colors.border,
-      borderRadius: 999,
-      paddingHorizontal: 10,
-      paddingVertical: 5,
-    },
-    smallActionText: {
-      color: colors.textPrimary,
-      fontSize: 11,
-    },
-    deviceRow: {
-      borderTopWidth: 1,
-      borderTopColor: colors.border,
-      paddingTop: 10,
-      marginTop: 2,
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      gap: 8,
-    },
-    deviceMain: {
-      flex: 1,
-      gap: 2,
-    },
-    deviceActions: {
-      alignItems: 'flex-end',
-      gap: 8,
-    },
-    deviceTitle: {
-      color: colors.textPrimary,
-      fontSize: 12,
-    },
-    deviceMeta: {
-      color: colors.textMuted,
-      fontSize: 11,
-    },
-    currentDeviceBadge: {
-      alignSelf: 'flex-start',
-      color: colors.positive,
-      fontSize: 10,
-      borderWidth: 1,
-      borderColor: colors.positive,
-      borderRadius: 999,
-      paddingHorizontal: 8,
-      paddingVertical: 3,
-    },
-    revokeButton: {
-      minWidth: 108,
+      backgroundColor: colors.surfaceAlt,
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      gap: 6,
-      backgroundColor: 'rgba(240, 140, 140, 0.12)',
-      borderWidth: 1,
-      borderColor: 'rgba(240, 140, 140, 0.4)',
-      borderRadius: 10,
-      paddingHorizontal: 10,
-      paddingVertical: 8,
-    },
-    revokeButtonDisabled: {
-      opacity: 0.7,
-    },
-    revokeButtonText: {
-      color: colors.negative,
-      fontSize: 11,
-    },
-    emptyText: {
-      color: colors.textMuted,
-      fontSize: 12,
-    },
-    themeRow: {
-      flexDirection: 'row',
       gap: 8,
+      paddingHorizontal: 14,
     },
-    themeChip: {
-      flex: 1,
-      borderRadius: 999,
-      borderWidth: 1,
-      borderColor: colors.border,
-      backgroundColor: colors.surfaceAlt,
-      paddingVertical: 8,
-      alignItems: 'center',
-    },
-    themeChipActive: {
-      backgroundColor: colors.accent,
-      borderColor: colors.accent,
-    },
-    themeChipText: {
+    secondaryButtonText: {
       color: colors.textPrimary,
-      fontSize: 12,
-    },
-    themeChipTextActive: {
-      color: '#FFFFFF',
-    },
-    themeToggleButton: {
-      borderRadius: 10,
-      borderWidth: 1,
-      borderColor: colors.border,
-      backgroundColor: colors.surfaceAlt,
-      paddingVertical: 10,
-      paddingHorizontal: 12,
-      marginTop: 2,
-    },
-    themeToggleText: {
-      color: colors.textMuted,
-      fontSize: 12,
+      fontSize: 13,
     },
   });
 

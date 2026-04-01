@@ -9207,13 +9207,13 @@
       "type": "ETF"
     },
     {
-      "symbol": "BRK.A",
+      "symbol": "BRK-A",
       "name": "Berkshire Hathaway Inc. Common Stock",
       "exchange": "N",
       "type": "STOCK"
     },
     {
-      "symbol": "BRK.B",
+      "symbol": "BRK-B",
       "name": "Berkshire Hathaway Inc. New Common Stock",
       "exchange": "N",
       "type": "STOCK"

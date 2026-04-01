@@ -1,6 +1,5 @@
 import React, { useMemo, useState } from 'react';
 import {
-  Alert,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -13,6 +12,7 @@ import {
 import { Apple, Chrome, Eye, EyeOff, Lock, Mail, ShieldCheck, Sparkles } from 'lucide-react-native';
 import AppText from '../../components/AppText';
 import AppTextInput from '../../components/AppTextInput';
+import DialogX from '../../components/DialogX';
 import GradientBackground from '../../components/GradientBackground';
 import { API_BASE_URL, useUser } from '../../store/UserContext';
 import {
@@ -65,6 +65,8 @@ const Login = ({ navigation }) =>
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const [statusType, setStatusType] = useState('');
+  const [takeOverDialogVisible, setTakeOverDialogVisible] = useState(false);
+  const [takeOverResolver, setTakeOverResolver] = useState(null);
 
   const showError = (message) => {
     setStatusType('error');
@@ -138,14 +140,8 @@ const Login = ({ navigation }) =>
 
       if (response.status === 409 && data?.error === 'device_limit_reached') {
         const shouldTakeOver = await new Promise((resolve) => {
-          Alert.alert(
-            'Active On Another Device',
-            'This account is already active on another device. Continue here and log out the old device?',
-            [
-              { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
-              { text: 'Continue here', onPress: () => resolve(true) },
-            ],
-          );
+          setTakeOverResolver(() => resolve);
+          setTakeOverDialogVisible(true);
         });
 
         if (!shouldTakeOver) {
@@ -179,7 +175,6 @@ const Login = ({ navigation }) =>
 
       setStatusType('success');
       setStatusMessage('Login successful.');
-      navigation.navigate('Home');
     } catch (error) {
       logRequestError({ label: 'auth.login', url: loginUrl, error });
       const loopbackHint = networkHintForAndroidLoopback({ apiBaseUrl: API_BASE_URL, error });
@@ -296,6 +291,39 @@ const Login = ({ navigation }) =>
             </View>
           </View>
         </ScrollView>
+
+        <DialogX
+          visible={takeOverDialogVisible}
+          tone="default"
+          icon={ShieldCheck}
+          title="Continue On This Device?"
+          message="This account is already active on another device. If you continue here, the older login session will be revoked and this device will stay signed in."
+          onRequestClose={() => {
+            setTakeOverDialogVisible(false);
+            takeOverResolver?.(false);
+            setTakeOverResolver(null);
+          }}
+          actions={[
+            {
+              label: 'Cancel',
+              variant: 'ghost',
+              onPress: () => {
+                setTakeOverDialogVisible(false);
+                takeOverResolver?.(false);
+                setTakeOverResolver(null);
+              },
+            },
+            {
+              label: 'Continue Here',
+              variant: 'primary',
+              onPress: () => {
+                setTakeOverDialogVisible(false);
+                takeOverResolver?.(true);
+                setTakeOverResolver(null);
+              },
+            },
+          ]}
+        />
       </GradientBackground>
     </SafeAreaView>
   );

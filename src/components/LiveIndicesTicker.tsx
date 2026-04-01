@@ -320,7 +320,7 @@ export default function LiveIndicesTicker({ onPressIndex }: Props) {
       return;
     }
 
-    navigation.navigate('Overview', { indexSymbol: symbol });
+    navigation.navigate('IndexDetail', { symbol, tf: '1M' });
   };
 
   return (

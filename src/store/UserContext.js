@@ -12,6 +12,7 @@ const STORAGE_KEYS = {
   refreshToken: 'refresh_token',
   lastLoginUsername: 'last_login_username',
   userProfile: 'user_profile',
+  profileImageUrl: 'profile_image_url',
   themePreference: 'theme_preference',
 };
 
@@ -105,6 +106,7 @@ export const UserProvider = ({ children }) => {
   const [deviceId, setDeviceId] = useState('');
   const [lastLoginUsername, setLastLoginUsername] = useState('');
   const [user, setUser] = useState(buildUserState({ user: null, identifier: '' }));
+  const [profileImageUrl, setProfileImageUrl] = useState('');
   const [themePreference, setThemePreferenceState] = useState('system');
 
   useEffect(() => {
@@ -113,6 +115,13 @@ export const UserProvider = ({ children }) => {
 
   const persistUser = useCallback(async (nextUser) => {
     await AsyncStorage.setItem(STORAGE_KEYS.userProfile, JSON.stringify(nextUser));
+  }, []);
+
+  const updateProfileImage = useCallback(async (nextUrl) => {
+    const normalized = nextUrl || '';
+    setProfileImageUrl(normalized);
+    await AsyncStorage.setItem(STORAGE_KEYS.profileImageUrl, normalized);
+    return normalized;
   }, []);
 
   const getOrCreateDeviceId = useCallback(async () => {
@@ -179,6 +188,7 @@ export const UserProvider = ({ children }) => {
       setDeviceId(nextDeviceId || '');
       setLastLoginUsername(resolvedIdentifier || '');
       setUser(nextUser);
+      setProfileImageUrl('');
 
       const entries = [
         [STORAGE_KEYS.accessToken, nextToken || ''],
@@ -186,6 +196,7 @@ export const UserProvider = ({ children }) => {
         [STORAGE_KEYS.deviceId, nextDeviceId || ''],
         [STORAGE_KEYS.lastLoginUsername, resolvedIdentifier || ''],
         [STORAGE_KEYS.userProfile, JSON.stringify(nextUser)],
+        [STORAGE_KEYS.profileImageUrl, ''],
       ];
 
       await AsyncStorage.multiSet(entries);
@@ -202,6 +213,7 @@ export const UserProvider = ({ children }) => {
           storedDeviceId,
           storedUsername,
           storedUserProfile,
+          storedProfileImageUrl,
           storedThemePreference,
         ] = await Promise.all([
           AsyncStorage.getItem(STORAGE_KEYS.accessToken),
@@ -209,6 +221,7 @@ export const UserProvider = ({ children }) => {
           AsyncStorage.getItem(STORAGE_KEYS.deviceId),
           AsyncStorage.getItem(STORAGE_KEYS.lastLoginUsername),
           AsyncStorage.getItem(STORAGE_KEYS.userProfile),
+          AsyncStorage.getItem(STORAGE_KEYS.profileImageUrl),
           AsyncStorage.getItem(STORAGE_KEYS.themePreference),
         ]);
 
@@ -216,6 +229,7 @@ export const UserProvider = ({ children }) => {
         setRefreshToken(storedRefresh || '');
         setDeviceId(storedDeviceId || '');
         setLastLoginUsername(storedUsername || '');
+        setProfileImageUrl(storedProfileImageUrl || '');
 
         if (storedUserProfile) {
           try {
@@ -288,11 +302,13 @@ export const UserProvider = ({ children }) => {
     setRefreshToken('');
     setLastLoginUsername('');
     setUser(buildUserState({ user: null, identifier: '' }));
+    setProfileImageUrl('');
     await AsyncStorage.multiRemove([
       STORAGE_KEYS.accessToken,
       STORAGE_KEYS.refreshToken,
       STORAGE_KEYS.lastLoginUsername,
       STORAGE_KEYS.userProfile,
+      STORAGE_KEYS.profileImageUrl,
     ]);
   }, []);
 
@@ -453,6 +469,7 @@ export const UserProvider = ({ children }) => {
       deviceId,
       lastLoginUsername,
       user,
+      profileImageUrl,
       theme,
       themePreference,
       themeColors,
@@ -462,6 +479,7 @@ export const UserProvider = ({ children }) => {
       setAuthSession,
       syncSession,
       updateUserProfile,
+      updateProfileImage,
       clearAuthSession,
       logout,
       setThemePreference,
@@ -474,11 +492,13 @@ export const UserProvider = ({ children }) => {
       isHydrating,
       isSyncingSession,
       lastLoginUsername,
+      profileImageUrl,
       refreshAccessToken,
       refreshToken,
       setAuthSession,
       syncSession,
       updateUserProfile,
+      updateProfileImage,
       clearAuthSession,
       logout,
       setThemePreference,

@@ -15,7 +15,8 @@ import AppText from '../../components/AppText';
 import BottomTabs from '../../components/BottomTabs';
 import GradientBackground from '../../components/GradientBackground';
 import HomeHeader from '../../components/HomeHeader';
-import { navigateToStockDetail } from '../../features/stocks/navigation';
+import { navigateToStockDetail, normalizeStockSymbol } from '../../features/stocks/navigation';
+import { useTickerSearch } from '../../features/stocks/useTickerSearch';
 import { API_BASE_URL, useUser } from '../../store/UserContext';
 
 const REGION_MAP = {
@@ -215,6 +216,7 @@ const GlobalIndices = ({ navigation }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const mountedRef = useRef(true);
   const profileName = user?.displayName || user?.name || 'Trader';
+  const { results, loading: searchLoading, error: searchError } = useTickerSearch(searchQuery);
 
   const loadIndices = useCallback(async () => {
     setLoading(true);
@@ -337,6 +339,27 @@ const GlobalIndices = ({ navigation }) => {
     return 'Live';
   }, [error, loading]);
 
+  const submitTickerSearch = useCallback(() => {
+    const normalized = normalizeStockSymbol(searchQuery);
+    if (/^[A-Z][A-Z0-9.-]{0,9}$/.test(normalized)) {
+      navigateToStockDetail(navigation, normalized);
+      return;
+    }
+
+    if (results[0]?.symbol) {
+      navigateToStockDetail(navigation, results[0].symbol);
+    }
+  }, [navigation, results, searchQuery]);
+
+  const selectTickerSearchResult = useCallback(
+    (item) => {
+      if (!item?.symbol) return;
+      setSearchQuery(item.symbol);
+      navigateToStockDetail(navigation, item.symbol);
+    },
+    [navigation],
+  );
+
   const page = (
     <>
       <HomeHeader
@@ -344,6 +367,12 @@ const GlobalIndices = ({ navigation }) => {
         profileName={profileName}
         searchQuery={searchQuery}
         onChangeSearchQuery={setSearchQuery}
+        searchResults={results}
+        searchLoading={searchLoading}
+        searchError={searchError}
+        showSearchResults={Boolean(searchQuery.trim())}
+        onPressSearchResult={selectTickerSearchResult}
+        onSubmitSearch={submitTickerSearch}
         onPressProfile={() => navigation.navigate('Profile')}
         onPressGlobalIndices={() => {}}
       />
@@ -390,10 +419,10 @@ const GlobalIndices = ({ navigation }) => {
             </View>
 
             <View style={styles.metaRow}>
-              <AppText style={styles.metaPill}>Updated {fmtUpdatedAt(updatedAt)}</AppText>
+              <AppText style={styles.metaPill}>{`Updated ${fmtUpdatedAt(updatedAt)}`}</AppText>
               <View style={styles.pulsePill}>
                 <Shield size={13} color={themeColors.accent} />
-                <AppText style={styles.pulsePillText}>Pulse {derived.regime}</AppText>
+                <AppText style={styles.pulsePillText}>{`Pulse ${derived.regime}`}</AppText>
               </View>
             </View>
 
@@ -618,7 +647,7 @@ const GlobalIndices = ({ navigation }) => {
                           </AppText>
                         </View>
                       </View>
-                      <AppText style={styles.regionStat}>{stats?.adv || 0}/{stats?.total || 0} up</AppText>
+                      <AppText style={styles.regionStat}>{`${stats?.adv || 0}/${stats?.total || 0} up`}</AppText>
                     </View>
 
                     <View style={styles.regionTrack}>
@@ -648,7 +677,7 @@ const GlobalIndices = ({ navigation }) => {
                     <View style={styles.regionTitleRow}>
                       <View style={styles.regionDot} />
                       <AppText style={styles.regionSectionTitle}>{region}</AppText>
-                      <AppText style={styles.sectionCount}>{items.length} indices</AppText>
+                      <AppText style={styles.sectionCount}>{`${items.length} indices`}</AppText>
                     </View>
                     <View style={[styles.tonePill, { borderColor: pill.borderColor, backgroundColor: pill.backgroundColor }]}>
                       <AppText style={[styles.tonePillText, { color: pill.color }]}>

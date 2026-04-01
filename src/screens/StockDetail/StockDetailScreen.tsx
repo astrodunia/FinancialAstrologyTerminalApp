@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Image,
   Linking,
+  PanResponder,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -10,7 +11,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import Svg, { Defs, LinearGradient, Line, Path, Stop } from 'react-native-svg';
+import Svg, { Circle, Defs, LinearGradient, Line, Path, Stop } from 'react-native-svg';
 import {
   Activity,
   BarChart3,
@@ -838,7 +839,8 @@ const getStatementPeriods = (rows: Record<string, unknown>[]) =>
       const rightValue = new Date(String(right.period || right.date || right.year || right.asOfDate || right.fiscalDateEnding || 0)).getTime();
       return leftValue - rightValue;
     })
-    .map((row) => ({
+    .map((row, index) => ({
+      key: `${String(row.period || row.date || row.year || row.asOfDate || row.fiscalDateEnding || 'period')}-${index}`,
       label: getPeriodLabel(row, '--'),
       row,
     }));
@@ -874,8 +876,8 @@ const renderStatementMatrix = (
           <View style={styles.statementMetricCell}>
             <AppText style={styles.statementHeaderText}>Metric</AppText>
           </View>
-          {periods.map(({ label }) => (
-            <View key={label} style={styles.statementPeriodCell}>
+          {periods.map(({ key: periodKey, label }) => (
+            <View key={periodKey} style={styles.statementPeriodCell}>
               <AppText style={styles.statementHeaderText}>{label}</AppText>
             </View>
           ))}
@@ -889,8 +891,8 @@ const renderStatementMatrix = (
             <View style={styles.statementMetricCell}>
               <AppText style={styles.statementMetricText}>{humanizeFieldLabel(key)}</AppText>
             </View>
-            {periods.map(({ label, row }) => (
-              <View key={`${key}-${label}`} style={styles.statementPeriodCell}>
+            {periods.map(({ key: periodKey, row }) => (
+              <View key={`${key}-${periodKey}`} style={styles.statementPeriodCell}>
                 <AppText style={styles.statementValueText}>{formatFundamentalValue(key, row[key], currency)}</AppText>
               </View>
             ))}
@@ -1392,42 +1394,139 @@ const MainChart = ({
   color: string;
   tall?: boolean;
 }) => {
-  const { themeColors } = useUser() as any;
+  const { theme, themeColors } = useUser() as any;
   const styles = useMemo(() => createStyles(themeColors), [themeColors]);
   const { width } = useWindowDimensions();
   const chartWidth = Math.max(width - 72, 240);
   const chartHeight = tall ? 372 : 292;
+  const plotHeight = chartHeight - 28;
   const values = points.map((item) => item.value);
   const min = Math.min(...values);
   const max = Math.max(...values);
-  const path = chartPath(points, chartWidth, chartHeight - 28);
-  const areaPath = buildAreaPath(points, chartWidth, chartHeight - 28);
+  const path = chartPath(points, chartWidth, plotHeight);
+  const areaPath = buildAreaPath(points, chartWidth, plotHeight);
+  const step = points.length === 1 ? 0 : chartWidth / (points.length - 1);
   const softenedColor =
     color === '#199E63' || color === '#49D18D'
       ? '#16A34A'
       : color === '#CF3F58' || color === '#F08C8C'
         ? '#DC2626'
         : color;
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
+
+  const setNearestPoint = useCallback(
+    (touchX: number) => {
+      const clampedX = Math.max(0, Math.min(chartWidth, touchX));
+      const index = step === 0 ? 0 : Math.round(clampedX / step);
+      setActiveIndex(Math.max(0, Math.min(points.length - 1, index)));
+    },
+    [chartWidth, points.length, step],
+  );
+
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onStartShouldSetPanResponderCapture: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponderCapture: () => true,
+        onPanResponderTerminationRequest: () => false,
+        onShouldBlockNativeResponder: () => true,
+        onPanResponderGrant: (evt) => setNearestPoint(evt.nativeEvent.locationX),
+        onPanResponderMove: (evt) => setNearestPoint(evt.nativeEvent.locationX),
+        onPanResponderRelease: () => setActiveIndex(null),
+        onPanResponderTerminate: () => setActiveIndex(null),
+      }),
+    [setNearestPoint],
+  );
+
+  const activePoint = useMemo(() => {
+    if (activeIndex == null) return null;
+    const point = points[activeIndex];
+    if (!point) return null;
+    const x = step === 0 ? chartWidth / 2 : activeIndex * step;
+    const y = plotHeight - ((point.value - min) / (max - min || 1)) * plotHeight;
+    const baseline = points[0]?.value ?? point.value;
+    const delta = point.value - baseline;
+    const pct = baseline ? (delta / baseline) * 100 : 0;
+    return { point, x, y, delta, pct };
+  }, [activeIndex, chartWidth, max, min, plotHeight, points, step]);
+
+  const tooltipTheme = {
+    backgroundColor: theme === 'light' ? 'rgba(15, 23, 42, 0.94)' : 'rgba(9, 14, 24, 0.9)',
+    borderColor: theme === 'light' ? 'rgba(255, 255, 255, 0.18)' : themeColors.border,
+    titleColor: '#FFFFFF',
+    bodyColor: theme === 'light' ? 'rgba(255,255,255,0.88)' : themeColors.textMuted,
+  };
 
   return (
     <View>
-      <Svg width={chartWidth} height={chartHeight}>
-        <Defs>
-          <LinearGradient id="chartAreaGradient" x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0%" stopColor={softenedColor} stopOpacity="0.18" />
-            <Stop offset="100%" stopColor={softenedColor} stopOpacity="0.015" />
-          </LinearGradient>
-        </Defs>
-        <Line x1="0" y1={chartHeight - 28} x2={chartWidth} y2={chartHeight - 28} stroke="rgba(148,163,184,0.18)" strokeWidth="1" />
-        {tall ? (
-          <>
-            <Line x1={chartWidth * 0.38} y1={0} x2={chartWidth * 0.38} y2={chartHeight - 28} stroke="rgba(148,163,184,0.12)" strokeWidth="1" />
-            <Line x1={0} y1={(chartHeight - 28) * 0.45} x2={chartWidth} y2={(chartHeight - 28) * 0.45} stroke="rgba(148,163,184,0.12)" strokeWidth="1" strokeDasharray="4 4" />
-          </>
+      <View style={styles.chartWrap}>
+        <Svg width={chartWidth} height={chartHeight}>
+          <Defs>
+            <LinearGradient id="chartAreaGradient" x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0%" stopColor={softenedColor} stopOpacity="0.18" />
+              <Stop offset="100%" stopColor={softenedColor} stopOpacity="0.015" />
+            </LinearGradient>
+          </Defs>
+          <Line x1="0" y1={plotHeight} x2={chartWidth} y2={plotHeight} stroke="rgba(148,163,184,0.18)" strokeWidth="1" />
+          {tall ? (
+            <>
+              <Line x1={chartWidth * 0.38} y1={0} x2={chartWidth * 0.38} y2={plotHeight} stroke="rgba(148,163,184,0.12)" strokeWidth="1" />
+              <Line x1={0} y1={plotHeight * 0.45} x2={chartWidth} y2={plotHeight * 0.45} stroke="rgba(148,163,184,0.12)" strokeWidth="1" strokeDasharray="4 4" />
+            </>
+          ) : null}
+          <Path d={areaPath} fill="url(#chartAreaGradient)" />
+          <Path d={path} fill="none" stroke={softenedColor} strokeOpacity={0.92} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+          {activePoint ? (
+            <>
+              <Line
+                x1={activePoint.x}
+                y1="0"
+                x2={activePoint.x}
+                y2={plotHeight}
+                stroke={themeColors.textMuted}
+                strokeOpacity={0.34}
+                strokeDasharray="4 4"
+                strokeWidth="1"
+              />
+              <Circle cx={activePoint.x} cy={activePoint.y} r="5" fill={softenedColor} stroke={themeColors.surface} strokeWidth="2.5" />
+            </>
+          ) : null}
+        </Svg>
+        <View style={StyleSheet.absoluteFill} {...panResponder.panHandlers} />
+        {activePoint ? (
+          <View
+            style={[
+              styles.chartTooltip,
+              {
+                left: Math.min(Math.max(activePoint.x - 74, 8), chartWidth - 148),
+                top: Math.max(activePoint.y - 72, 8),
+                backgroundColor: tooltipTheme.backgroundColor,
+                borderColor: tooltipTheme.borderColor,
+              },
+            ]}
+            pointerEvents="none"
+          >
+            <AppText style={[styles.chartTooltipPrice, { color: tooltipTheme.titleColor }]}>
+              {formatCurrency(activePoint.point.value)}
+            </AppText>
+            <AppText style={[styles.chartTooltipTime, { color: tooltipTheme.bodyColor }]}>
+              {formatDateTime(activePoint.point.timestamp)}
+            </AppText>
+            <AppText
+              style={[
+                styles.chartTooltipChange,
+                {
+                  color: tooltipTheme.titleColor,
+                },
+              ]}
+            >
+              {`${activePoint.delta >= 0 ? 'Up' : 'Down'} ${formatCurrency(Math.abs(activePoint.delta))} (${activePoint.pct >= 0 ? '+' : ''}${activePoint.pct.toFixed(2)}%)`}
+            </AppText>
+          </View>
         ) : null}
-        <Path d={areaPath} fill="url(#chartAreaGradient)" />
-        <Path d={path} fill="none" stroke={softenedColor} strokeOpacity={0.92} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
-      </Svg>
+      </View>
       <View style={styles.chartLegendRow}>
         <AppText style={styles.chartLegendText}>{formatCurrency(min)}</AppText>
         <AppText style={styles.chartLegendText}>{formatCurrency(max)}</AppText>
@@ -1728,6 +1827,9 @@ const createStyles = (colors: Record<string, string>) =>
     contentScroll: {
       flex: 1,
     },
+    chartWrap: {
+      position: 'relative',
+    },
     chartLegendRow: {
       flexDirection: 'row',
       justifyContent: 'space-between',
@@ -1737,6 +1839,34 @@ const createStyles = (colors: Record<string, string>) =>
       fontSize: 11,
       color: '#94A3B8',
       fontFamily: FONT.regular,
+    },
+    chartTooltip: {
+      position: 'absolute',
+      width: 148,
+      borderRadius: 14,
+      borderWidth: 1,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      shadowColor: '#000000',
+      shadowOpacity: 0.18,
+      shadowRadius: 12,
+      shadowOffset: { width: 0, height: 6 },
+      elevation: 6,
+    },
+    chartTooltipPrice: {
+      fontSize: 13,
+      fontFamily: FONT.extraBold,
+    },
+    chartTooltipTime: {
+      marginTop: 2,
+      fontSize: 10,
+      fontFamily: FONT.medium,
+    },
+    chartTooltipChange: {
+      marginTop: 6,
+      fontSize: 11,
+      fontFamily: FONT.semiBold,
+      lineHeight: 15,
     },
     scrollContent: {
       paddingHorizontal: 10,
@@ -2132,25 +2262,25 @@ const createStyles = (colors: Record<string, string>) =>
       borderRadius: 999,
       borderWidth: 1,
       borderColor: colors.border,
-      backgroundColor: '#EEF4FF',
+      backgroundColor: colors.surfaceAlt,
       alignItems: 'center',
     },
     chartTfChipActive: {
-      backgroundColor: colors.surface,
-      borderColor: '#1F2937',
+      backgroundColor: colors.textPrimary,
+      borderColor: colors.textPrimary,
       shadowColor: '#0F172A',
-      shadowOpacity: 0.08,
+      shadowOpacity: colors.background === '#0B0B0C' ? 0.18 : 0.08,
       shadowRadius: 8,
       shadowOffset: { width: 0, height: 3 },
-      elevation: 2,
+      elevation: 3,
     },
     chartTfChipText: {
-      color: '#64748B',
+      color: colors.textMuted,
       fontSize: 12,
       fontFamily: FONT.medium,
     },
     chartTfChipTextActive: {
-      color: '#0F172A',
+      color: colors.background,
       fontFamily: FONT.semiBold,
     },
     sparklineCard: {

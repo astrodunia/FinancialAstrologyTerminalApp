@@ -6,7 +6,8 @@ import GradientBackground from '../../components/GradientBackground';
 import HomeHeader from '../../components/HomeHeader';
 import { getSectorPage, SECTOR_BY_SLUG, SECTOR_PAGE_SIZE } from '../../data/sectors/sectorUniverse';
 import { fetchStockInfo } from '../../features/stocks/api';
-import { navigateToStockDetail } from '../../features/stocks/navigation';
+import { navigateToStockDetail, normalizeStockSymbol } from '../../features/stocks/navigation';
+import { useTickerSearch } from '../../features/stocks/useTickerSearch';
 import { useUser } from '../../store/UserContext';
 
 const toNumber = (value) => {
@@ -32,6 +33,14 @@ const mapSectorStockInfo = (payload, symbol) => {
     pct: toNumber(source?.regularMarketChangePercent ?? source?.priceChangePercent),
   };
 };
+
+const buildPlaceholderStocks = (tickers) =>
+  tickers.map((ticker) => ({
+    symbol: ticker,
+    name: ticker,
+    price: 0,
+    pct: 0,
+  }));
 
 const formatPrice = (value) => {
   if (value == null || Number.isNaN(value)) return '--';
@@ -59,6 +68,7 @@ const SectorDetailScreen = ({ navigation, route }) => {
   const [stockItems, setStockItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const { results, loading: searchLoading, error: searchError } = useTickerSearch(searchQuery);
 
   useEffect(() => {
     setPage(1);
@@ -75,6 +85,8 @@ const SectorDetailScreen = ({ navigation, route }) => {
     async (signal) => {
       setLoading(true);
       setError('');
+      const placeholders = buildPlaceholderStocks(pageTickers);
+      setStockItems(placeholders);
 
       try {
         const settled = await Promise.allSettled(
@@ -94,11 +106,12 @@ const SectorDetailScreen = ({ navigation, route }) => {
           throw new Error('No stock quotes available for this page.');
         }
 
-        setStockItems(nextItems);
+        const nextBySymbol = new Map(nextItems.map((item) => [item.symbol, item]));
+        setStockItems(placeholders.map((item) => nextBySymbol.get(item.symbol) || item));
       } catch (nextError) {
         if (signal?.aborted) return;
         setError(nextError?.message || 'Failed to load sector stocks.');
-        setStockItems([]);
+        setStockItems(placeholders);
       } finally {
         if (!signal?.aborted) {
           setLoading(false);
@@ -123,6 +136,27 @@ const SectorDetailScreen = ({ navigation, route }) => {
     });
   }, [searchQuery, stockItems]);
 
+  const submitTickerSearch = useCallback(() => {
+    const normalized = normalizeStockSymbol(searchQuery);
+    if (/^[A-Z][A-Z0-9.-]{0,9}$/.test(normalized)) {
+      navigateToStockDetail(navigation, normalized);
+      return;
+    }
+
+    if (results[0]?.symbol) {
+      navigateToStockDetail(navigation, results[0].symbol);
+    }
+  }, [navigation, results, searchQuery]);
+
+  const selectTickerSearchResult = useCallback(
+    (item) => {
+      if (!item?.symbol) return;
+      setSearchQuery(item.symbol);
+      navigateToStockDetail(navigation, item.symbol);
+    },
+    [navigation],
+  );
+
   return (
     <View style={styles.screen}>
       <GradientBackground>
@@ -131,6 +165,12 @@ const SectorDetailScreen = ({ navigation, route }) => {
           profileName={profileName}
           searchQuery={searchQuery}
           onChangeSearchQuery={setSearchQuery}
+          searchResults={results}
+          searchLoading={searchLoading}
+          searchError={searchError}
+          showSearchResults={Boolean(searchQuery.trim())}
+          onPressSearchResult={selectTickerSearchResult}
+          onSubmitSearch={submitTickerSearch}
           onPressProfile={() => navigation.navigate('Profile')}
           onPressGlobalIndices={() => navigation.navigate('GlobalIndices')}
         />
@@ -154,21 +194,23 @@ const SectorDetailScreen = ({ navigation, route }) => {
               </View>
 
               {loading ? (
-                <View style={styles.centerState}>
+                <View style={styles.inlineStateRow}>
                   <ActivityIndicator size="small" color={themeColors.textPrimary} />
                   <AppText style={styles.stateText}>Loading live quotes...</AppText>
                 </View>
               ) : null}
 
               {!loading && error ? (
-                <View style={styles.centerState}>
+                <View style={styles.inlineStateRow}>
                   <AppText style={styles.errorText}>{error}</AppText>
                 </View>
               ) : null}
 
-              {!loading && !error
+              {visibleStocks.length
                 ? visibleStocks.map((item, idx) => {
-                    const up = (item.pct ?? 0) >= 0;
+                    const pct = item.pct ?? 0;
+                    const isFlat = Math.abs(pct) < 0.000001;
+                    const up = pct > 0;
 
                     return (
                       <Pressable
@@ -185,8 +227,13 @@ const SectorDetailScreen = ({ navigation, route }) => {
 
                         <View style={styles.stockRight}>
                           <AppText style={styles.priceText}>{formatPrice(item.price)}</AppText>
-                          <View style={[styles.changePill, up ? styles.changePillUp : styles.changePillDown]}>
-                            {up ? (
+                          <View
+                            style={[
+                              styles.changePill,
+                              isFlat ? styles.changePillNeutral : up ? styles.changePillUp : styles.changePillDown,
+                            ]}
+                          >
+                            {isFlat ? null : up ? (
                               <ArrowUpRight size={12} color={themeColors.positive} />
                             ) : (
                               <ArrowDownRight size={12} color={themeColors.negative} />
@@ -194,7 +241,7 @@ const SectorDetailScreen = ({ navigation, route }) => {
                             <AppText
                               style={[
                                 styles.changeText,
-                                { color: up ? themeColors.positive : themeColors.negative },
+                                { color: isFlat ? themeColors.textMuted : up ? themeColors.positive : themeColors.negative },
                               ]}
                             >
                               {formatPct(item.pct)}
@@ -206,7 +253,7 @@ const SectorDetailScreen = ({ navigation, route }) => {
                   })
                 : null}
 
-              {!loading && !error && !visibleStocks.length ? (
+              {!visibleStocks.length ? (
                 <View style={styles.centerState}>
                   <AppText style={styles.stateText}>No stocks match your search.</AppText>
                 </View>
@@ -398,6 +445,11 @@ const createStyles = (colors) =>
       borderColor: 'rgba(240, 140, 140, 0.45)',
     },
 
+    changePillNeutral: {
+      backgroundColor: 'rgba(255, 255, 255, 0.06)',
+      borderColor: colors.border,
+    },
+
     changeText: {
       fontSize: 11,
       fontFamily: 'NotoSans-Medium',
@@ -408,6 +460,16 @@ const createStyles = (colors) =>
       justifyContent: 'center',
       gap: 8,
       paddingVertical: 18,
+    },
+
+    inlineStateRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      paddingVertical: 12,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
     },
 
     stateText: {
@@ -438,11 +500,14 @@ const createStyles = (colors) =>
       paddingHorizontal: 14,
       paddingVertical: 11,
       borderRadius: 14,
-      backgroundColor: colors.textPrimary,
+      backgroundColor: colors.accent,
+      borderWidth: 1,
+      borderColor: colors.accent,
     },
 
     pageBtnDisabled: {
       backgroundColor: colors.surfaceAlt,
+      borderColor: colors.border,
     },
 
     pageBtnText: {
