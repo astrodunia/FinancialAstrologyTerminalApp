@@ -24,8 +24,8 @@ import BottomTabs from '../../components/BottomTabs';
 import GradientBackground from '../../components/GradientBackground';
 import { useUser } from '../../store/UserContext';
 import { MAIN_TAB_ROUTES, useHorizontalSwipe } from '../../navigation/useHorizontalSwipe';
+import { LIVE_API_BASE } from '../../utils/apiBaseUrl';
 
-const LIVE_API_BASE = 'https://finance.rajeevprakash.com';
 const OVERVIEW_API_BASE = LIVE_API_BASE;
 const TICKER_SYMBOLS = ['MSFT', 'NVDA', 'GOOGL', 'AMZN', 'META', 'TSLA'];
 const MOVER_SYMBOLS = ['NVDA', 'META', 'TSLA', 'AVGO', 'PLTR', 'AMZN', 'MA', 'GOOGL'];
@@ -1132,3 +1132,6 @@ const createStyles = (colors, isLight) =>
   });
 
 export default Overview;
+
+
+

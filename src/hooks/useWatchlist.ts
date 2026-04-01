@@ -202,13 +202,16 @@ export const useWatchlist = () => {
     } catch (error: any) {
       const message = String(error?.message || 'Unable to create watchlist.');
       const detail = error?.path ? `${message}\n(${String(error.path)})` : message;
+      const lower = message.toLowerCase();
       const quotaHit =
-        message.toLowerCase().includes('quota') ||
-        message.toLowerCase().includes('limit') ||
-        message.toLowerCase().includes('upgrade');
+        lower.includes('quota') ||
+        lower.includes('limit') ||
+        lower.includes('upgrade') ||
+        (lower.includes('up to') && lower.includes('watchlist')) ||
+        lower.includes('on your plan');
 
       if (quotaHit) {
-        Alert.alert('Quota reached', 'Upgrade your plan to create more watchlists.');
+        Alert.alert('Watchlist limit reached', message);
       } else {
         Alert.alert('Create failed', detail);
       }
@@ -361,5 +364,6 @@ export const useWatchlist = () => {
     refreshQuotes,
   };
 };
+
 
 

@@ -17,6 +17,10 @@ const normalizeSymbol = (value: string = ''): string => String(value || '').toUp
 const toArray = (payload: unknown): JsonMap[] => {
   const data = payload as JsonMap;
   if (Array.isArray(payload)) return payload as JsonMap[];
+
+  if (Array.isArray(data?.lists)) return data.lists as JsonMap[];
+  if (Array.isArray((data?.data as JsonMap)?.lists)) return (data.data as JsonMap).lists as JsonMap[];
+
   if (Array.isArray(data?.data)) return data.data as JsonMap[];
   if (Array.isArray((data?.data as JsonMap)?.items)) return (data.data as JsonMap).items as JsonMap[];
   if (Array.isArray((data?.data as JsonMap)?.watchlists)) return (data.data as JsonMap).watchlists as JsonMap[];
@@ -117,7 +121,8 @@ const requestJson = async (
   return payload;
 };
 
-const unwrapWatchlist = (payload: JsonMap | null): unknown => payload?.data || payload?.item || payload?.watchlist || payload?.result || payload;
+const unwrapWatchlist = (payload: JsonMap | null): unknown =>
+  payload?.list || payload?.data || payload?.item || payload?.watchlist || payload?.result || payload;
 
 export const getLists = async (authFetch: FetchLike, signal?: AbortSignal): Promise<WatchlistMeta[]> => {
   const payload = await requestJson(authFetch, WATCHLIST_BASE, {}, signal);
@@ -170,7 +175,7 @@ export const addSymbol = async (authFetch: FetchLike, id: string, ticker: string
   const encoded = encodeURIComponent(id);
   const payload = await requestJson(authFetch, `${WATCHLIST_BASE}/${encoded}/symbols`, {
     method: 'POST',
-    body: JSON.stringify({ symbol }),
+    body: JSON.stringify({ ticker: symbol }),
   });
 
   return mapMeta(unwrapWatchlist(payload));
@@ -183,10 +188,12 @@ export const removeSymbol = async (authFetch: FetchLike, id: string, ticker: str
   const encoded = encodeURIComponent(id);
   const payload = await requestJson(authFetch, `${WATCHLIST_BASE}/${encoded}/symbols`, {
     method: 'DELETE',
-    body: JSON.stringify({ symbol }),
+    body: JSON.stringify({ ticker: symbol }),
   });
 
   return mapMeta(unwrapWatchlist(payload));
 };
 
 export { normalizeSymbol };
+
+
