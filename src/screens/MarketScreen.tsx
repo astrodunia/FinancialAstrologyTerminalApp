@@ -14,8 +14,8 @@ export default function MarketScreen({ navigation }: any) {
   const { data = [], isLoading, error, refetch } = useHeatmapData();
   const [searchQuery, setSearchQuery] = useState('');
   const profileName = user?.displayName || user?.name || 'Trader';
-  const { results, loading, error: searchError } = useTickerSearch(searchQuery);
-  const swipeHandlers = useHorizontalSwipe(MAIN_TAB_ROUTES, 'Overview', (route) => navigation.navigate(route));
+  const { results = [], loading, error: searchError } = useTickerSearch(searchQuery) as any;
+  const swipeHandlers = useHorizontalSwipe(MAIN_TAB_ROUTES, 'Overview', (route: any) => navigation.navigate(route));
 
   const submitTickerSearch = useCallback(() => {
     const normalized = normalizeStockSymbol(searchQuery);

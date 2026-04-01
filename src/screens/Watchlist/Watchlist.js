@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, Platform, Pressable, ScrollView, StatusBar, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Linking, Platform, Pressable, ScrollView, StatusBar, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { ArrowLeft, CirclePlus, Pencil, Plus, Radio, Trash2, UserCircle } from 'lucide-react-native';
 import AppText from '../../components/AppText';
 import AppTextInput from '../../components/AppTextInput';
@@ -8,8 +8,8 @@ import GradientBackground from '../../components/GradientBackground';
 import { API_BASE_URL, useUser } from '../../store/UserContext';
 import { navigateToStockDetail } from '../../features/stocks/navigation';
 import { MAIN_TAB_ROUTES, useHorizontalSwipe } from '../../navigation/useHorizontalSwipe';
-
-const LIVE_API_BASE = 'https://finance.rajeevprakash.com';
+import { useWatchlist } from '../../hooks/useWatchlist';
+import { LIVE_API_BASE } from '../../utils/apiBaseUrl';
 
 const PRESET_SECTIONS = [
   {
@@ -55,6 +55,32 @@ const PRESET_SECTIONS = [
     symbols: ['BITO', 'GBTC', 'ETHE', 'BAR', 'SARK', 'SH', 'SDS'],
   },
 ];
+const COMPANY_NAME_FALLBACK = {
+  AAPL: 'Apple Inc.',
+  MSFT: 'Microsoft Corporation',
+  AMZN: 'Amazon.com, Inc.',
+  NVDA: 'NVIDIA Corporation',
+  GOOGL: 'Alphabet Inc.',
+  GOOG: 'Alphabet Inc.',
+  META: 'Meta Platforms, Inc.',
+  TSLA: 'Tesla, Inc.',
+  'BRK.B': 'Berkshire Hathaway Inc.',
+  JPM: 'JPMorgan Chase & Co.',
+  JNJ: 'Johnson & Johnson',
+};
+const COMPANY_SHORT_FALLBACK = {
+  AAPL: 'Apple',
+  MSFT: 'Microsoft',
+  AMZN: 'Amazon',
+  NVDA: 'NVIDIA',
+  GOOGL: 'Alphabet',
+  GOOG: 'Alphabet',
+  META: 'Meta',
+  TSLA: 'Tesla',
+  'BRK.B': 'Berkshire',
+  JPM: 'JPMorgan',
+  JNJ: 'J&J',
+};
 
 const normalizeSymbol = (value) => String(value || '').toUpperCase().replace(/[^A-Z0-9.-]/g, '');
 const symbolKey = (value) => String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -148,6 +174,45 @@ const fmtVol = (value) => {
   if (value >= 1_000) return `${Math.round(value / 1_000)}K`;
   return `${Math.round(value)}`;
 };
+const cleanName = (raw, symbol) => {
+  if (typeof raw !== 'string') return '';
+  const value = raw.trim();
+  if (!value) return '';
+  const lowered = value.toLowerCase();
+  if (lowered === 'n/a' || lowered === 'na' || lowered === '--' || lowered === '..' || lowered === '.') return '';
+  if (normalizeSymbol(value) === normalizeSymbol(symbol)) return '';
+  return value;
+};
+const pickDisplayName = (source, symbol) => {
+  if (!source || typeof source !== 'object') return '';
+  const candidates = [
+    source.longName,
+    source.shortName,
+    source.displayName,
+    source.companyName,
+    source.instrumentName,
+    source.securityName,
+    source.description,
+    source.name,
+    source.title,
+  ];
+  for (const raw of candidates) {
+    const cleaned = cleanName(raw, symbol);
+    if (cleaned) return cleaned;
+  }
+  return '';
+};
+const toShortName = (name, symbol) => {
+  const fallback = COMPANY_SHORT_FALLBACK[symbol];
+  if (fallback) return fallback;
+  if (typeof name !== 'string') return symbol;
+  let short = name.trim();
+  if (!short) return symbol;
+  short = short.replace(/,?\s*(incorporated|inc\.?|corporation|corp\.?|company|co\.?|limited|ltd\.?)$/i, '');
+  short = short.replace(/,.*$/, '').trim();
+  if (!short) return symbol;
+  return short;
+};
 const normalizeRowSnapshot = (row) => {
   if (!row) return null;
   const priceRaw = pickNumber(row, ['price', 'value', 'lastPrice', 'last', 'ltp', 'close', 'regularMarketPrice', 'bid', 'ask']);
@@ -187,6 +252,7 @@ const normalizeInfoSnapshot = (payload) => {
     if (prev > 0) normalizedPct = (normalizedChange / prev) * 100;
   }
   return {
+    name: pickDisplayName(source, source?.symbol || source?.ticker || ''),
     price,
     change: normalizedChange,
     pct: normalizedPct,
@@ -229,12 +295,6 @@ const Watchlist = ({ navigation }) => {
   const styles = useMemo(() => createStyles(themeColors, theme === 'light'), [themeColors, theme]);
   const swipeHandlers = useHorizontalSwipe(MAIN_TAB_ROUTES, 'Watchlist', (route) => navigation.navigate(route));
 
-  const [watchlists, setWatchlists] = useState([{ id: 'wl-tech-momentum', title: 'Tech Momentum', symbols: ['AAPL', 'MSFT', 'NVDA'] }]);
-  const [selectedListId, setSelectedListId] = useState('wl-tech-momentum');
-  const [newListTitle, setNewListTitle] = useState('');
-  const [newSymbol, setNewSymbol] = useState('');
-  const [editingSymbol, setEditingSymbol] = useState('');
-
   const [activePreset, setActivePreset] = useState(null);
   const [presetRows, setPresetRows] = useState([]);
   const [presetLoading, setPresetLoading] = useState(false);
@@ -242,80 +302,42 @@ const Watchlist = ({ navigation }) => {
   const [livePresetCache, setLivePresetCache] = useState({});
   const presetAbortRef = useRef(null);
 
-  const selectedList = watchlists.find((item) => item.id === selectedListId) || watchlists[0] || null;
-  const canCreateWatchlist = newListTitle.trim().length > 0;
+  const {
+    lists: watchlists,
+    activeId: selectedListId,
+    active: selectedList,
+    rows: customRows,
+    loadingList,
+    creatingList,
+    newTitle: newListTitle,
+    editTitle,
+    isEditingTitle,
+    symInput: newSymbol,
+    suggestions,
+    phase,
+    setNewTitle: setNewListTitle,
+    setEditTitle,
+    setIsEditingTitle,
+    setSymInput: setNewSymbol,
+    selectList: setSelectedListId,
+    onCreate: createWatchlist,
+    onRename,
+    onDeleteList: deleteSelectedWatchlist,
+    onAddTicker,
+    onRemoveTicker: removeSymbol,
+  } = useWatchlist();
+
   const displayName = user?.displayName || user?.name || 'Trader';
-
-  const createWatchlist = () => {
-    const title = newListTitle.trim();
-    if (!title) {
-      Alert.alert('Missing title', 'Please enter a watchlist title.');
-      return;
-    }
-    const exists = watchlists.some((item) => item.title.trim().toLowerCase() === title.toLowerCase());
-    if (exists) {
-      Alert.alert('Already exists', 'A watchlist with this title already exists.');
-      return;
-    }
-    const id = `wl-${Date.now()}`;
-    setWatchlists((prev) => [{ id, title, symbols: [] }, ...prev]);
-    setSelectedListId(id);
-    setNewListTitle('');
-  };
-
-  const addSymbolToList = (symbol, listId = selectedListId) => {
-    const normalized = normalizeSymbol(symbol);
-    if (!normalized) return;
-    setWatchlists((prev) =>
-      prev.map((item) =>
-        item.id !== listId ? item : item.symbols.includes(normalized) ? item : { ...item, symbols: [...item.symbols, normalized] },
-      ),
-    );
-  };
-
-  const handleAddSymbol = () => {
-    if (!selectedList) {
-      Alert.alert('No watchlist', 'Create a watchlist first.');
-      return;
-    }
-    const symbol = normalizeSymbol(newSymbol);
-    if (!symbol) {
-      Alert.alert('Invalid symbol', 'Enter a valid ticker symbol (example: NVDA).');
-      return;
-    }
-    if (editingSymbol) {
-      setWatchlists((prev) =>
-        prev.map((item) =>
-          item.id !== selectedList.id
-            ? item
-            : {
-              ...item,
-              symbols: item.symbols.map((s) => (s === editingSymbol ? symbol : s)).filter((s, idx, arr) => arr.indexOf(s) === idx),
-            },
-        ),
-      );
-      setEditingSymbol('');
-    } else {
-      addSymbolToList(symbol, selectedList.id);
-    }
-    setNewSymbol('');
-  };
-
-  const removeSymbol = (symbol) => {
+  const confirmDeleteWatchlist = () => {
     if (!selectedList) return;
-    setWatchlists((prev) =>
-      prev.map((item) => (item.id === selectedList.id ? { ...item, symbols: item.symbols.filter((s) => s !== symbol) } : item)),
+    Alert.alert(
+      'Delete watchlist?',
+      `Are you sure you want to delete "${selectedList.title}"?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: () => deleteSelectedWatchlist() },
+      ],
     );
-  };
-  const deleteSelectedWatchlist = () => {
-    if (!selectedList) return;
-    setWatchlists((prev) => {
-      const rest = prev.filter((item) => item.id !== selectedList.id);
-      setSelectedListId(rest[0]?.id || '');
-      return rest;
-    });
-    setEditingSymbol('');
-    setNewSymbol('');
   };
 
   const addPresetToCurrentList = (symbols) => {
@@ -323,7 +345,7 @@ const Watchlist = ({ navigation }) => {
       Alert.alert('No watchlist', 'Create a watchlist first.');
       return;
     }
-    symbols.forEach((sym) => addSymbolToList(sym, selectedList.id));
+    symbols.forEach((sym) => onAddTicker(sym));
   };
 
   const loadPresetRows = useCallback(async (section) => {
@@ -398,7 +420,7 @@ const Watchlist = ({ navigation }) => {
             );
         return {
           symbol,
-          name: match?.longName || match?.shortName || match?.name || symbol,
+          name: toShortName(pickDisplayName(match, symbol) || infoSnap?.name || COMPANY_NAME_FALLBACK[symbol] || symbol, symbol),
           price: finalSnap?.price ?? null,
           pct: finalSnap?.pct ?? null,
           change: finalSnap?.change ?? null,
@@ -555,7 +577,7 @@ const Watchlist = ({ navigation }) => {
         <View style={styles.header}>
           <View>
             <AppText style={styles.title}>My Watchlists</AppText>
-            <AppText style={styles.subtitle}>{`Welcome, ${displayName}`}</AppText>
+            <AppText style={styles.subtitle}>{`Welcome, ${displayName} • ${String(phase || '').toUpperCase()}`}</AppText>
           </View>
           <Pressable style={styles.iconButton} onPress={() => navigation.navigate('Profile')}>
             <UserCircle size={18} color={themeColors.textPrimary} />
@@ -575,18 +597,22 @@ const Watchlist = ({ navigation }) => {
               />
             </View>
             <Pressable
-              style={[styles.createBtn, isCompact && styles.createBtnCompact, !canCreateWatchlist && styles.createBtnDisabled]}
+              style={[styles.createBtn, isCompact && styles.createBtnCompact, creatingList && styles.createBtnLoading]}
               onPress={createWatchlist}
-              disabled={!canCreateWatchlist}
+              disabled={creatingList}
             >
-              <Plus size={14} color={styles.createBtnText.color} />
-              <AppText style={styles.createBtnText}>Create</AppText>
+              {creatingList ? (
+                <ActivityIndicator size="small" color={styles.createBtnText.color} />
+              ) : (
+                <Plus size={14} color={styles.createBtnText.color} />
+              )}
+              <AppText style={styles.createBtnText}>{creatingList ? 'Creating...' : 'Create'}</AppText>
             </Pressable>
           </View>
 
           <View style={styles.listTabs}>
             {watchlists.map((list) => {
-              const active = list.id === selectedList?.id;
+              const active = list.id === selectedListId;
               return (
                 <Pressable key={list.id} style={[styles.listChip, active && styles.listChipActive]} onPress={() => setSelectedListId(list.id)}>
                   <AppText style={[styles.listChipText, active && styles.listChipTextActive]}>{list.title}</AppText>
@@ -598,13 +624,41 @@ const Watchlist = ({ navigation }) => {
           <View style={styles.workspace}>
             <View style={styles.workspaceHead}>
               <View style={styles.workspaceTitleRow}>
-                <AppText style={styles.workspaceTitle}>{selectedList?.title || 'No Watchlist'}</AppText>
+                {isEditingTitle ? (
+                  <AppTextInput
+                    value={editTitle}
+                    onChangeText={setEditTitle}
+                    placeholder="Rename watchlist"
+                    placeholderTextColor={themeColors.textMuted}
+                    style={[styles.input, styles.renameInput]}
+                  />
+                ) : (
+                  <AppText style={styles.workspaceTitle}>{selectedList?.title || 'No Watchlist'}</AppText>
+                )}
               </View>
-              {!!selectedList && (
-                <Pressable style={styles.workspaceDeleteBtn} onPress={deleteSelectedWatchlist}>
-                  <Trash2 size={14} color={themeColors.negative} />
-                </Pressable>
-              )}
+              <View style={styles.symbolActions}>
+                {!!selectedList && (
+                  <>
+                    {isEditingTitle ? (
+                      <>
+                        <Pressable style={styles.renameActionBtn} onPress={onRename} hitSlop={8}>
+                          <AppText style={styles.renameActionText}>Save</AppText>
+                        </Pressable>
+                        <Pressable style={styles.renameActionBtn} onPress={() => setIsEditingTitle(false)} hitSlop={8}>
+                          <AppText style={styles.renameActionText}>Cancel</AppText>
+                        </Pressable>
+                      </>
+                    ) : (
+                      <Pressable onPress={() => setIsEditingTitle(true)} hitSlop={8}>
+                        <Pencil size={14} color={themeColors.textPrimary} />
+                      </Pressable>
+                    )}
+                    <Pressable style={styles.workspaceDeleteBtn} onPress={confirmDeleteWatchlist}>
+                      <Trash2 size={14} color={themeColors.negative} />
+                    </Pressable>
+                  </>
+                )}
+              </View>
             </View>
 
             <View style={styles.addSymbolRow}>
@@ -618,39 +672,50 @@ const Watchlist = ({ navigation }) => {
                   autoCapitalize="characters"
                 />
               </View>
-              <Pressable style={styles.plusBtn} onPress={handleAddSymbol}>
+              <Pressable style={styles.plusBtn} onPress={() => onAddTicker()}>
                 <Plus size={16} color={themeColors.textPrimary} />
               </Pressable>
             </View>
-            {!!editingSymbol && <AppText style={styles.editingHint}>{`Editing: ${editingSymbol}`}</AppText>}
 
-            <View style={styles.symbolWrap}>
-              {selectedList?.symbols.length ? (
-                selectedList.symbols.map((symbol) => (
-                  <View key={symbol} style={styles.symbolRow}>
-                    <Pressable style={styles.symbolRowLeft} onPress={() => navigateToStockDetail(navigation, symbol)}>
-                      <AppText style={styles.symbolText}>{symbol}</AppText>
-                    </Pressable>
-                    <View style={styles.symbolActions}>
-                      <Pressable onPress={() => { setEditingSymbol(symbol); setNewSymbol(symbol); }} hitSlop={8}>
-                        <Pencil size={14} color={themeColors.textPrimary} />
-                      </Pressable>
-                      <Pressable onPress={() => removeSymbol(symbol)} hitSlop={8}>
+            {!!suggestions.length && (
+              <View style={styles.suggestionBox}>
+                {suggestions.map((item) => (
+                  <Pressable key={item.symbol} style={styles.suggestionRow} onPress={() => onAddTicker(item.symbol)}>
+                    <AppText style={styles.suggestionSym}>{item.symbol}</AppText>
+                    <AppText style={styles.suggestionName} numberOfLines={1}>{item.name}</AppText>
+                  </Pressable>
+                ))}
+              </View>
+            )}
+            {loadingList && !customRows.length ? (
+              <ActivityIndicator size="small" color={themeColors.textPrimary} />
+            ) : customRows.length ? (
+              <FlatList
+                data={customRows}
+                keyExtractor={(item) => item.symbol}
+                scrollEnabled={false}
+                contentContainerStyle={styles.symbolWrap}
+                renderItem={({ item: row }) => {
+                  const up = (row.pct || 0) >= 0;
+                  return (
+                    <Pressable style={styles.rowCard} onPress={() => navigateToStockDetail(navigation, row.symbol)}>
+                      <AppText style={[styles.cell, styles.cellSym]}>{row.symbol}</AppText>
+                      <AppText style={[styles.cell, styles.cellName]} numberOfLines={1}>{toShortName(row.name, row.symbol)}</AppText>
+                      <AppText style={[styles.cell, styles.cellNum, up ? styles.up : styles.down]}>{fmtPrice(row.price)}</AppText>
+                      <AppText style={[styles.cell, styles.cellNum, up ? styles.up : styles.down]}>{fmtPct(row.pct)}</AppText>
+                      <AppText style={[styles.cell, styles.cellNum, up ? styles.up : styles.down]}>{fmtChange(row.change)}</AppText>
+                      <AppText style={[styles.cell, styles.cellNum]}>{fmtVol(row.volume)}</AppText>
+                      <Pressable onPress={() => removeSymbol(row.symbol)} hitSlop={8}>
                         <Trash2 size={14} color={themeColors.negative} />
                       </Pressable>
-                    </View>
-                  </View>
-                ))
-              ) : selectedList ? (
-                <AppText style={styles.emptyText}>No symbols yet. Add one or use presets below.</AppText>
-              ) : (
-                <AppText style={styles.emptyText}>Create a watchlist title first, then add symbols.</AppText>
-              )}
-            </View>
-            {!!editingSymbol && (
-              <Pressable style={styles.cancelEditBtn} onPress={() => { setEditingSymbol(''); setNewSymbol(''); }}>
-                <AppText style={styles.cancelEditText}>Cancel edit</AppText>
-              </Pressable>
+                    </Pressable>
+                  );
+                }}
+              />
+            ) : selectedList ? (
+              <AppText style={styles.emptyText}>No symbols yet. Add one or use presets below.</AppText>
+            ) : (
+              <AppText style={styles.emptyText}>Create a watchlist title first, then add symbols.</AppText>
             )}
           </View>
 
@@ -715,9 +780,9 @@ const createStyles = (colors, isLight) =>
       borderBottomColor: colors.border,
     },
     th: { color: colors.textMuted, fontSize: 10 },
-    thSym: { width: 74 },
-    thName: { flex: 1, paddingRight: 8 },
-    thNum: { width: 70, textAlign: 'right' },
+    thSym: { width: 58 },
+    thName: { flex: 1, paddingRight: 6 },
+    thNum: { width: 56, textAlign: 'right' },
     sectionRows: { paddingHorizontal: 10, paddingVertical: 10, gap: 8, paddingBottom: 110 },
     rowCard: {
       borderRadius: 14,
@@ -730,9 +795,9 @@ const createStyles = (colors, isLight) =>
       alignItems: 'center',
     },
     cell: { color: colors.textPrimary, fontSize: 12 },
-    cellSym: { width: 74, fontSize: 14 },
-    cellName: { flex: 1, color: colors.textPrimary, fontSize: 13, paddingRight: 8 },
-    cellNum: { width: 70, textAlign: 'right' },
+    cellSym: { width: 58, fontSize: 12 },
+    cellName: { flex: 1, color: colors.textPrimary, fontSize: 12, paddingRight: 6 },
+    cellNum: { width: 56, textAlign: 'right', fontSize: 11 },
     up: { color: '#34d399' },
     down: { color: '#fb7185' },
     errorText: { color: colors.negative, fontSize: 12, paddingHorizontal: 4 },
@@ -764,10 +829,8 @@ const createStyles = (colors, isLight) =>
       borderColor: colors.border,
       backgroundColor: isLight ? '#8b93a1' : 'rgba(148,163,184,0.25)',
     },
-    createBtnDisabled: {
-      opacity: 0.45,
-    },
     createBtnCompact: { width: '100%' },
+    createBtnLoading: { opacity: 0.8 },
     createBtnText: { color: '#ffffff', fontSize: 14 },
     workspace: {
       borderRadius: 18,
@@ -793,6 +856,10 @@ const createStyles = (colors, isLight) =>
       color: colors.textPrimary,
       fontSize: 20,
     },
+    renameInput: {
+      minHeight: 36,
+      paddingVertical: 6,
+    },
     workspaceDeleteBtn: {
       width: 36,
       height: 36,
@@ -803,6 +870,15 @@ const createStyles = (colors, isLight) =>
       justifyContent: 'center',
       backgroundColor: colors.surfaceAlt,
     },
+    renameActionBtn: {
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceAlt,
+      paddingHorizontal: 8,
+      paddingVertical: 5,
+    },
+    renameActionText: { color: colors.textPrimary, fontSize: 11 },
     listTabs: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
     listChip: {
       borderRadius: 999,
@@ -816,6 +892,40 @@ const createStyles = (colors, isLight) =>
     listChipText: { color: colors.textMuted, fontSize: 12 },
     listChipTextActive: { color: isLight ? '#ffffff' : '#0b0f1f' },
     addSymbolRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
+    suggestionBox: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 10,
+      backgroundColor: colors.surfaceAlt,
+      overflow: 'hidden',
+    },
+    suggestionRow: {
+      minHeight: 34,
+      paddingHorizontal: 10,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
+    suggestionSym: { color: colors.textPrimary, fontSize: 12, width: 56 },
+    suggestionName: { color: colors.textMuted, fontSize: 12, flex: 1 },
+    sortRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingTop: 4 },
+    sortChip: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 999,
+      backgroundColor: colors.surfaceAlt,
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+    },
+    sortChipActive: { backgroundColor: colors.accent, borderColor: colors.accent },
+    sortChipText: { color: colors.textMuted, fontSize: 11 },
+    sortChipTextActive: { color: isLight ? '#ffffff' : '#0b0f1f' },
+    sortArrow: { fontSize: 11, color: colors.textMuted },
     plusBtn: {
       width: 42,
       height: 42,
@@ -945,3 +1055,8 @@ const createStyles = (colors, isLight) =>
   });
 
 export default Watchlist;
+
+
+
+
+
