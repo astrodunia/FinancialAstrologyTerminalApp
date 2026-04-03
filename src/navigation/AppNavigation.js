@@ -11,6 +11,9 @@ import Portfolio from '../screens/Portfolio/Portfolio';
 import Overview from '../screens/Overview/Overview';
 import GlobalIndices from '../screens/GlobalIndices/GlobalIndices';
 import Profile from '../screens/Profile/Profile';
+import Products from '../screens/Products/Products';
+import ProductDetail from '../screens/ProductDetail/ProductDetail';
+import AboutTerminal from '../screens/AboutTerminal/AboutTerminal';
 import Plans from '../screens/Plans/Plans';
 import PrivacyPolicy from '../screens/PrivacyPolicy/PrivacyPolicy';
 import Support from '../screens/Support/Support';
@@ -39,6 +42,9 @@ const linking = {
       GlobalIndices: 'global-indices',
       IndexDetail: 'i/:symbol/:tf?',
       Profile: 'profile',
+      Products: 'products',
+      ProductDetail: 'products/:productId',
+      AboutTerminal: 'about-terminal',
       Plans: 'plans',
       PrivacyPolicy: 'privacy-policy',
       Support: 'support',
@@ -77,6 +83,9 @@ const AppNavigation = () => {
                 <Stack.Screen name="CalculatorTool" component={CalculatorTool} />
                 <Stack.Screen name="GlobalIndices" component={GlobalIndices} />
                 <Stack.Screen name="Profile" component={Profile} />
+                <Stack.Screen name="Products" component={Products} />
+                <Stack.Screen name="ProductDetail" component={ProductDetail} />
+                <Stack.Screen name="AboutTerminal" component={AboutTerminal} />
                 <Stack.Screen name="Plans" component={Plans} />
                 <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicy} />
                 <Stack.Screen name="Support" component={Support} />

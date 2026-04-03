@@ -68,7 +68,7 @@ function FooterCTAContact({ styles, openSite }) {
           <AppText style={styles.contactHead}>Product & Subscription Inquiries</AppText>
           <AppText style={styles.contactSub}>For pricing, enterprise access, or integration questions, reach us directly.</AppText>
           <View style={styles.contactRow}>
-            <Pressable style={styles.contactItem} onPress={() => openContact('tel:+9186682919000')}><AppText style={styles.contactItemText}>+91-866829-19000</AppText></Pressable>
+            <Pressable style={styles.contactItem} onPress={() => openContact('tel:+919669919000')}><AppText style={styles.contactItemText}>+91-96699-19000</AppText></Pressable>
             <Pressable style={styles.contactItem} onPress={() => openContact('mailto:pr@rajeevprakash.com')}><AppText style={styles.contactItemText}>pr@rajeevprakash.com</AppText></Pressable>
           </View>
         </View>
@@ -248,7 +248,7 @@ function WinRateRiskRewardTool({ navigation, calculator, styles, themeColors, op
             <View style={styles.resultRow}>
               <View style={[styles.levelBox, styles.levelPivot]}><AppText style={styles.levelLabel}>Risk / share</AppText><AppText style={styles.levelValue}>{m ? fmt(m.risk) : '--'}</AppText></View>
               <View style={[styles.levelBox, styles.levelRes]}><AppText style={styles.levelLabel}>Reward / share</AppText><AppText style={styles.levelValue}>{m ? fmt(m.reward) : '--'}</AppText></View>
-              <View style={[styles.levelBox, styles.levelSup]}><AppText style={styles.levelLabel}>R:R & BE</AppText><AppText style={styles.levelValue}>{m ? `${fmt(m.rr)} • ${fmt(m.be)}%` : '--'}</AppText></View>
+              <View style={[styles.levelBox, styles.levelSup]}><AppText style={styles.levelLabel}>R:R & BE</AppText><AppText style={styles.levelValue}>{m ? `${fmt(m.rr)} | ${fmt(m.be)}%` : '--'}</AppText></View>
             </View>
             <View style={styles.card}>
               <AppText style={styles.label}>R:R gauge (capped at 3)</AppText>
@@ -809,7 +809,7 @@ function FibonacciTool({ navigation, styles, themeColors, openSite }) {
               >
                 <View style={styles.fibLevelRow}>
                   <AppText style={[styles.fibLevelPct, lv.p === 0 ? styles.fibLevelUpText : lv.p === 100 ? styles.fibLevelDownText : null]}>
-                    {lv.key}{lv.p === 0 ? '  ?' : lv.p === 100 ? '  ?' : ''}
+                    {lv.key}{lv.p === 0 ? '  UP' : lv.p === 100 ? '  DOWN' : ''}
                   </AppText>
                   <AppText style={styles.fibLevelPrice}>{out ? `$${fmt(lv.v)}` : '--'}</AppText>
                 </View>
@@ -818,10 +818,10 @@ function FibonacciTool({ navigation, styles, themeColors, openSite }) {
           </View>
           <View style={styles.tipCard}>
             <AppText style={styles.tipTitle}>How to use</AppText>
-            <AppText style={styles.tipText}>• 0% and 100% represent the swing high and swing low.</AppText>
-            <AppText style={styles.tipText}>• 23.6%, 38.2%, 61.8%, 78.6% are key Fibonacci ratios.</AppText>
-            <AppText style={styles.tipText}>• 50% is a common psychological pullback level.</AppText>
-            <AppText style={styles.tipText}>• Use these zones with trend and price action confirmation.</AppText>
+            <AppText style={styles.tipText}>- 0% and 100% represent the swing high and swing low.</AppText>
+            <AppText style={styles.tipText}>- 23.6%, 38.2%, 61.8%, 78.6% are key Fibonacci ratios.</AppText>
+            <AppText style={styles.tipText}>- 50% is a common psychological pullback level.</AppText>
+            <AppText style={styles.tipText}>- Use these zones with trend and price action confirmation.</AppText>
           </View>
         </View>
 

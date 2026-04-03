@@ -1,4 +1,4 @@
-﻿import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Alert, Dimensions, Linking, Pressable, ScrollView, View } from 'react-native';
 import { ArrowLeft, UserCircle } from 'lucide-react-native';
 import Svg, { Circle, Line, Polyline, Rect, Text as SvgText } from 'react-native-svg';
@@ -68,7 +68,7 @@ function FooterCTAContact({ styles, openSite }) {
           <AppText style={styles.contactHead}>Product & Subscription Inquiries</AppText>
           <AppText style={styles.contactSub}>For pricing, enterprise access, or integration questions, reach us directly.</AppText>
           <View style={styles.contactRow}>
-            <Pressable style={styles.contactItem} onPress={() => openContact('tel:+9186682919000')}><AppText style={styles.contactItemText}>+91-866829-19000</AppText></Pressable>
+            <Pressable style={styles.contactItem} onPress={() => openContact('tel:+919669919000')}><AppText style={styles.contactItemText}>+91-96699-19000</AppText></Pressable>
             <Pressable style={styles.contactItem} onPress={() => openContact('mailto:pr@rajeevprakash.com')}><AppText style={styles.contactItemText}>pr@rajeevprakash.com</AppText></Pressable>
           </View>
         </View>
