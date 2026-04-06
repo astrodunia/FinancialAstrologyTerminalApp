@@ -33,7 +33,11 @@ export const logResponse = async ({ label, response }) => {
 };
 
 export const logRequestError = ({ label, url, error }) => {
-  console.error(`${tag} ${label} error`, {
+  const message = toStringSafe(error?.message).toLowerCase();
+  const isNetworkFailure = message.includes('network request failed') || message.includes('failed to fetch');
+  const log = isNetworkFailure ? console.warn : console.error;
+
+  log(`${tag} ${label} error`, {
     platform: Platform.OS,
     url,
     name: error?.name,

@@ -1,4 +1,4 @@
-﻿import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Linking,
   Platform,
@@ -529,7 +529,7 @@ const Calculators = ({ navigation }) => {
             <AppTextInput
               value={query}
               onChangeText={setQuery}
-              placeholder="Search calculators (e.g. RR, support, retirement)"
+              placeholder="Search calculators"
               placeholderTextColor={themeColors.textMuted}
               style={styles.searchInput}
             />
@@ -632,8 +632,8 @@ const Calculators = ({ navigation }) => {
                 For pricing, enterprise access, or integration questions, reach us directly.
               </AppText>
               <View style={styles.contactRow}>
-                <Pressable style={styles.contactItem} onPress={() => openLiveSignals('tel:+9186682919000')}>
-                  <AppText style={styles.contactItemText}>+91-866829-19000</AppText>
+                <Pressable style={styles.contactItem} onPress={() => openLiveSignals('tel:+919669919000')}>
+                  <AppText style={styles.contactItemText}>+91-96699-19000</AppText>
                 </Pressable>
                 <Pressable style={styles.contactItem} onPress={() => openLiveSignals('mailto:pr@rajeevprakash.com')}>
                   <AppText style={styles.contactItemText}>pr@rajeevprakash.com</AppText>

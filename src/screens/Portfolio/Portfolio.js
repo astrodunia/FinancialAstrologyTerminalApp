@@ -11,6 +11,7 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
+import Svg, { Circle, Line, Polygon, Polyline, Rect, Text as SvgText } from 'react-native-svg';
 import {
   BarChart3,
   CircleDollarSign,
@@ -19,6 +20,8 @@ import {
   Search,
   Target,
   Trash2,
+  TrendingUp,
+} from 'lucide-react-native';
   TrendingDown,
   TrendingUp,
 } from 'lucide-react-native';
@@ -212,15 +215,6 @@ const Portfolio = ({ navigation }) => {
               <AppText style={styles.cardTitle} weight="semiBold">Your Positions</AppText>
             </View>
 
-            <View style={styles.sortRow}>
-              {['value', 'gain', 'dayAbs', 'quantity', 'currentPrice'].map((key) => (
-                <Pressable key={key} style={[styles.sortChip, sortKey === key && styles.sortChipActive]} onPress={() => toggleSort(key)}>
-                  <AppText style={styles.sortText}>{key}</AppText>
-                  {sortKey === key ? <AppText style={styles.sortText}>{sortDir === 'asc' ? '?' : '?'}</AppText> : null}
-                </Pressable>
-              ))}
-            </View>
-
             {listLoading ? (
               <ActivityIndicator size="small" color={themeColors.textPrimary} />
             ) : (
@@ -243,7 +237,7 @@ const Portfolio = ({ navigation }) => {
                         </Pressable>
                         <View style={styles.headActions}>
                           <Pressable style={styles.actionIcon} onPress={() => startSell(item)} hitSlop={8}>
-                            <TrendingDown size={13} color={themeColors.textPrimary} />
+                            <CircleDollarSign size={13} color={themeColors.textPrimary} />
                           </Pressable>
                           <Pressable style={styles.actionIcon} onPress={() => startEdit(item)} hitSlop={8}>
                             <Pencil size={13} color={themeColors.textPrimary} />
@@ -326,22 +320,28 @@ const Portfolio = ({ navigation }) => {
                         <View style={styles.panel}>
                           <AppText style={styles.panelTitle} weight="semiBold">Sell {item.symbol}</AppText>
                           <View style={styles.inlineFields}>
-                            <AppTextInput
-                              value={sellDraft.sellQty}
-                              onChangeText={(text) => setSellDraft((prev) => ({ ...prev, id: item.id, sellQty: text }))}
-                              keyboardType="numeric"
-                              placeholder="Sell qty"
-                              placeholderTextColor={themeColors.textMuted}
-                              style={[styles.input, styles.inputHalf]}
-                            />
-                            <AppTextInput
-                              value={sellDraft.sellPrice}
-                              onChangeText={(text) => setSellDraft((prev) => ({ ...prev, id: item.id, sellPrice: text }))}
-                              keyboardType="decimal-pad"
-                              placeholder="Sell price"
-                              placeholderTextColor={themeColors.textMuted}
-                              style={[styles.input, styles.inputHalf]}
-                            />
+                            <View style={styles.inputHalf}>
+                              <AppText style={styles.inputLabel}>Sell Price</AppText>
+                              <AppTextInput
+                                value={sellDraft.sellPrice}
+                                onChangeText={(text) => setSellDraft((prev) => ({ ...prev, id: item.id, sellPrice: text }))}
+                                keyboardType="decimal-pad"
+                                placeholder="Sell Price"
+                                placeholderTextColor={themeColors.textMuted}
+                                style={styles.input}
+                              />
+                            </View>
+                            <View style={styles.inputHalf}>
+                              <AppText style={styles.inputLabel}>Sell Quantity</AppText>
+                              <AppTextInput
+                                value={sellDraft.sellQty}
+                                onChangeText={(text) => setSellDraft((prev) => ({ ...prev, id: item.id, sellQty: text }))}
+                                keyboardType="numeric"
+                                placeholder="Sell Quantity"
+                                placeholderTextColor={themeColors.textMuted}
+                                style={styles.input}
+                              />
+                            </View>
                           </View>
                           <AppText style={styles.metric}>Estimated PnL {fmtMoney(estimateSellPnl(item))}</AppText>
                           <View style={styles.inlineFields}>
@@ -741,6 +741,7 @@ const createStyles = (colors, isCompact, isTablet) =>
       gap: 8,
     },
     panelTitle: { color: colors.textPrimary, fontSize: 13 },
+    inputLabel: { color: colors.textMuted, fontSize: 11, marginBottom: 5 },
     inputHalf: { flex: 1 },
 
     analyticsTabs: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },

@@ -6,11 +6,14 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import {
+  Box,
   Eye,
   EyeOff,
+  Info,
   ImagePlus,
   LifeBuoy,
   Lock,
@@ -85,7 +88,9 @@ const THEME_OPTIONS = [
 
 const Profile = ({ navigation }) => {
   const { user, themeColors, themePreference, setThemePreference, authFetch, updateUserProfile, updateProfileImage, logout } = useUser();
-  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+  const { width } = useWindowDimensions();
+  const isCompact = width < 380;
+  const styles = useMemo(() => createStyles(themeColors, isCompact), [themeColors, isCompact]);
 
   const [account, setAccount] = useState({ name: user?.displayName || '', email: user?.email || '' });
   const [password, setPassword] = useState({ current: '', next: '', confirm: '' });
@@ -554,6 +559,30 @@ const Profile = ({ navigation }) => {
           </View>
 
           <View style={styles.card}>
+            <AppText style={styles.infoCardTitle}>Products</AppText>
+            <AppText style={styles.infoCardDescription}>
+              Discover all Financial Astrology Terminal offerings, from subscription plans to deep-dive research products.
+            </AppText>
+
+            <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate('Products')}>
+              <Box size={16} color={themeColors.accent} />
+              <AppText style={styles.infoCardButtonText}>Explore products</AppText>
+            </Pressable>
+          </View>
+
+          <View style={styles.card}>
+            <AppText style={styles.infoCardTitle}>About the Financial Astrology Terminal</AppText>
+            <AppText style={styles.infoCardDescription}>
+              Open the detailed overview on a dedicated screen with full methodology, design principles, and timing framework notes.
+            </AppText>
+
+            <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate('AboutTerminal')}>
+              <Info size={16} color={themeColors.accent} />
+              <AppText style={styles.infoCardButtonText}>About the Terminal</AppText>
+            </Pressable>
+          </View>
+
+          <View style={styles.card}>
             <AppText style={styles.cardTitle}>More help</AppText>
             <AppText style={styles.cardDescription}>
               Open the detailed pages below for privacy information and the support center.
@@ -606,7 +635,7 @@ const Profile = ({ navigation }) => {
   );
 };
 
-const createStyles = (colors) =>
+const createStyles = (colors, isCompact) =>
   StyleSheet.create({
     safeArea: {
       flex: 1,
@@ -788,7 +817,7 @@ const createStyles = (colors) =>
       borderWidth: 1,
       borderColor: colors.border,
       backgroundColor: colors.surfaceGlass,
-      padding: 16,
+      padding: isCompact ? 14 : 16,
       gap: 14,
     },
     cardTitle: {
@@ -925,6 +954,24 @@ const createStyles = (colors) =>
     secondaryButtonText: {
       color: colors.textPrimary,
       fontSize: 13,
+    },
+    infoCardTitle: {
+      color: colors.textPrimary,
+      fontSize: isCompact ? 15 : 16,
+      lineHeight: isCompact ? 22 : 24,
+      fontFamily: 'NotoSans-SemiBold',
+    },
+    infoCardDescription: {
+      color: colors.textMuted,
+      fontSize: isCompact ? 12 : 13,
+      lineHeight: isCompact ? 18 : 19,
+      fontFamily: 'NotoSans-Regular',
+      marginTop: -2,
+    },
+    infoCardButtonText: {
+      color: colors.textPrimary,
+      fontSize: isCompact ? 12 : 13,
+      fontFamily: 'NotoSans-SemiBold',
     },
   });
 
