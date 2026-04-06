@@ -1,8 +1,6 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import {
-  Activity,
-  ArrowLeft,
   Briefcase,
   Building2,
   FileText,
@@ -15,6 +13,7 @@ import {
 import AppText from '../../components/AppText';
 import BottomTabs from '../../components/BottomTabs';
 import GradientBackground from '../../components/GradientBackground';
+import HomeHeader from '../../components/HomeHeader';
 import { useUser } from '../../store/UserContext';
 import { PRODUCT_CATALOG } from './productCatalog';
 
@@ -30,23 +29,30 @@ const ICON_MAP = {
 };
 
 const Products = ({ navigation }) => {
-  const { themeColors } = useUser();
+  const { themeColors, user } = useUser();
+  const [searchQuery, setSearchQuery] = useState('');
   const { width } = useWindowDimensions();
   const isCompact = width < 380;
   const styles = useMemo(() => createStyles(themeColors, isCompact), [themeColors, isCompact]);
+  const profileName = user?.displayName || user?.name || 'Trader';
 
   return (
     <View style={styles.safeArea}>
       <GradientBackground>
-        <View style={styles.header}>
-          <Pressable style={styles.iconButton} onPress={() => navigation.goBack()}>
-            <ArrowLeft size={18} color={themeColors.textPrimary} />
-          </Pressable>
-          <View style={styles.headerCopy}>
-            <AppText style={styles.title}>Explore Products</AppText>
-            <AppText style={styles.subtitle}>Tap any card to open a detailed landing page.</AppText>
-          </View>
-        </View>
+        <HomeHeader
+          themeColors={themeColors}
+          profileName={profileName}
+          searchQuery={searchQuery}
+          onChangeSearchQuery={setSearchQuery}
+          searchResults={[]}
+          searchLoading={false}
+          searchError=""
+          showSearchResults={false}
+          onPressSearchResult={() => {}}
+          onSubmitSearch={() => {}}
+          onPressProfile={() => navigation.navigate('Profile')}
+          onPressGlobalIndices={() => navigation.navigate('GlobalIndices')}
+        />
 
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           {PRODUCT_CATALOG.map((item) => {
@@ -64,7 +70,7 @@ const Products = ({ navigation }) => {
                   </View>
                 </View>
                 <View style={styles.badge}>
-                  <Activity size={14} color={themeColors.textPrimary} />
+                  <Icon size={14} color={themeColors.textPrimary} />
                 </View>
               </Pressable>
             );
@@ -83,42 +89,9 @@ const createStyles = (colors, isCompact) =>
       flex: 1,
       backgroundColor: colors.background,
     },
-    header: {
-      paddingHorizontal: 16,
-      paddingTop: 28,
-      paddingBottom: 10,
-      flexDirection: 'row',
-      alignItems: 'flex-start',
-      gap: 10,
-    },
-    iconButton: {
-      width: 40,
-      height: 40,
-      borderRadius: 12,
-      borderWidth: 1,
-      borderColor: colors.border,
-      backgroundColor: colors.surfaceGlass,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    headerCopy: {
-      flex: 1,
-      gap: 3,
-    },
-    title: {
-      color: colors.textPrimary,
-      fontSize: isCompact ? 20 : 24,
-      lineHeight: isCompact ? 26 : 30,
-      fontFamily: 'NotoSans-ExtraBold',
-    },
-    subtitle: {
-      color: colors.textMuted,
-      fontSize: isCompact ? 11 : 12,
-      lineHeight: isCompact ? 16 : 18,
-      fontFamily: 'NotoSans-Regular',
-    },
     content: {
       paddingHorizontal: 16,
+      paddingTop: 10,
       paddingBottom: 120,
       gap: 10,
     },

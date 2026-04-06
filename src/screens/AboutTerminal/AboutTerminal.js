@@ -1,9 +1,10 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Image, Linking, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
-import { ArrowLeft, BrainCircuit, CalendarClock, CheckCircle2, Compass, Layers3, Orbit, ShieldCheck, Sparkles, Users2 } from 'lucide-react-native';
+import { BrainCircuit, CalendarClock, CheckCircle2, Compass, Layers3, Orbit, ShieldCheck, Sparkles, Users2 } from 'lucide-react-native';
 import AppText from '../../components/AppText';
 import BottomTabs from '../../components/BottomTabs';
 import GradientBackground from '../../components/GradientBackground';
+import HomeHeader from '../../components/HomeHeader';
 import { useUser } from '../../store/UserContext';
 
 const ABOUT_IMAGE_URL = 'https://finance.rajeevprakash.com/_next/image/?url=%2Fimages%2Fabout.png&w=1920&q=75';
@@ -54,20 +55,30 @@ const CTA_PRODUCTS = [
 ];
 
 const AboutTerminal = ({ navigation }) => {
-  const { themeColors } = useUser();
+  const { themeColors, user } = useUser();
+  const [searchQuery, setSearchQuery] = useState('');
   const { width } = useWindowDimensions();
   const isCompact = width < 380;
   const styles = useMemo(() => createStyles(themeColors, isCompact), [themeColors, isCompact]);
+  const profileName = user?.displayName || user?.name || 'Trader';
 
   return (
     <View style={styles.safeArea}>
       <GradientBackground>
-        <View style={styles.header}>
-          <Pressable style={styles.iconButton} onPress={() => navigation.goBack()}>
-            <ArrowLeft size={18} color={themeColors.textPrimary} />
-          </Pressable>
-          <AppText style={styles.title}>About Terminal</AppText>
-        </View>
+        <HomeHeader
+          themeColors={themeColors}
+          profileName={profileName}
+          searchQuery={searchQuery}
+          onChangeSearchQuery={setSearchQuery}
+          searchResults={[]}
+          searchLoading={false}
+          searchError=""
+          showSearchResults={false}
+          onPressSearchResult={() => {}}
+          onSubmitSearch={() => {}}
+          onPressProfile={() => navigation.navigate('Profile')}
+          onPressGlobalIndices={() => navigation.navigate('GlobalIndices')}
+        />
 
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           <View style={styles.card}>
@@ -264,33 +275,9 @@ const createStyles = (colors, isCompact) =>
       flex: 1,
       backgroundColor: colors.background,
     },
-    header: {
-      paddingHorizontal: 16,
-      paddingTop: 28,
-      paddingBottom: 10,
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 10,
-    },
-    iconButton: {
-      width: 40,
-      height: 40,
-      borderRadius: 12,
-      borderWidth: 1,
-      borderColor: colors.border,
-      backgroundColor: colors.surfaceGlass,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    title: {
-      color: colors.textPrimary,
-      fontSize: isCompact ? 21 : 24,
-      lineHeight: isCompact ? 28 : 30,
-      fontFamily: 'NotoSans-SemiBold',
-      flex: 1,
-    },
     content: {
       paddingHorizontal: 16,
+      paddingTop: 10,
       paddingBottom: 120,
       gap: 16,
     },
