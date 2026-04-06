@@ -1,9 +1,9 @@
-import React from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import Home from '../screens/Home/Home.js';
-import Login from '../screens/Login/Login';
+import LoginScreen from '../screens/LoginScreen';
 import Register from '../screens/Register/Register';
 import Watchlist from '../screens/Watchlist/Watchlist';
 import Sectors from '../screens/Sectors/Sectors';
@@ -54,8 +54,73 @@ const linking = {
 };
 
 const AppNavigation = () => {
-    const { isHydrating, token, themeColors } = useUser();
-    const styles = createStyles(themeColors);
+    const { isHydrating, token, themeColors, entryRoute } = useUser();
+    const [isRouteLoading, setIsRouteLoading] = useState(false);
+    const activeRouteNameRef = useRef(null);
+    const hideLoadingTimerRef = useRef(null);
+    const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+
+    const stopRouteLoading = useCallback((delayMs = 140) => {
+      if (hideLoadingTimerRef.current) {
+        clearTimeout(hideLoadingTimerRef.current);
+      }
+
+      hideLoadingTimerRef.current = setTimeout(() => {
+        setIsRouteLoading(false);
+      }, delayMs);
+    }, []);
+
+    const startRouteLoading = useCallback(() => {
+      if (hideLoadingTimerRef.current) {
+        clearTimeout(hideLoadingTimerRef.current);
+      }
+
+      setIsRouteLoading(true);
+    }, []);
+
+    const getActiveRouteName = useCallback((state) => {
+      let currentRoute = state?.routes?.[state.index ?? 0];
+
+      while (currentRoute?.state?.routes?.length) {
+        const nextState = currentRoute.state;
+        currentRoute = nextState.routes[nextState.index ?? 0];
+      }
+
+      return currentRoute?.name || null;
+    }, []);
+
+    const handleNavigationStateChange = useCallback(
+      (state) => {
+        const nextRouteName = getActiveRouteName(state);
+
+        if (activeRouteNameRef.current && nextRouteName && nextRouteName !== activeRouteNameRef.current) {
+          startRouteLoading();
+          stopRouteLoading(260);
+        }
+
+        activeRouteNameRef.current = nextRouteName;
+      },
+      [getActiveRouteName, startRouteLoading, stopRouteLoading],
+    );
+
+    const stackScreenListeners = useMemo(
+      () => ({
+        transitionStart: () => {
+          startRouteLoading();
+          stopRouteLoading(900);
+        },
+        transitionEnd: () => stopRouteLoading(120),
+      }),
+      [startRouteLoading, stopRouteLoading],
+    );
+
+    useEffect(() => {
+      return () => {
+        if (hideLoadingTimerRef.current) {
+          clearTimeout(hideLoadingTimerRef.current);
+        }
+      };
+    }, []);
 
     if (isHydrating) {
       return (
@@ -67,14 +132,24 @@ const AppNavigation = () => {
     }
 
     return (
-       <NavigationContainer linking={linking}>
+       <View style={styles.appRoot}>
+       <NavigationContainer
+         linking={linking}
+         onReady={() => {
+           activeRouteNameRef.current = entryRoute || (token ? 'Home' : 'Login');
+           setIsRouteLoading(false);
+         }}
+         onStateChange={handleNavigationStateChange}
+       >
           <Stack.Navigator
             key={token ? 'app-stack' : 'auth-stack'}
             screenOptions={{ headerShown: false, animation: 'none' }}
+            screenListeners={stackScreenListeners}
           >
             {token ? (
               <>
-                <Stack.Screen name="Home" component={Home} />
+                {entryRoute === 'Plans' ? <Stack.Screen name="Plans" component={Plans} /> : <Stack.Screen name="Home" component={Home} />}
+                {entryRoute === 'Plans' ? <Stack.Screen name="Home" component={Home} /> : <Stack.Screen name="Plans" component={Plans} />}
                 <Stack.Screen name="Watchlist" component={Watchlist} />
                 <Stack.Screen name="Sectors" component={Sectors} />
                 <Stack.Screen name="Portfolio" component={Portfolio} />
@@ -96,18 +171,31 @@ const AppNavigation = () => {
               </>
             ) : (
               <>
-                <Stack.Screen name="Login" component={Login} />
+                <Stack.Screen name="Login" component={LoginScreen} />
                 <Stack.Screen name="Register" component={Register} />
                 <Stack.Screen name="ForgotPassword" component={ForgotPassword} />
               </>
             )}
           </Stack.Navigator>
        </NavigationContainer>
+       {isRouteLoading ? (
+         <View style={styles.routeLoaderOverlay} pointerEvents="auto">
+           <View style={styles.routeLoaderCard}>
+             <ActivityIndicator size="small" color={themeColors.textPrimary} />
+             <AppText style={styles.routeLoaderText}>Loading page...</AppText>
+           </View>
+         </View>
+       ) : null}
+       </View>
     );
 };
 
 const createStyles = (colors) =>
   StyleSheet.create({
+    appRoot: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
     loaderContainer: {
       flex: 1,
       backgroundColor: colors.background,
@@ -118,6 +206,30 @@ const createStyles = (colors) =>
     loaderText: {
       color: colors.textMuted,
       fontSize: 12,
+    },
+    routeLoaderOverlay: {
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: 'rgba(0, 0, 0, 0.18)',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 9999,
+      elevation: 9999,
+    },
+    routeLoaderCard: {
+      minWidth: 132,
+      paddingHorizontal: 16,
+      paddingVertical: 14,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceGlass,
+      alignItems: 'center',
+      gap: 10,
+    },
+    routeLoaderText: {
+      color: colors.textPrimary,
+      fontSize: 13,
+      fontWeight: '700',
     },
   });
 

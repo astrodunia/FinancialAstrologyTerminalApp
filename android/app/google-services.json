@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "681851320163",
+    "project_id": "financial-astrology-terminal",
+    "storage_bucket": "financial-astrology-terminal.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:681851320163:android:2ce3e145a63d65b2408556",
+        "android_client_info": {
+          "package_name": "com.financialastrologyterminalapp"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "681851320163-lesdbvrvgqeclimduagro9rktmpno15b.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.financialastrologyterminalapp",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "681851320163-q2jh5ipngl9q00mo64ijna1jsd64cs4b.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBZgEblIUO7neVB9KTX8b3ZTU9erytnKRE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "681851320163-q2jh5ipngl9q00mo64ijna1jsd64cs4b.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -2,6 +2,7 @@ import { NativeModules, Platform } from 'react-native';
 
 const API_PORT = 4500;
 const API_PROTOCOL = 'http';
+const PROD_API_BASE_URL = 'https://finance.rajeevprakash.com';
 
 // Optional single-point override for a physical device or a remote backend.
 // Examples:
@@ -70,11 +71,15 @@ const resolveApiHost = () => {
 };
 
 const resolveApiBaseUrl = () => {
+  if (!__DEV__) {
+    return PROD_API_BASE_URL;
+  }
+
   return buildBaseUrl(resolveApiHost().host);
 };
 
 export const API_BASE_URL = resolveApiBaseUrl();
-export const LIVE_API_BASE = 'https://finance.rajeevprakash.com';
+export const LIVE_API_BASE = PROD_API_BASE_URL;
 export const buildApiUrl = (path = '') => {
   if (!path) return API_BASE_URL;
   if (/^https?:\/\//i.test(path)) return path;
@@ -88,4 +93,3 @@ export const API_BASE_URL_DEBUG = {
   hostOverride: normalizeHost(API_HOST_OVERRIDE) || null,
   metroHost: getHostFromScriptUrl() || null,
 };
-

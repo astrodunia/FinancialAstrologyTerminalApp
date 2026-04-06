@@ -11,6 +11,7 @@ export const TF_CONFIG = {
   '6M': { period: '6mo', interval: '15m' },
   '1Y': { period: '1y', interval: '30m' },
   '5Y': { period: '5y', interval: '1wk' },
+  ALL: { period: 'max', interval: '1mo' },
 };
 
 export const TF_INTERVAL_FALLBACKS = {
@@ -22,6 +23,7 @@ export const TF_INTERVAL_FALLBACKS = {
   '6M': ['15m', '30m', '1h', '1d'],
   '1Y': ['30m', '1h', '1d', '1wk'],
   '5Y': ['1wk', '1mo'],
+  ALL: ['1mo', '1wk'],
 };
 
 export const CHART_TIMEFRAME_OPTIONS = Object.entries(TF_CONFIG).map(([label, value]) => ({

@@ -1,8 +1,9 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
   Linking,
+  Modal,
   PanResponder,
   Pressable,
   ScrollView,
@@ -17,6 +18,7 @@ import {
   BarChart3,
   Bell,
   Bookmark,
+  Check,
   Briefcase,
   Building2,
   ChartNoAxesCombined,
@@ -30,6 +32,7 @@ import {
   Users,
   Wallet,
 } from 'lucide-react-native';
+import AppDialog from '../../components/AppDialog';
 import AppText from '../../components/AppText';
 import GradientBackground from '../../components/GradientBackground';
 import { useHorizontalSwipe } from '../../navigation/useHorizontalSwipe';
@@ -50,6 +53,13 @@ import {
   useTickerAlerts,
 } from '../../features/stocks/hooks';
 import type { CompanyProfile, FundamentalsBundle, StockHistoryPoint, StockInfo, StockNewsItem } from '../../features/stocks/types';
+import {
+  addSymbol as addSymbolToWatchlist,
+  createList as createWatchlist,
+  getListById,
+  getLists as getWatchlists,
+  normalizeSymbol as normalizeWatchlistSymbol,
+} from '../../services/watchlistApi';
 
 const FONT = {
   regular: 'NotoSans-Regular',
@@ -111,13 +121,14 @@ const formatPercent = (value: number | null, fallbackSuffix = '%') => {
   return `${normalized.toFixed(2)}${fallbackSuffix}`;
 };
 
-const formatDateTime = (value: string) => {
+const formatDateTime = (value: string | number) => {
   if (!value) return '--';
   const dt = new Date(value);
   if (Number.isNaN(dt.getTime())) return '--';
   return new Intl.DateTimeFormat('en-US', {
     month: 'short',
     day: 'numeric',
+    year: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
   }).format(dt);
@@ -152,6 +163,7 @@ const downsampleHistoryForChart = (points: StockHistoryPoint[] | null, timeframe
     '6M': 104,
     '1Y': 120,
     '5Y': 140,
+    ALL: 180,
   };
 
   const maxPoints = maxPointsMap[timeframe] || 90;
@@ -174,14 +186,20 @@ const OverviewTab = ({
   sparkline,
   sparklineLoading,
   sparklineError,
+  onWatchPress,
   themeColors,
+  watchlistAdded,
+  watchlistBusy,
 }: {
   info: StockInfo | null;
   company: CompanyProfile | null;
   sparkline: StockHistoryPoint[] | null;
   sparklineLoading: boolean;
   sparklineError: string;
+  onWatchPress: () => void;
   themeColors: Record<string, string>;
+  watchlistAdded: boolean;
+  watchlistBusy: boolean;
 }) => {
   const styles = useMemo(() => createStyles(themeColors), [themeColors]);
   const name = company?.name || info?.longName || info?.shortName || info?.symbol || '--';
@@ -266,9 +284,23 @@ const OverviewTab = ({
             <Bell size={15} color={themeColors.textPrimary} />
             <AppText style={styles.actionChipText}>Alert</AppText>
           </Pressable>
-          <Pressable style={styles.actionChip}>
-            <Bookmark size={15} color={themeColors.textPrimary} />
-            <AppText style={styles.actionChipText}>Watch</AppText>
+          <Pressable
+            style={[
+              styles.actionChip,
+              watchlistAdded ? styles.actionChipAdded : null,
+              watchlistBusy ? styles.actionChipDisabled : null,
+            ]}
+            onPress={onWatchPress}
+            disabled={watchlistBusy}
+          >
+            {watchlistAdded ? (
+              <Check size={15} color={themeColors.positive} />
+            ) : (
+              <Bookmark size={15} color={themeColors.textPrimary} />
+            )}
+            <AppText style={[styles.actionChipText, watchlistAdded ? styles.actionChipTextAdded : null]}>
+              {watchlistBusy ? 'Saving...' : watchlistAdded ? 'Added' : 'Watch'}
+            </AppText>
           </Pressable>
         </View>
 
@@ -533,7 +565,10 @@ const ChartTab = ({
   error,
   timeframe,
   onChangeTimeframe,
+  onWatchPress,
   themeColors,
+  watchlistAdded,
+  watchlistBusy,
 }: {
   info: StockInfo | null;
   history: StockHistoryPoint[] | null;
@@ -541,7 +576,10 @@ const ChartTab = ({
   error: string;
   timeframe: string;
   onChangeTimeframe: (value: string) => void;
+  onWatchPress: () => void;
   themeColors: Record<string, string>;
+  watchlistAdded: boolean;
+  watchlistBusy: boolean;
 }) => {
   const styles = useMemo(() => createStyles(themeColors), [themeColors]);
   const displayHistory = useMemo(() => downsampleHistoryForChart(history, timeframe), [history, timeframe]);
@@ -586,7 +624,7 @@ const ChartTab = ({
             {change != null ? `${change > 0 ? '+' : ''}${change.toFixed(2)}` : '--'}
             {changePct != null ? ` (${changePct > 0 ? '+' : ''}${changePct.toFixed(2)}%)` : ''}
           </AppText>
-          <AppText style={styles.chartPriceTf}>{timeframe}</AppText>
+          <AppText style={styles.chartPriceTf}>{timeframe === 'ALL' ? 'All' : timeframe}</AppText>
         </View>
 
         <View style={styles.actionRow}>
@@ -594,9 +632,23 @@ const ChartTab = ({
             <Bell size={15} color={themeColors.textPrimary} />
             <AppText style={styles.actionChipText}>Alert</AppText>
           </Pressable>
-          <Pressable style={styles.actionChip}>
-            <Bookmark size={15} color={themeColors.textPrimary} />
-            <AppText style={styles.actionChipText}>Watch</AppText>
+          <Pressable
+            style={[
+              styles.actionChip,
+              watchlistAdded ? styles.actionChipAdded : null,
+              watchlistBusy ? styles.actionChipDisabled : null,
+            ]}
+            onPress={onWatchPress}
+            disabled={watchlistBusy}
+          >
+            {watchlistAdded ? (
+              <Check size={15} color={themeColors.positive} />
+            ) : (
+              <Bookmark size={15} color={themeColors.textPrimary} />
+            )}
+            <AppText style={[styles.actionChipText, watchlistAdded ? styles.actionChipTextAdded : null]}>
+              {watchlistBusy ? 'Saving...' : watchlistAdded ? 'Added' : 'Watch'}
+            </AppText>
           </Pressable>
         </View>
 
@@ -629,7 +681,9 @@ const ChartTab = ({
                 onPress={() => onChangeTimeframe(item.label)}
                 style={[styles.chartTfChip, active && styles.chartTfChipActive]}
               >
-                <AppText style={[styles.chartTfChipText, active && styles.chartTfChipTextActive]}>{item.label}</AppText>
+                <AppText style={[styles.chartTfChipText, active && styles.chartTfChipTextActive]}>
+                  {item.label === 'ALL' ? 'All' : item.label}
+                </AppText>
               </Pressable>
             );
           })}
@@ -653,31 +707,90 @@ const ChartTab = ({
   );
 };
 
-const findFirstNumericKey = (rows: Record<string, unknown>[]) => {
-  const preferred = ['revenue', 'netIncome', 'totalRevenue', 'totalAssets', 'value', 'earnings'];
-  for (const key of preferred) {
-    if (rows.some((row) => typeof row[key] === 'number' || typeof row[key] === 'string')) return key;
+const getRowValue = (row: Record<string, unknown>, keys: string[]) => {
+  for (const key of keys) {
+    const value = row[key];
+    if (value != null && value !== '') return value;
   }
-  const sample = rows[0] || {};
-  return Object.keys(sample).find((key) => typeof sample[key] === 'number' || typeof sample[key] === 'string') || '';
+  return null;
 };
 
-const renderKeyValueRows = (rows: Record<string, unknown>[], styles: ReturnType<typeof createStyles>) =>
-  rows.map((row, index) => {
-    const title =
-      String(row.period || row.date || row.year || row.asOfDate || row.fiscalDateEnding || `Row ${index + 1}`);
-    const numericKey = findFirstNumericKey([row]);
-    const value = numericKey ? row[numericKey] : null;
-    return (
-      <View key={`${title}-${index}`} style={styles.listRow}>
-        <View style={styles.listTextBlock}>
-          <AppText style={styles.listTitle}>{title}</AppText>
-          <AppText style={styles.listSummary}>{numericKey || 'Data row'}</AppText>
+const getEarningsHistoryLabel = (row: Record<string, unknown>, index: number) => {
+  const label = getRowValue(row, [
+    'quarter',
+    'period',
+    'date',
+    'year',
+    'quarterDate',
+    'quarterEnding',
+    'quarterEnd',
+    'asOfDate',
+    'fiscalDateEnding',
+  ]);
+
+  return label == null ? `Quarter ${index + 1}` : String(label);
+};
+
+const renderEarningsHistory = (
+  rows: Record<string, unknown>[],
+  styles: ReturnType<typeof createStyles>,
+) => {
+  if (!rows.length) return <AppText style={styles.emptyText}>No earnings history data.</AppText>;
+
+  return (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.statementTableWrap}>
+      <View style={[styles.statementTable, styles.earningsHistoryTable]}>
+        <View style={styles.statementHeaderRow}>
+          <View style={styles.statementMetricCell}>
+            <AppText style={styles.statementHeaderText}>Quarter</AppText>
+          </View>
+          <View style={styles.statementPeriodCell}>
+            <AppText style={styles.statementHeaderText}>Estimate</AppText>
+          </View>
+          <View style={styles.statementPeriodCell}>
+            <AppText style={styles.statementHeaderText}>Actual</AppText>
+          </View>
+          <View style={styles.statementPeriodCell}>
+            <AppText style={styles.statementHeaderText}>Surprise</AppText>
+          </View>
+          <View style={styles.statementPeriodCell}>
+            <AppText style={styles.statementHeaderText}>Surprise %</AppText>
+          </View>
         </View>
-        <AppText style={styles.listMeta}>{value == null ? '--' : String(value)}</AppText>
+
+        {rows.map((row, index) => {
+          const estimate = getRowValue(row, ['epsEstimate', 'estimate', 'estimated', 'consensus']);
+          const actual = getRowValue(row, ['epsActual', 'actual', 'reportedEPS', 'reportedEps']);
+          const surprise = getRowValue(row, ['epsDifference', 'surprise', 'difference']);
+          const surprisePercent = getRowValue(row, ['surprisePercent', 'surprisePct', 'percentSurprise']);
+
+          return (
+            <View
+              key={`${getEarningsHistoryLabel(row, index)}-${index}`}
+              style={[styles.statementDataRow, index % 2 === 0 ? styles.statementDataRowAlt : null]}
+            >
+              <View style={styles.statementMetricCell}>
+                <AppText style={styles.statementMetricText}>{getEarningsHistoryLabel(row, index)}</AppText>
+              </View>
+              <View style={styles.statementPeriodCell}>
+                <AppText style={styles.statementValueText}>{formatFundamentalValue('epsEstimate', estimate)}</AppText>
+              </View>
+              <View style={styles.statementPeriodCell}>
+                <AppText style={styles.statementValueText}>{formatFundamentalValue('epsActual', actual)}</AppText>
+              </View>
+              <View style={styles.statementPeriodCell}>
+                <AppText style={styles.statementValueText}>{formatFundamentalValue('surprise', surprise)}</AppText>
+              </View>
+              <View style={styles.statementPeriodCell}>
+                <AppText style={styles.statementValueText}>{formatFundamentalValue('surprisePercent', surprisePercent)}</AppText>
+              </View>
+            </View>
+          );
+        })}
       </View>
-    );
-  });
+    </ScrollView>
+  );
+};
 
 const renderEstimateSummaryRows = (
   rows: Record<string, unknown>[],
@@ -973,6 +1086,77 @@ const FundamentalsLoadingState = ({
   </View>
 );
 
+const WatchlistPicker = ({
+  visible,
+  lists,
+  onClose,
+  onSelect,
+  onSave,
+  selectedId,
+  pending,
+  styles,
+}: {
+  visible: boolean;
+  lists: { id: string; title: string; count?: number; symbols?: string[] }[];
+  onClose: () => void;
+  onSelect: (id: string) => void;
+  onSave: () => void;
+  selectedId: string;
+  pending: boolean;
+  styles: ReturnType<typeof createStyles>;
+}) => (
+  <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <View style={styles.watchlistModalOverlay}>
+      <Pressable style={styles.watchlistModalScrim} onPress={pending ? undefined : onClose} />
+      <View style={styles.watchlistModalCard}>
+        <AppText style={styles.watchlistModalTitle}>Choose watchlist</AppText>
+        <AppText style={styles.watchlistModalMessage}>Select which watchlist should store this stock.</AppText>
+
+        <ScrollView style={styles.watchlistModalList} contentContainerStyle={styles.watchlistModalListContent}>
+          {lists.map((list) => (
+            <Pressable
+              key={list.id}
+              style={[
+                styles.watchlistOptionRow,
+                list.id === selectedId ? styles.watchlistOptionRowSelected : null,
+                pending ? styles.watchlistOptionRowDisabled : null,
+              ]}
+              onPress={() => onSelect(list.id)}
+              disabled={pending}
+            >
+              <View style={styles.watchlistOptionTextBlock}>
+                <AppText style={styles.watchlistOptionTitle}>{list.title}</AppText>
+                <AppText style={styles.watchlistOptionMeta}>
+                  {list.count === 1 ? '1 stock' : `${list.count || 0} stocks`}
+                </AppText>
+              </View>
+              <View style={[styles.watchlistOptionRadio, list.id === selectedId ? styles.watchlistOptionRadioSelected : null]}>
+                {list.id === selectedId ? <View style={styles.watchlistOptionRadioDot} /> : null}
+              </View>
+            </Pressable>
+          ))}
+        </ScrollView>
+
+        <View style={styles.watchlistModalActions}>
+          <Pressable style={styles.watchlistModalCancel} onPress={onClose} disabled={pending}>
+            <AppText style={styles.watchlistModalCancelText}>Cancel</AppText>
+          </Pressable>
+          <Pressable
+            style={[
+              styles.watchlistModalSave,
+              (!selectedId || pending) ? styles.watchlistModalSaveDisabled : null,
+            ]}
+            onPress={onSave}
+            disabled={!selectedId || pending}
+          >
+            <AppText style={styles.watchlistModalSaveText}>{pending ? 'Saving...' : 'Save'}</AppText>
+          </Pressable>
+        </View>
+      </View>
+    </View>
+  </Modal>
+);
+
 const FundamentalsTab = ({
   bundle,
   loading,
@@ -1155,7 +1339,7 @@ const FundamentalsTab = ({
           <View style={[styles.card, styles.fundamentalsSectionCard]}>
             <AppText style={styles.cardTitle}>Earnings history</AppText>
             {bundle.earningsHistory.length ? (
-              renderKeyValueRows(bundle.earningsHistory, styles)
+              renderEarningsHistory(bundle.earningsHistory, styles)
             ) : (
               <AppText style={styles.emptyText}>No earnings history data.</AppText>
             )}
@@ -1548,6 +1732,9 @@ const TabContent = ({
   symbol,
   token,
   themeColors,
+  onWatchPress,
+  watchlistAdded,
+  watchlistBusy,
 }: any) => {
   if (activeTab === 'overview') {
     return (
@@ -1557,7 +1744,10 @@ const TabContent = ({
         sparkline={overviewSparkline.data}
         sparklineLoading={overviewSparkline.loading}
         sparklineError={overviewSparkline.error}
+        onWatchPress={onWatchPress}
         themeColors={themeColors}
+        watchlistAdded={watchlistAdded}
+        watchlistBusy={watchlistBusy}
       />
     );
   }
@@ -1571,7 +1761,10 @@ const TabContent = ({
         error={chartState.error}
         timeframe={chartTimeframe}
         onChangeTimeframe={onChangeChartTimeframe}
+        onWatchPress={onWatchPress}
         themeColors={themeColors}
+        watchlistAdded={watchlistAdded}
+        watchlistBusy={watchlistBusy}
       />
     );
   }
@@ -1604,9 +1797,10 @@ const TabContent = ({
 };
 
 const StockDetailScreen = ({ route }: any) => {
-  const { themeColors, token } = useUser() as any;
+  const { authFetch, themeColors, token } = useUser() as any;
   const styles = useMemo(() => createStyles(themeColors), [themeColors]);
   const symbol = useMemo(() => normalizeStockSymbol(route?.params?.symbol), [route?.params?.symbol]);
+  const normalizedWatchSymbol = useMemo(() => normalizeWatchlistSymbol(symbol), [symbol]);
   const routeTab = useMemo(
     () => normalizeInitialTabState(normalizeStockTab(route?.params?.tab), Boolean(token)),
     [route?.params?.tab, token],
@@ -1618,8 +1812,38 @@ const StockDetailScreen = ({ route }: any) => {
   const [activeTab, setActiveTab] = useState(routeTab);
   const [chartTimeframe, setChartTimeframe] = useState(routeTimeframe || DEFAULT_CHART_TIMEFRAME);
   const [visitedTabs, setVisitedTabs] = useState<Record<string, boolean>>({ [routeTab]: true, overview: true });
+  const [isTabSwitching, setIsTabSwitching] = useState(false);
+  const [watchlistBusy, setWatchlistBusy] = useState(false);
+  const [watchlistLoading, setWatchlistLoading] = useState(Boolean(token && normalizedWatchSymbol));
+  const [watchlistPickerVisible, setWatchlistPickerVisible] = useState(false);
+  const [watchlistOptions, setWatchlistOptions] = useState<any[]>([]);
+  const [selectedWatchlistId, setSelectedWatchlistId] = useState('');
+  const [watchlistAdded, setWatchlistAdded] = useState(false);
+  const [watchlistMembershipTitles, setWatchlistMembershipTitles] = useState<string[]>([]);
+  const [watchlistError, setWatchlistError] = useState('');
+  const [watchlistDialog, setWatchlistDialog] = useState({
+    visible: false,
+    title: '',
+    message: '',
+  });
+  const tabLoadingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const stopTabLoading = useCallback((delayMs = 180) => {
+    if (tabLoadingTimerRef.current) {
+      clearTimeout(tabLoadingTimerRef.current);
+    }
+
+    tabLoadingTimerRef.current = setTimeout(() => {
+      setIsTabSwitching(false);
+    }, delayMs);
+  }, []);
 
   useEffect(() => {
+    if (tabLoadingTimerRef.current) {
+      clearTimeout(tabLoadingTimerRef.current);
+    }
+
+    setIsTabSwitching(false);
     setActiveTab(routeTab);
     setChartTimeframe(routeTimeframe || DEFAULT_CHART_TIMEFRAME);
     setVisitedTabs({ [routeTab]: true, overview: true });
@@ -1644,10 +1868,211 @@ const StockDetailScreen = ({ route }: any) => {
     () => ['overview', 'chart', 'fundamentals', 'news', ...(token ? ['alerts'] : [])],
     [token],
   );
-  const handleTabChange = useCallback((nextTab: string) => {
-    setActiveTab(nextTab);
-  }, []);
+  const handleTabChange = useCallback(
+    (nextTab: string) => {
+      if (!nextTab || nextTab === activeTab) {
+        return;
+      }
+
+      if (tabLoadingTimerRef.current) {
+        clearTimeout(tabLoadingTimerRef.current);
+      }
+
+      setIsTabSwitching(true);
+      setActiveTab(nextTab);
+      stopTabLoading(260);
+    },
+    [activeTab, stopTabLoading],
+  );
   const tabSwipeHandlers = useHorizontalSwipe(visibleTabs, activeTab, handleTabChange);
+
+  useEffect(() => {
+    stopTabLoading(140);
+  }, [activeTab, stopTabLoading]);
+
+  useEffect(() => {
+    return () => {
+      if (tabLoadingTimerRef.current) {
+        clearTimeout(tabLoadingTimerRef.current);
+      }
+    };
+  }, []);
+
+  const openWatchlistDialog = useCallback((title: string, message: string) => {
+    setWatchlistDialog({ visible: true, title, message });
+  }, []);
+
+  const closeWatchlistDialog = useCallback(() => {
+    setWatchlistDialog((prev) => ({ ...prev, visible: false }));
+  }, []);
+
+  const loadDetailedWatchlists = useCallback(async (signal?: AbortSignal) => {
+    const lists = await getWatchlists(authFetch, signal);
+    const detailed = await Promise.all(
+      lists.map(async (list: any) => {
+        try {
+          const detail = await getListById(authFetch, list.id, signal);
+          return {
+            ...list,
+            ...detail,
+            symbols: Array.isArray(detail?.symbols) ? detail.symbols : list.symbols || [],
+            count: typeof detail?.count === 'number' ? detail.count : list.count,
+          };
+        } catch {
+          return list;
+        }
+      }),
+    );
+
+    return detailed;
+  }, [authFetch]);
+
+  const refreshWatchlistMembership = useCallback(async (signal?: AbortSignal) => {
+    if (!token || !normalizedWatchSymbol) {
+      setWatchlistAdded(false);
+      setWatchlistMembershipTitles([]);
+      setWatchlistLoading(false);
+      setWatchlistError('');
+      return [];
+    }
+
+    setWatchlistLoading(true);
+    setWatchlistError('');
+
+    try {
+      const lists = await loadDetailedWatchlists(signal);
+      const matches = lists.filter((list: any) => Array.isArray(list?.symbols) && list.symbols.includes(normalizedWatchSymbol));
+      setWatchlistAdded(matches.length > 0);
+      setWatchlistMembershipTitles(matches.map((list: any) => String(list.title || 'Watchlist')));
+      return lists;
+    } catch (error: any) {
+      if (String(error?.message || '').toLowerCase().includes('abort')) {
+        throw error;
+      }
+      setWatchlistAdded(false);
+      setWatchlistMembershipTitles([]);
+      setWatchlistError(error?.message || 'Unable to load watchlists.');
+      return [];
+    } finally {
+      setWatchlistLoading(false);
+    }
+  }, [loadDetailedWatchlists, normalizedWatchSymbol, token]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    refreshWatchlistMembership(controller.signal).catch(() => {});
+    return () => controller.abort();
+  }, [refreshWatchlistMembership]);
+
+  useEffect(() => {
+    if (watchlistError) {
+      openWatchlistDialog('Watchlist', watchlistError);
+    }
+  }, [openWatchlistDialog, watchlistError]);
+
+  const closeWatchlistPicker = useCallback(() => {
+    if (watchlistBusy) return;
+    setWatchlistPickerVisible(false);
+    setWatchlistOptions([]);
+    setSelectedWatchlistId('');
+  }, [watchlistBusy]);
+
+  const addToChosenWatchlist = useCallback(async (list: any) => {
+    if (!list?.id || !normalizedWatchSymbol) return;
+
+    if (Array.isArray(list?.symbols) && list.symbols.includes(normalizedWatchSymbol)) {
+      openWatchlistDialog('Already added', `${normalizedWatchSymbol} already exists in "${list.title}".`);
+      return;
+    }
+
+    setWatchlistBusy(true);
+    setWatchlistError('');
+    try {
+      await addSymbolToWatchlist(authFetch, list.id, normalizedWatchSymbol);
+      setWatchlistAdded(true);
+      setWatchlistMembershipTitles([String(list.title || 'Watchlist')]);
+      setWatchlistPickerVisible(false);
+      setWatchlistOptions([]);
+      setSelectedWatchlistId('');
+      openWatchlistDialog('Added to watchlist', `${normalizedWatchSymbol} was added to "${list.title}".`);
+      await refreshWatchlistMembership();
+    } catch (error: any) {
+      openWatchlistDialog('Watchlist', error?.message || 'Unable to add stock to watchlist.');
+    } finally {
+      setWatchlistBusy(false);
+    }
+  }, [authFetch, normalizedWatchSymbol, openWatchlistDialog, refreshWatchlistMembership]);
+
+  const handleAddToWatchlist = useCallback(async () => {
+    if (!token) {
+      openWatchlistDialog('Sign in required', 'Sign in to save stocks to your watchlist.');
+      return;
+    }
+
+    if (!normalizedWatchSymbol || watchlistBusy) {
+      return;
+    }
+
+    if (watchlistAdded) {
+      const labels = watchlistMembershipTitles.length ? watchlistMembershipTitles.join(', ') : 'your watchlist';
+      openWatchlistDialog('Already added', `${normalizedWatchSymbol} is already stored in ${labels}.`);
+      return;
+    }
+
+    setWatchlistBusy(true);
+    setWatchlistError('');
+
+    try {
+      const lists = await loadDetailedWatchlists();
+
+      if (!lists.length) {
+        const created = await createWatchlist(authFetch, 'Custom Watchlist');
+        if (!created?.id) {
+          throw new Error('Watchlist was created without an id.');
+        }
+
+        await addSymbolToWatchlist(authFetch, created.id, normalizedWatchSymbol);
+        setWatchlistAdded(true);
+        setWatchlistMembershipTitles([String(created.title || 'Custom Watchlist')]);
+        openWatchlistDialog('Added to watchlist', `${normalizedWatchSymbol} was added to "${created.title || 'Custom Watchlist'}".`);
+        await refreshWatchlistMembership();
+        return;
+      }
+
+      if (lists.length === 1) {
+        await addSymbolToWatchlist(authFetch, lists[0].id, normalizedWatchSymbol);
+        setWatchlistAdded(true);
+        setWatchlistMembershipTitles([String(lists[0].title || 'Watchlist')]);
+        openWatchlistDialog('Added to watchlist', `${normalizedWatchSymbol} was added to "${lists[0].title || 'Watchlist'}".`);
+        await refreshWatchlistMembership();
+        return;
+      }
+
+      setWatchlistOptions(lists);
+      setSelectedWatchlistId(lists[0]?.id || '');
+      setWatchlistPickerVisible(true);
+    } catch (error: any) {
+      openWatchlistDialog('Watchlist', error?.message || 'Unable to add stock to watchlist.');
+    } finally {
+      setWatchlistBusy(false);
+    }
+  }, [
+    authFetch,
+    loadDetailedWatchlists,
+    normalizedWatchSymbol,
+    openWatchlistDialog,
+    refreshWatchlistMembership,
+    token,
+    watchlistAdded,
+    watchlistBusy,
+    watchlistMembershipTitles,
+  ]);
+
+  const handleSaveSelectedWatchlist = useCallback(() => {
+    const selected = watchlistOptions.find((item: any) => item.id === selectedWatchlistId);
+    if (!selected || watchlistBusy) return;
+    addToChosenWatchlist(selected);
+  }, [addToChosenWatchlist, selectedWatchlistId, watchlistBusy, watchlistOptions]);
 
   return (
     <View style={styles.screen}>
@@ -1687,7 +2112,7 @@ const StockDetailScreen = ({ route }: any) => {
             const active = activeTab === tab;
             const Icon = tab === 'chart' ? ChartNoAxesCombined : tab === 'news' ? Newspaper : tab === 'alerts' ? Bell : null;
             return (
-              <Pressable key={tab} onPress={() => setActiveTab(tab)} style={styles.tabButton}>
+              <Pressable key={tab} onPress={() => handleTabChange(tab)} style={styles.tabButton}>
                 <View style={styles.tabButtonInner}>
                   {Icon ? <Icon size={17} color={active ? themeColors.textPrimary : themeColors.textMuted} /> : null}
                   <AppText style={[styles.tabLabel, active && styles.tabLabelActive]}>{TAB_LABELS[tab as keyof typeof TAB_LABELS]}</AppText>
@@ -1698,29 +2123,66 @@ const StockDetailScreen = ({ route }: any) => {
           })}
         </ScrollView>
 
-        <ScrollView
-          style={styles.contentScroll}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-          {...tabSwipeHandlers}
-        >
-          <View key={`${symbol}-${activeTab}-${activeTab === 'chart' ? chartTimeframe : 'base'}`}>
-            <TabContent
-              activeTab={activeTab}
-              infoState={infoState}
-              overviewSparkline={overviewSparkline}
-              chartState={chartState}
-              fundamentalsState={fundamentalsState}
-              newsState={newsState}
-              alertsState={alertsState}
-              chartTimeframe={chartTimeframe}
-              onChangeChartTimeframe={setChartTimeframe}
-              symbol={symbol}
-              token={token}
-              themeColors={themeColors}
-            />
-          </View>
-        </ScrollView>
+        <View style={styles.contentArea}>
+          <ScrollView
+            style={styles.contentScroll}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+            {...tabSwipeHandlers}
+          >
+            <View key={`${symbol}-${activeTab}-${activeTab === 'chart' ? chartTimeframe : 'base'}`}>
+              <TabContent
+                activeTab={activeTab}
+                infoState={infoState}
+                overviewSparkline={overviewSparkline}
+                chartState={chartState}
+                fundamentalsState={fundamentalsState}
+                newsState={newsState}
+                alertsState={alertsState}
+                chartTimeframe={chartTimeframe}
+                onChangeChartTimeframe={setChartTimeframe}
+                symbol={symbol}
+                token={token}
+                themeColors={themeColors}
+                onWatchPress={handleAddToWatchlist}
+                watchlistAdded={watchlistAdded}
+                watchlistBusy={watchlistLoading || watchlistBusy}
+              />
+            </View>
+          </ScrollView>
+
+          {isTabSwitching ? (
+            <View style={styles.tabSwitchOverlay} pointerEvents="auto">
+              <View style={styles.tabSwitchCard}>
+                <ActivityIndicator size="small" color={themeColors.textPrimary} />
+                <AppText style={styles.tabSwitchText}>Loading section...</AppText>
+              </View>
+            </View>
+          ) : null}
+        </View>
+        <WatchlistPicker
+          visible={watchlistPickerVisible}
+          lists={watchlistOptions}
+          onClose={closeWatchlistPicker}
+          onSelect={setSelectedWatchlistId}
+          onSave={handleSaveSelectedWatchlist}
+          selectedId={selectedWatchlistId}
+          pending={watchlistBusy}
+          styles={styles}
+        />
+        <AppDialog
+          visible={watchlistDialog.visible}
+          title={watchlistDialog.title}
+          message={watchlistDialog.message}
+          onRequestClose={closeWatchlistDialog}
+          icon={Bookmark}
+          actions={[
+            {
+              label: 'OK',
+              onPress: closeWatchlistDialog,
+            },
+          ]}
+        />
       </GradientBackground>
     </View>
   );
@@ -1827,6 +2289,10 @@ const createStyles = (colors: Record<string, string>) =>
     contentScroll: {
       flex: 1,
     },
+    contentArea: {
+      flex: 1,
+      position: 'relative',
+    },
     chartWrap: {
       position: 'relative',
     },
@@ -1875,6 +2341,30 @@ const createStyles = (colors: Record<string, string>) =>
     },
     tabContent: {
       gap: 16,
+    },
+    tabSwitchOverlay: {
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: 'rgba(0, 0, 0, 0.14)',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 10,
+      elevation: 10,
+    },
+    tabSwitchCard: {
+      minWidth: 150,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceGlass,
+      paddingHorizontal: 18,
+      paddingVertical: 14,
+      alignItems: 'center',
+      gap: 10,
+    },
+    tabSwitchText: {
+      color: colors.textPrimary,
+      fontSize: 13,
+      fontFamily: FONT.semiBold,
     },
     sectionHeroCard: {
       width: '100%',
@@ -1946,10 +2436,146 @@ const createStyles = (colors: Record<string, string>) =>
       borderRadius: 999,
       backgroundColor: colors.surfaceAlt,
     },
+    actionChipDisabled: {
+      opacity: 0.72,
+    },
+    actionChipAdded: {
+      backgroundColor: colors.surfaceGlass,
+      borderWidth: 1,
+      borderColor: 'rgba(73, 209, 141, 0.28)',
+    },
     actionChipText: {
       color: colors.textPrimary,
       fontSize: 13,
       fontFamily: FONT.medium,
+    },
+    actionChipTextAdded: {
+      color: colors.positive,
+      fontFamily: FONT.semiBold,
+    },
+    watchlistModalOverlay: {
+      flex: 1,
+      justifyContent: 'center',
+      paddingHorizontal: 22,
+      paddingVertical: 24,
+    },
+    watchlistModalScrim: {
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: 'rgba(7, 10, 18, 0.62)',
+    },
+    watchlistModalCard: {
+      borderRadius: 24,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+      paddingHorizontal: 18,
+      paddingTop: 20,
+      paddingBottom: 18,
+      gap: 14,
+    },
+    watchlistModalTitle: {
+      color: colors.textPrimary,
+      fontSize: 19,
+      fontFamily: FONT.semiBold,
+    },
+    watchlistModalMessage: {
+      color: colors.textMuted,
+      fontSize: 13,
+      lineHeight: 20,
+      fontFamily: FONT.regular,
+    },
+    watchlistModalList: {
+      maxHeight: 320,
+    },
+    watchlistModalListContent: {
+      gap: 10,
+    },
+    watchlistOptionRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 12,
+      borderRadius: 18,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceAlt,
+      paddingHorizontal: 14,
+      paddingVertical: 14,
+    },
+    watchlistOptionRowDisabled: {
+      opacity: 0.72,
+    },
+    watchlistOptionRowSelected: {
+      borderColor: colors.textPrimary,
+      backgroundColor: colors.surfaceGlass,
+    },
+    watchlistOptionTextBlock: {
+      flex: 1,
+      gap: 4,
+    },
+    watchlistOptionTitle: {
+      color: colors.textPrimary,
+      fontSize: 14,
+      fontFamily: FONT.semiBold,
+    },
+    watchlistOptionMeta: {
+      color: colors.textMuted,
+      fontSize: 12,
+      fontFamily: FONT.regular,
+    },
+    watchlistOptionRadio: {
+      width: 18,
+      height: 18,
+      borderRadius: 999,
+      borderWidth: 1.5,
+      borderColor: colors.border,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.surface,
+    },
+    watchlistOptionRadioSelected: {
+      borderColor: colors.textPrimary,
+    },
+    watchlistOptionRadioDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 999,
+      backgroundColor: colors.textPrimary,
+    },
+    watchlistModalActions: {
+      flexDirection: 'row',
+      gap: 10,
+    },
+    watchlistModalSave: {
+      flex: 1,
+      minHeight: 46,
+      borderRadius: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.textPrimary,
+    },
+    watchlistModalSaveDisabled: {
+      opacity: 0.5,
+    },
+    watchlistModalSaveText: {
+      color: colors.background,
+      fontSize: 14,
+      fontFamily: FONT.semiBold,
+    },
+    watchlistModalCancel: {
+      flex: 1,
+      minHeight: 46,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: colors.border,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.surfaceAlt,
+    },
+    watchlistModalCancelText: {
+      color: colors.textPrimary,
+      fontSize: 14,
+      fontFamily: FONT.semiBold,
     },
     fundamentalsLoaderRow: {
       flexDirection: 'row',
@@ -2512,6 +3138,9 @@ const createStyles = (colors: Record<string, string>) =>
       borderWidth: 1,
       borderColor: colors.border,
       backgroundColor: colors.surfaceAlt,
+    },
+    earningsHistoryTable: {
+      minWidth: 680,
     },
     statementHeaderRow: {
       flexDirection: 'row',

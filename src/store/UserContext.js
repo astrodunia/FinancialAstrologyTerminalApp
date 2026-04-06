@@ -1,17 +1,12 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useColorScheme } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { logRequestError, logRequestStart, logResponse } from '../utils/networkDebug';
+import { useAuth } from '../auth/AuthProvider';
 import { API_BASE_URL, API_BASE_URL_DEBUG } from '../utils/apiBaseUrl';
 
 export { API_BASE_URL };
 
 const STORAGE_KEYS = {
-  deviceId: 'device_id',
-  accessToken: 'access_token',
-  refreshToken: 'refresh_token',
-  lastLoginUsername: 'last_login_username',
-  userProfile: 'user_profile',
   profileImageUrl: 'profile_image_url',
   themePreference: 'theme_preference',
 };
@@ -52,11 +47,6 @@ const THEME_PALETTES = {
 };
 
 const UserContext = createContext(null);
-const SESSION_INVALID_ERRORS = new Set(['session_revoked', 'session_rotated', 'invalid_refresh']);
-
-const createDeviceId = () => {
-  return `mobile-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-};
 
 const formatNameFromIdentifier = (identifier) => {
   if (!identifier) return 'Trader';
@@ -70,51 +60,50 @@ const formatNameFromIdentifier = (identifier) => {
   return formatted || 'Trader';
 };
 
-const extractUserFromPayload = (payload) => {
-  return payload?.user || payload?.data?.user || payload?.session?.user || payload?.data || null;
-};
-
-const parseJsonSafely = async (response) => {
-  try {
-    return await response.json();
-  } catch {
-    return null;
-  }
-};
-
-const extractApiError = (payload) => {
-  return payload?.error || payload?.message || payload?.errors?.[0]?.msg || '';
-};
-
-const buildUserState = ({ user, identifier }) => {
-  const source = user || {};
-  const rawName = source.name || source.fullName || source.username || source.email || identifier || '';
+const buildUserState = (authUser) => {
+  const source = authUser || {};
+  const rawName = source.name || source.fullName || source.username || source.email || '';
+  const resolvedName = rawName || formatNameFromIdentifier(source.email || '');
 
   return {
-    name: rawName,
-    email: source.email || (typeof identifier === 'string' && identifier.includes('@') ? identifier : ''),
-    displayName: rawName.includes('@') ? formatNameFromIdentifier(rawName) : rawName || 'Trader',
+    ...source,
+    name: resolvedName || 'Trader',
+    email: source.email || '',
+    displayName: resolvedName.includes('@') ? formatNameFromIdentifier(resolvedName) : resolvedName || 'Trader',
   };
 };
 
 export const UserProvider = ({ children }) => {
   const systemColorScheme = useColorScheme();
-  const [isHydrating, setIsHydrating] = useState(true);
-  const [isSyncingSession, setIsSyncingSession] = useState(false);
-  const [token, setToken] = useState('');
-  const [refreshToken, setRefreshToken] = useState('');
-  const [deviceId, setDeviceId] = useState('');
-  const [lastLoginUsername, setLastLoginUsername] = useState('');
-  const [user, setUser] = useState(buildUserState({ user: null, identifier: '' }));
+  const auth = useAuth();
+  const [localHydrated, setLocalHydrated] = useState(false);
   const [profileImageUrl, setProfileImageUrl] = useState('');
   const [themePreference, setThemePreferenceState] = useState('system');
+  const [isSyncingSession, setIsSyncingSession] = useState(false);
 
   useEffect(() => {
     console.log('[NetworkDebug] api.base', API_BASE_URL_DEBUG);
   }, []);
 
-  const persistUser = useCallback(async (nextUser) => {
-    await AsyncStorage.setItem(STORAGE_KEYS.userProfile, JSON.stringify(nextUser));
+  useEffect(() => {
+    const hydrate = async () => {
+      try {
+        const [storedProfileImageUrl, storedThemePreference] = await Promise.all([
+          AsyncStorage.getItem(STORAGE_KEYS.profileImageUrl),
+          AsyncStorage.getItem(STORAGE_KEYS.themePreference),
+        ]);
+
+        setProfileImageUrl(storedProfileImageUrl || '');
+
+        if (storedThemePreference === 'light' || storedThemePreference === 'dark' || storedThemePreference === 'system') {
+          setThemePreferenceState(storedThemePreference);
+        }
+      } finally {
+        setLocalHydrated(true);
+      }
+    };
+
+    hydrate();
   }, []);
 
   const updateProfileImage = useCallback(async (nextUrl) => {
@@ -123,141 +112,6 @@ export const UserProvider = ({ children }) => {
     await AsyncStorage.setItem(STORAGE_KEYS.profileImageUrl, normalized);
     return normalized;
   }, []);
-
-  const getOrCreateDeviceId = useCallback(async () => {
-    if (deviceId) return deviceId;
-
-    const stored = await AsyncStorage.getItem(STORAGE_KEYS.deviceId);
-    if (stored) {
-      setDeviceId(stored);
-      return stored;
-    }
-
-    const generated = createDeviceId();
-    await AsyncStorage.setItem(STORAGE_KEYS.deviceId, generated);
-    setDeviceId(generated);
-    return generated;
-  }, [deviceId]);
-
-  const syncSession = useCallback(async () => {
-    if (!token || !deviceId) return;
-
-    const sessionUrl = `${API_BASE_URL}/api/auth/session`;
-
-    try {
-      setIsSyncingSession(true);
-      logRequestStart({
-        label: 'auth.session',
-        url: sessionUrl,
-        method: 'GET',
-        meta: { hasToken: Boolean(token), hasDeviceId: Boolean(deviceId) },
-      });
-
-      const response = await fetch(sessionUrl, {
-        headers: {
-          Accept: 'application/json',
-          Authorization: `Bearer ${token}`,
-          'x-device-id': deviceId,
-        },
-      });
-      await logResponse({ label: 'auth.session', response });
-
-      if (!response.ok) return;
-
-      const payload = await response.json().catch(() => null);
-      const sessionUser = extractUserFromPayload(payload);
-      if (!sessionUser) return;
-
-      const nextUser = buildUserState({ user: sessionUser, identifier: lastLoginUsername });
-      setUser(nextUser);
-      await persistUser(nextUser);
-    } catch (error) {
-      logRequestError({ label: 'auth.session', url: sessionUrl, error });
-    } finally {
-      setIsSyncingSession(false);
-    }
-  }, [deviceId, lastLoginUsername, persistUser, token]);
-
-  const setAuthSession = useCallback(
-    async ({ token: nextToken, refreshToken: nextRefreshToken, deviceId: nextDeviceId, identifier, user: nextRawUser }) => {
-      const resolvedIdentifier = identifier || lastLoginUsername;
-      const nextUser = buildUserState({ user: nextRawUser, identifier: resolvedIdentifier });
-
-      setToken(nextToken || '');
-      setRefreshToken(nextRefreshToken || '');
-      setDeviceId(nextDeviceId || '');
-      setLastLoginUsername(resolvedIdentifier || '');
-      setUser(nextUser);
-      setProfileImageUrl('');
-
-      const entries = [
-        [STORAGE_KEYS.accessToken, nextToken || ''],
-        [STORAGE_KEYS.refreshToken, nextRefreshToken || ''],
-        [STORAGE_KEYS.deviceId, nextDeviceId || ''],
-        [STORAGE_KEYS.lastLoginUsername, resolvedIdentifier || ''],
-        [STORAGE_KEYS.userProfile, JSON.stringify(nextUser)],
-        [STORAGE_KEYS.profileImageUrl, ''],
-      ];
-
-      await AsyncStorage.multiSet(entries);
-    },
-    [lastLoginUsername],
-  );
-
-  useEffect(() => {
-    const hydrate = async () => {
-      try {
-        const [
-          storedToken,
-          storedRefresh,
-          storedDeviceId,
-          storedUsername,
-          storedUserProfile,
-          storedProfileImageUrl,
-          storedThemePreference,
-        ] = await Promise.all([
-          AsyncStorage.getItem(STORAGE_KEYS.accessToken),
-          AsyncStorage.getItem(STORAGE_KEYS.refreshToken),
-          AsyncStorage.getItem(STORAGE_KEYS.deviceId),
-          AsyncStorage.getItem(STORAGE_KEYS.lastLoginUsername),
-          AsyncStorage.getItem(STORAGE_KEYS.userProfile),
-          AsyncStorage.getItem(STORAGE_KEYS.profileImageUrl),
-          AsyncStorage.getItem(STORAGE_KEYS.themePreference),
-        ]);
-
-        setToken(storedToken || '');
-        setRefreshToken(storedRefresh || '');
-        setDeviceId(storedDeviceId || '');
-        setLastLoginUsername(storedUsername || '');
-        setProfileImageUrl(storedProfileImageUrl || '');
-
-        if (storedUserProfile) {
-          try {
-            const parsed = JSON.parse(storedUserProfile);
-            setUser(parsed);
-          } catch {
-            setUser(buildUserState({ user: null, identifier: storedUsername || '' }));
-          }
-        } else {
-          setUser(buildUserState({ user: null, identifier: storedUsername || '' }));
-        }
-
-        if (storedThemePreference === 'light' || storedThemePreference === 'dark' || storedThemePreference === 'system') {
-          setThemePreferenceState(storedThemePreference);
-        }
-      } finally {
-        setIsHydrating(false);
-      }
-    };
-
-    hydrate();
-  }, []);
-
-  useEffect(() => {
-    if (!isHydrating && token && deviceId) {
-      syncSession();
-    }
-  }, [deviceId, isHydrating, syncSession, token]);
 
   const setThemePreference = useCallback(async (nextPreference) => {
     const normalized =
@@ -289,225 +143,65 @@ export const UserProvider = ({ children }) => {
 
   const updateUserProfile = useCallback(
     async (nextRawUser) => {
-      const nextUser = buildUserState({ user: nextRawUser, identifier: lastLoginUsername });
-      setUser(nextUser);
-      await persistUser(nextUser);
-      return nextUser;
-    },
-    [lastLoginUsername, persistUser],
-  );
-
-  const clearAuthSession = useCallback(async () => {
-    setToken('');
-    setRefreshToken('');
-    setLastLoginUsername('');
-    setUser(buildUserState({ user: null, identifier: '' }));
-    setProfileImageUrl('');
-    await AsyncStorage.multiRemove([
-      STORAGE_KEYS.accessToken,
-      STORAGE_KEYS.refreshToken,
-      STORAGE_KEYS.lastLoginUsername,
-      STORAGE_KEYS.userProfile,
-      STORAGE_KEYS.profileImageUrl,
-    ]);
-  }, []);
-
-  const refreshAccessToken = useCallback(async () => {
-    const currentDeviceId = await getOrCreateDeviceId().catch(() => deviceId);
-    const currentRefreshToken = refreshToken;
-    const refreshUrl = `${API_BASE_URL}/api/auth/refresh`;
-
-    if (!currentDeviceId || !currentRefreshToken) {
-      await clearAuthSession();
-      return null;
-    }
-
-    try {
-      logRequestStart({
-        label: 'auth.refresh',
-        url: refreshUrl,
-        method: 'POST',
-        meta: { hasRefreshToken: Boolean(currentRefreshToken), hasDeviceId: Boolean(currentDeviceId) },
-      });
-
-      const response = await fetch(refreshUrl, {
-        method: 'POST',
-        headers: {
-          Accept: 'application/json',
-          'Content-Type': 'application/json',
-          'x-device-id': currentDeviceId,
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          refresh_token: currentRefreshToken,
-          device_id: currentDeviceId,
-        }),
-      });
-      await logResponse({ label: 'auth.refresh', response });
-
-      const payload = await parseJsonSafely(response);
-      if (!response.ok) {
-        const apiError = extractApiError(payload);
-        if (SESSION_INVALID_ERRORS.has(apiError)) {
-          await clearAuthSession();
-          return null;
-        }
-
-        throw new Error(apiError || `Refresh failed (${response.status})`);
-      }
-
-      const nextToken = payload?.token || '';
-      if (!nextToken) {
-        throw new Error('Refresh response did not include an access token.');
-      }
-
-      setToken(nextToken);
-      await AsyncStorage.setItem(STORAGE_KEYS.accessToken, nextToken);
-      return nextToken;
-    } catch (error) {
-      logRequestError({ label: 'auth.refresh', url: refreshUrl, error });
-      throw error;
-    }
-  }, [clearAuthSession, deviceId, getOrCreateDeviceId, refreshToken]);
-
-  const authFetch = useCallback(
-    async (path, init = {}) => {
-      const currentDeviceId = await getOrCreateDeviceId().catch(() => deviceId);
-      const normalizedPath = path.startsWith('http') ? path : `${API_BASE_URL}${path}`;
-      const {
-        headers: initHeaders = {},
-        skipRefresh = false,
-        allowUnauthorized = false,
-        ...restInit
-      } = init;
-
-      const doFetch = async (accessToken) => {
-        const headers = {
-          Accept: 'application/json',
-          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-          ...(currentDeviceId ? { 'x-device-id': currentDeviceId } : {}),
-          ...initHeaders,
-        };
-
-        return fetch(normalizedPath, {
-          credentials: 'include',
-          ...restInit,
-          headers,
-        });
+      const nextUser = {
+        ...(auth.user || {}),
+        ...(nextRawUser || {}),
       };
 
-      let response = await doFetch(token);
-
-      if (allowUnauthorized || response.status !== 401 || skipRefresh) {
-        return response;
-      }
-
-      const unauthorizedPayload = await parseJsonSafely(response);
-      const unauthorizedError = extractApiError(unauthorizedPayload);
-      if (SESSION_INVALID_ERRORS.has(unauthorizedError)) {
-        await clearAuthSession();
-        return response;
-      }
-
-      const nextToken = await refreshAccessToken().catch(() => null);
-      if (!nextToken) {
-        return response;
-      }
-
-      response = await doFetch(nextToken);
-      if (response.status !== 401) {
-        return response;
-      }
-
-      const retryPayload = await parseJsonSafely(response);
-      const retryError = extractApiError(retryPayload);
-      if (SESSION_INVALID_ERRORS.has(retryError)) {
-        await clearAuthSession();
-      }
-
-      return response;
+      await auth.updateUser(nextUser);
+      return buildUserState(nextUser);
     },
-    [clearAuthSession, deviceId, getOrCreateDeviceId, refreshAccessToken, token],
+    [auth],
   );
 
-  const logout = useCallback(async () => {
-    const currentDeviceId = await getOrCreateDeviceId().catch(() => deviceId);
-    const logoutUrl = `${API_BASE_URL}/api/auth/logout2`;
-
+  const syncSession = useCallback(async () => {
     try {
-      logRequestStart({
-        label: 'auth.logout',
-        url: logoutUrl,
-        method: 'POST',
-        meta: { hasToken: Boolean(token), hasDeviceId: Boolean(currentDeviceId) },
-      });
-      const response = await fetch(logoutUrl, {
-        method: 'POST',
-        headers: {
-          Accept: 'application/json',
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          ...(currentDeviceId ? { 'x-device-id': currentDeviceId } : {}),
-        },
-        credentials: 'include',
-        body: JSON.stringify({ device_id: currentDeviceId || '' }),
-      });
-      await logResponse({ label: 'auth.logout', response });
-    } catch (error) {
-      logRequestError({ label: 'auth.logout', url: logoutUrl, error });
+      setIsSyncingSession(true);
+      return await auth.syncSession();
     } finally {
-      await clearAuthSession();
+      setIsSyncingSession(false);
     }
-  }, [clearAuthSession, deviceId, getOrCreateDeviceId, token]);
+  }, [auth]);
 
   const value = useMemo(
     () => ({
-      isHydrating,
+      isHydrating: auth.isHydrating || !localHydrated,
       isSyncingSession,
-      token,
-      refreshToken,
-      deviceId,
-      lastLoginUsername,
-      user,
+      token: auth.token,
+      refreshToken: auth.refreshToken,
+      deviceId: auth.deviceId,
+      lastLoginUsername: auth.user?.email || '',
+      user: buildUserState(auth.user),
       profileImageUrl,
       theme,
       themePreference,
       themeColors,
-      getOrCreateDeviceId,
-      authFetch,
-      refreshAccessToken,
-      setAuthSession,
+      entryRoute: auth.entryRoute,
+      getOrCreateDeviceId: auth.getOrCreateDeviceId,
+      authFetch: auth.authFetch,
+      refreshAccessToken: auth.refreshSession,
+      setAuthSession: auth.setAuthSession,
       syncSession,
       updateUserProfile,
       updateProfileImage,
-      clearAuthSession,
-      logout,
+      clearAuthSession: auth.clearAuthSession,
+      logout: auth.logout,
       setThemePreference,
       toggleTheme,
     }),
     [
-      deviceId,
-      authFetch,
-      getOrCreateDeviceId,
-      isHydrating,
+      auth,
       isSyncingSession,
-      lastLoginUsername,
+      localHydrated,
       profileImageUrl,
-      refreshAccessToken,
-      refreshToken,
-      setAuthSession,
-      syncSession,
-      updateUserProfile,
-      updateProfileImage,
-      clearAuthSession,
-      logout,
       setThemePreference,
-      token,
+      syncSession,
       theme,
       themeColors,
       themePreference,
       toggleTheme,
-      user,
+      updateProfileImage,
+      updateUserProfile,
     ],
   );
 

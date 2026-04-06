@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { ChevronRight } from 'lucide-react-native';
+import { ArrowUpRight } from 'lucide-react-native';
 import AppText from '../../components/AppText';
 import BottomTabs from '../../components/BottomTabs';
 import GradientBackground from '../../components/GradientBackground';
@@ -76,93 +76,84 @@ const SectorHubScreen = ({ navigation }) => {
           />
 
           <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-            <View style={styles.section}>
-              <View style={styles.sectionHeaderRow} />
+            <View style={styles.introCard}>
+              <View style={styles.introTopRow}>
+                <AppText style={styles.introEyebrow}>Sector Overview</AppText>
+                <View style={styles.introCountPill}>
+                  <AppText style={styles.introCountText}>{visibleSectors.length} sectors</AppText>
+                </View>
+              </View>
+              <AppText style={styles.introTitle}>Follow capital rotation with more clarity.</AppText>
+              <AppText style={styles.introBody}>
+                Move through the market one sector at a time to spot where momentum is accelerating, where leadership is
+                fading, and which groups are worth drilling into before you commit to individual stocks.
+              </AppText>
+            </View>
 
-              <View style={styles.grid}>
-                {visibleSectors.map((item) => {
-                  const Icon = item.icon;
+            <View style={styles.grid}>
+              {visibleSectors.map((item) => {
+                const Icon = item.icon;
 
-                  return (
-                    <Pressable
-                      key={item.slug}
-                      style={styles.card}
-                      onPress={() => openSector(item)}
-                    >
-                      <View style={styles.cardGlow} />
-                      <View style={[styles.cardOrb, { backgroundColor: item.color }]} />
+                return (
+                  <Pressable
+                    key={item.slug}
+                    style={styles.card}
+                    onPress={() => openSector(item)}
+                  >
+                    <View style={[styles.cardAccent, { backgroundColor: item.color }]} />
 
-                      <View style={styles.cardTopRow}>
-                        <View style={styles.cardTitleRow}>
-                          <View style={[styles.iconWrap, { backgroundColor: item.color }]}>
-                            <Icon size={18} color="#FFFFFF" />
-                          </View>
-
-                          <View style={styles.titleBlock}>
-                            <AppText style={styles.cardTitle}>
-                              {item.name}
-                            </AppText>
-                            <AppText style={styles.cardSub}>
-                              {item.apiSectorName}
-                            </AppText>
-                          </View>
+                    <View style={styles.cardTopRow}>
+                      <View style={styles.cardTitleRow}>
+                        <View style={[styles.iconWrap, { backgroundColor: item.color }]}>
+                          <Icon size={18} color="#FFFFFF" />
                         </View>
 
-                        <View style={styles.cardCountBadge}>
-                          <AppText style={styles.cardCountText}>
-                            {item.count} stocks
-                          </AppText>
-                        </View>
-                      </View>
-
-                      <View style={styles.metricRow}>
-                        <View style={styles.metricPill}>
-                          <AppText style={styles.metricLabel}>Universe</AppText>
-                          <AppText style={styles.metricValue}>
-                            {item.count}
-                          </AppText>
-                        </View>
-
-                        <View style={styles.metricPill}>
-                          <AppText style={styles.metricLabel}>Pages</AppText>
-                          <AppText style={styles.metricValue}>
-                            {item.totalPages}
-                          </AppText>
+                        <View style={styles.titleBlock}>
+                          <AppText style={styles.cardTitle}>{item.name}</AppText>
+                          <AppText style={styles.cardSub}>{item.subtitle}</AppText>
                         </View>
                       </View>
 
+                      <View style={styles.cardArrowWrap}>
+                        <ArrowUpRight size={16} color={themeColors.textPrimary} />
+                      </View>
+                    </View>
+
+                    <View style={styles.metricRow}>
+                      <View style={styles.metricTile}>
+                        <AppText style={styles.metricLabel}>Stocks</AppText>
+                        <AppText style={styles.metricValue}>{item.count}</AppText>
+                      </View>
+
+                      <View style={styles.metricTile}>
+                        <AppText style={styles.metricLabel}>Pages</AppText>
+                        <AppText style={styles.metricValue}>{item.totalPages}</AppText>
+                      </View>
+                    </View>
+
+                    <View style={styles.previewBlock}>
+                      <AppText style={styles.previewLabel}>Key names</AppText>
                       <View style={styles.previewRow}>
                         {item.preview.map((ticker) => (
                           <View key={ticker} style={styles.previewChip}>
-                            <AppText style={styles.previewChipText}>
-                              {ticker}
-                            </AppText>
+                            <AppText style={styles.previewChipText}>{ticker}</AppText>
                           </View>
                         ))}
                       </View>
-
-                      <View style={styles.cardFooter}>
-                        <AppText style={styles.cardFooterText}>
-                          Browse sector
-                        </AppText>
-                        <ChevronRight size={18} color={themeColors.textPrimary} />
-                      </View>
-                    </Pressable>
-                  );
-                })}
-              </View>
-
-              {!visibleSectors.length ? (
-                <View style={styles.emptyState}>
-                  <AppText style={styles.emptyTitle}>
-                    No sectors found
-                  </AppText>
-                  <AppText style={styles.emptyText}>
-                    Search by sector name or ticker from the header.
-                  </AppText>
-                </View>
-              ) : null}
+                    </View>
+                  </Pressable>
+                );
+              })}
             </View>
+
+            {!visibleSectors.length ? (
+              <View style={styles.emptyState}>
+                <AppText style={styles.emptyTitle}>No sectors found</AppText>
+                <AppText style={styles.emptyText}>
+                  Search by sector name or ticker from the header to jump directly into the right market group.
+                </AppText>
+              </View>
+            ) : null}
           </ScrollView>
 
           <BottomTabs activeRoute="Sectors" navigation={navigation} />
@@ -185,33 +176,69 @@ const createStyles = (colors, theme) =>
 
     content: {
       paddingHorizontal: 16,
-      paddingTop: 12,
+      paddingTop: 14,
       paddingBottom: 120,
+      gap: 16,
     },
 
-    section: {
-      marginBottom: 24,
+    introCard: {
+      borderRadius: 28,
+      paddingHorizontal: 18,
+      paddingVertical: 18,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: theme === 'dark' ? 'rgba(16, 20, 30, 0.82)' : 'rgba(255,255,255,0.92)',
+      shadowColor: '#000000',
+      shadowOpacity: theme === 'dark' ? 0.18 : 0.08,
+      shadowRadius: 18,
+      shadowOffset: { width: 0, height: 10 },
+      elevation: 4,
+      gap: 10,
     },
 
-    sectionHeaderRow: {
+    introTopRow: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      gap: 10,
-      marginBottom: 14,
+      gap: 12,
     },
 
-    sectionTitle: {
+    introEyebrow: {
+      fontFamily: 'NotoSans-SemiBold',
+      fontSize: 11,
+      lineHeight: 14,
+      color: colors.accent,
+      letterSpacing: 0.8,
+      textTransform: 'uppercase',
+    },
+
+    introCountPill: {
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: theme === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(13,27,42,0.035)',
+    },
+
+    introCountText: {
+      fontFamily: 'NotoSans-Medium',
+      fontSize: 10,
+      lineHeight: 12,
+      color: colors.textMuted,
+    },
+
+    introTitle: {
       fontFamily: 'NotoSans-ExtraBold',
-      fontSize: 16,
-      lineHeight: 20,
+      fontSize: 22,
+      lineHeight: 28,
       color: colors.textPrimary,
     },
 
-    sectionMeta: {
-      fontFamily: 'NotoSans-Medium',
-      fontSize: 11,
-      lineHeight: 14,
+    introBody: {
+      fontFamily: 'NotoSans-Regular',
+      fontSize: 13,
+      lineHeight: 21,
       color: colors.textMuted,
     },
 
@@ -222,13 +249,13 @@ const createStyles = (colors, theme) =>
     card: {
       position: 'relative',
       overflow: 'hidden',
-      borderRadius: 24,
-      paddingHorizontal: 14,
-      paddingTop: 14,
-      paddingBottom: 12,
+      borderRadius: 26,
+      paddingHorizontal: 16,
+      paddingTop: 16,
+      paddingBottom: 16,
       borderWidth: 1,
       borderColor: colors.border,
-      backgroundColor: theme === 'dark' ? 'rgba(14,17,25,0.95)' : 'rgba(255,255,255,0.95)',
+      backgroundColor: theme === 'dark' ? 'rgba(14,17,25,0.95)' : 'rgba(255,255,255,0.96)',
       shadowColor: '#000000',
       shadowOpacity: theme === 'dark' ? 0.22 : 0.08,
       shadowRadius: 18,
@@ -236,41 +263,29 @@ const createStyles = (colors, theme) =>
       elevation: 5,
     },
 
-    cardGlow: {
+    cardAccent: {
       position: 'absolute',
-      top: -24,
-      right: -18,
-      width: 110,
-      height: 110,
-      borderRadius: 55,
-      backgroundColor: colors.accent,
-      opacity: theme === 'dark' ? 0.08 : 0.05,
-    },
-
-    cardOrb: {
-      position: 'absolute',
-      bottom: -24,
-      right: -16,
-      width: 76,
-      height: 76,
-      borderRadius: 38,
-      opacity: theme === 'dark' ? 0.12 : 0.08,
+      top: 0,
+      left: 0,
+      right: 0,
+      height: 4,
+      opacity: 0.95,
     },
 
     cardTopRow: {
       flexDirection: 'row',
       alignItems: 'flex-start',
       justifyContent: 'space-between',
-      gap: 10,
-      marginBottom: 12,
+      gap: 12,
+      marginBottom: 14,
     },
 
     cardTitleRow: {
       flex: 1,
       flexDirection: 'row',
       alignItems: 'flex-start',
-      gap: 10,
-      paddingRight: 6,
+      gap: 12,
+      paddingRight: 8,
     },
 
     titleBlock: {
@@ -279,60 +294,55 @@ const createStyles = (colors, theme) =>
     },
 
     iconWrap: {
-      width: 46,
-      height: 46,
-      borderRadius: 15,
+      width: 48,
+      height: 48,
+      borderRadius: 16,
       alignItems: 'center',
       justifyContent: 'center',
       shadowColor: '#000000',
-      shadowOpacity: 0.14,
+      shadowOpacity: 0.16,
       shadowRadius: 10,
       shadowOffset: { width: 0, height: 4 },
       elevation: 2,
     },
 
-    cardCountBadge: {
-      paddingHorizontal: 9,
-      paddingVertical: 6,
-      borderRadius: 999,
-      backgroundColor: theme === 'dark' ? 'rgba(255,255,255,0.055)' : 'rgba(13,27,42,0.035)',
+    cardArrowWrap: {
+      width: 34,
+      height: 34,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
       borderWidth: 1,
       borderColor: colors.border,
-    },
-
-    cardCountText: {
-      fontFamily: 'NotoSans-Medium',
-      fontSize: 10,
-      lineHeight: 12,
-      color: colors.textMuted,
+      backgroundColor: theme === 'dark' ? 'rgba(255,255,255,0.04)' : 'rgba(13,27,42,0.03)',
     },
 
     cardTitle: {
       fontFamily: 'NotoSans-ExtraBold',
-      fontSize: 15,
-      lineHeight: 18,
+      fontSize: 16,
+      lineHeight: 20,
       color: colors.textPrimary,
-      marginBottom: 3,
+      marginBottom: 4,
     },
 
     cardSub: {
       fontFamily: 'NotoSans-Medium',
       fontSize: 11,
-      lineHeight: 16,
+      lineHeight: 17,
       color: colors.textMuted,
     },
 
     metricRow: {
       flexDirection: 'row',
-      gap: 8,
-      marginBottom: 12,
+      gap: 10,
+      marginBottom: 14,
     },
 
-    metricPill: {
+    metricTile: {
       flex: 1,
-      borderRadius: 14,
-      paddingHorizontal: 10,
-      paddingVertical: 8,
+      borderRadius: 16,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
       borderWidth: 1,
       borderColor: colors.border,
       backgroundColor: theme === 'dark' ? 'rgba(255,255,255,0.04)' : 'rgba(13,27,42,0.03)',
@@ -345,26 +355,38 @@ const createStyles = (colors, theme) =>
       color: colors.textMuted,
       textTransform: 'uppercase',
       letterSpacing: 0.6,
-      marginBottom: 2,
+      marginBottom: 4,
     },
 
     metricValue: {
-      fontFamily: 'NotoSans-SemiBold',
-      fontSize: 12,
-      lineHeight: 15,
+      fontFamily: 'NotoSans-ExtraBold',
+      fontSize: 14,
+      lineHeight: 18,
       color: colors.textPrimary,
+    },
+
+    previewBlock: {
+      gap: 8,
+    },
+
+    previewLabel: {
+      fontFamily: 'NotoSans-SemiBold',
+      fontSize: 11,
+      lineHeight: 14,
+      color: colors.textMuted,
+      textTransform: 'uppercase',
+      letterSpacing: 0.5,
     },
 
     previewRow: {
       flexDirection: 'row',
       flexWrap: 'wrap',
-      gap: 6,
-      marginBottom: 12,
+      gap: 8,
     },
 
     previewChip: {
-      paddingHorizontal: 8,
-      paddingVertical: 6,
+      paddingHorizontal: 10,
+      paddingVertical: 7,
       borderRadius: 999,
       backgroundColor: theme === 'dark' ? 'rgba(255,255,255,0.045)' : 'rgba(13,27,42,0.04)',
       borderWidth: 1,
@@ -372,34 +394,19 @@ const createStyles = (colors, theme) =>
     },
 
     previewChipText: {
-      fontFamily: 'NotoSans-Medium',
+      fontFamily: 'NotoSans-SemiBold',
       fontSize: 10,
       lineHeight: 12,
       color: colors.textPrimary,
     },
 
-    cardFooter: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      paddingTop: 6,
-    },
-
-    cardFooterText: {
-      fontFamily: 'NotoSans-SemiBold',
-      fontSize: 11,
-      lineHeight: 14,
-      color: colors.textPrimary,
-      letterSpacing: 0.2,
-    },
-
     emptyState: {
-      marginTop: 12,
+      marginTop: 4,
       padding: 20,
-      borderRadius: 22,
+      borderRadius: 24,
       borderWidth: 1,
       borderColor: colors.border,
-      backgroundColor: theme === 'dark' ? 'rgba(18,22,30,0.72)' : 'rgba(255,255,255,0.8)',
+      backgroundColor: theme === 'dark' ? 'rgba(18,22,30,0.72)' : 'rgba(255,255,255,0.86)',
     },
 
     emptyTitle: {

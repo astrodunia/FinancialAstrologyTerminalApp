@@ -383,8 +383,6 @@ const Plans = ({ navigation }) => {
                             },
                           ]}
                         >
-                          <View style={[styles.planGlow, { backgroundColor: meta.glow }]} />
-
                           <View style={styles.planTopRow}>
                             <View style={styles.planTitleBlock}>
                               <View style={[styles.familyBadge, { borderColor: meta.accentSoft, backgroundColor: meta.panel }]}>
@@ -487,7 +485,7 @@ const createStyles = (colors) =>
       backgroundColor: colors.background,
     },
     content: {
-      paddingHorizontal: 16,
+      paddingHorizontal: 10,
       paddingTop: 12,
       paddingBottom: 120,
       gap: 16,
@@ -584,7 +582,7 @@ const createStyles = (colors) =>
       gap: 14,
     },
     familySection: {
-      borderRadius: 28,
+      borderRadius: 20,
       borderWidth: 1,
       padding: 14,
       gap: 14,
@@ -595,9 +593,9 @@ const createStyles = (colors) =>
       gap: 12,
     },
     familySectionIcon: {
-      width: 42,
-      height: 42,
-      borderRadius: 14,
+      width: 38,
+      height: 38,
+      borderRadius: 10,
       alignItems: 'center',
       justifyContent: 'center',
       borderWidth: 1,
@@ -623,20 +621,10 @@ const createStyles = (colors) =>
     },
     planCard: {
       position: 'relative',
-      overflow: 'hidden',
-      borderRadius: 26,
+      borderRadius: 18,
       borderWidth: 1,
-      padding: 18,
-      gap: 14,
-    },
-    planGlow: {
-      position: 'absolute',
-      top: -28,
-      right: -18,
-      width: 116,
-      height: 116,
-      borderRadius: 58,
-      opacity: 1,
+      padding: 16,
+      gap: 12,
     },
     planTopRow: {
       flexDirection: 'row',
@@ -655,7 +643,7 @@ const createStyles = (colors) =>
       gap: 6,
       paddingHorizontal: 10,
       paddingVertical: 5,
-      borderRadius: 999,
+      borderRadius: 10,
       borderWidth: 1,
     },
     familyBadgeText: {
@@ -665,8 +653,8 @@ const createStyles = (colors) =>
     planTitle: {
       fontFamily: FONT.extraBold,
       color: colors.textPrimary,
-      fontSize: 20,
-      lineHeight: 25,
+      fontSize: 18,
+      lineHeight: 22,
     },
     planSubtitle: {
       fontFamily: FONT.regular,
@@ -681,8 +669,8 @@ const createStyles = (colors) =>
     planPrice: {
       fontFamily: FONT.extraBold,
       color: colors.textPrimary,
-      fontSize: 20,
-      lineHeight: 24,
+      fontSize: 18,
+      lineHeight: 22,
       textAlign: 'right',
     },
     planDescription: {
@@ -708,7 +696,7 @@ const createStyles = (colors) =>
     },
     primaryButton: {
       minHeight: 48,
-      borderRadius: 16,
+      borderRadius: 12,
       backgroundColor: colors.accent,
       flexDirection: 'row',
       alignItems: 'center',

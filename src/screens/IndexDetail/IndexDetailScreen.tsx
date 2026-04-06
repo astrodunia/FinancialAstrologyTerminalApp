@@ -5,16 +5,19 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  TextInput,
   useWindowDimensions,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Bell, Bookmark, RefreshCcw } from 'lucide-react-native';
+import { Bell, Bookmark, RefreshCcw, Search, X } from 'lucide-react-native';
 import Svg, { Circle, Line, Path, Rect } from 'react-native-svg';
 import AppText from '../../components/AppText';
 import BottomTabs from '../../components/BottomTabs';
 import GradientBackground from '../../components/GradientBackground';
 import { useUser } from '../../store/UserContext';
+import { navigateToStockDetail, normalizeStockSymbol } from '../../features/stocks/navigation';
+import { useTickerSearch } from '../../features/stocks/useTickerSearch';
 import {
   INDEX_TIMEFRAMES,
   classifyIndexMood,
@@ -54,11 +57,9 @@ const formatSignedPercent = (value: number | null | undefined) => {
   return `${value >= 0 ? '+' : ''}${nf2.format(value)}%`;
 };
 
-const formatCurrency = (value: number | null | undefined) => {
+const formatMarketValue = (value: number | null | undefined) => {
   if (value == null || Number.isNaN(value)) return '--';
   return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
     maximumFractionDigits: value >= 1000 ? 0 : 2,
   }).format(value);
 };
@@ -84,6 +85,7 @@ const formatDateTime = (timestamp: number) => {
   return new Intl.DateTimeFormat('en-US', {
     month: 'short',
     day: 'numeric',
+    year: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
   }).format(new Date(timestamp));
@@ -99,6 +101,7 @@ const downsampleCandlesForChart = (candles: IndexCandle[], timeframe: IndexTimef
     '6M': 104,
     '1Y': 120,
     '5Y': 140,
+    ALL: 180,
   };
 
   const maxPoints = maxPointsMap[timeframe];
@@ -215,8 +218,8 @@ const MainChart = ({
   const styles = useMemo(() => createStyles(themeColors, theme), [themeColors, theme]);
   const { width } = useWindowDimensions();
   const chartWidth = Math.max(width - 68, 250);
-  const chartHeight = 352;
-  const plotHeight = chartHeight - 30;
+  const chartHeight = 268;
+  const plotHeight = chartHeight - 24;
   const values = candles.map((item) => item.c);
   const min = Math.min(...values);
   const max = Math.max(...values);
@@ -283,8 +286,8 @@ const MainChart = ({
           <Line x1="0" y1={plotHeight} x2={chartWidth} y2={plotHeight} stroke="rgba(148,163,184,0.16)" strokeWidth="1" />
           <Line x1={chartWidth * 0.36} y1={0} x2={chartWidth * 0.36} y2={plotHeight} stroke="rgba(148,163,184,0.10)" strokeWidth="1" />
           <Line x1={0} y1={plotHeight * 0.46} x2={chartWidth} y2={plotHeight * 0.46} stroke="rgba(148,163,184,0.10)" strokeWidth="1" strokeDasharray="4 4" />
-          <Path d={areaPath} fill={softenedColor} opacity={0.16} />
-          <Path d={linePath} fill="none" stroke={softenedColor} strokeOpacity={0.96} strokeWidth={2.35} strokeLinejoin="round" strokeLinecap="round" />
+          <Path d={areaPath} fill={softenedColor} opacity={0.12} />
+          <Path d={linePath} fill="none" stroke={softenedColor} strokeOpacity={0.98} strokeWidth={2.6} strokeLinejoin="round" strokeLinecap="round" />
           {activePoint ? (
             <>
               <Line
@@ -316,20 +319,20 @@ const MainChart = ({
             pointerEvents="none"
           >
             <AppText style={[styles.chartTooltipPrice, { color: tooltipTheme.titleColor }]}>
-              {formatCurrency(activePoint.point.c)}
+              {formatMarketValue(activePoint.point.c)}
             </AppText>
             <AppText style={[styles.chartTooltipTime, { color: tooltipTheme.bodyColor }]}>
               {formatDateTime(activePoint.point.t)}
             </AppText>
             <AppText style={[styles.chartTooltipChange, { color: tooltipTheme.titleColor }]}>
-              {`${activePoint.delta >= 0 ? 'Up' : 'Down'} ${formatCurrency(Math.abs(activePoint.delta))} (${activePoint.pct >= 0 ? '+' : ''}${activePoint.pct.toFixed(2)}%)`}
+              {`${activePoint.delta >= 0 ? 'Up' : 'Down'} ${formatMarketValue(Math.abs(activePoint.delta))} (${activePoint.pct >= 0 ? '+' : ''}${activePoint.pct.toFixed(2)}%)`}
             </AppText>
           </View>
         ) : null}
       </View>
       <View style={styles.chartLegendRow}>
-        <AppText style={styles.chartLegendText}>{formatCurrency(min)}</AppText>
-        <AppText style={styles.chartLegendText}>{formatCurrency(max)}</AppText>
+        <AppText style={styles.chartLegendText}>{formatMarketValue(min)}</AppText>
+        <AppText style={styles.chartLegendText}>{formatMarketValue(max)}</AppText>
       </View>
     </View>
   );
@@ -345,6 +348,8 @@ export function IndexDetailScreen({ navigation, route }: any) {
   const symbol = useMemo(() => normalizeIndexSymbol(routeSymbol), [routeSymbol]);
   const initialTf = useMemo(() => normalizeIndexTimeframe(routeTf), [routeTf]);
   const [selectedTf, setSelectedTf] = useState<IndexTimeframe>(initialTf);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     setSelectedTf(initialTf);
@@ -352,6 +357,10 @@ export function IndexDetailScreen({ navigation, route }: any) {
 
   const indexInfo = useIndexInfo(symbol);
   const candlesState = useIndexCandles(symbol, selectedTf);
+  const { results, loading: searchLoading, error: searchError } = useTickerSearch(searchQuery, {
+    enabled: searchOpen,
+    limit: 8,
+  });
 
   const remainingSymbols = useMemo(
     () => INDEX_LIST.map((item) => item.id).filter((item) => item !== symbol),
@@ -391,6 +400,31 @@ export function IndexDetailScreen({ navigation, route }: any) {
     remainingIndices.reload();
   };
 
+  const closeSearch = () => {
+    setSearchOpen(false);
+    setSearchQuery('');
+  };
+
+  const submitTickerSearch = () => {
+    const normalized = normalizeStockSymbol(searchQuery);
+    if (/^[A-Z][A-Z0-9.-]{0,9}$/.test(normalized)) {
+      closeSearch();
+      navigateToStockDetail(navigation, normalized);
+      return;
+    }
+
+    if ((results[0] as any)?.symbol) {
+      closeSearch();
+      navigateToStockDetail(navigation, (results[0] as any).symbol);
+    }
+  };
+
+  const selectTickerSearchResult = (item: any) => {
+    if (!item?.symbol) return;
+    closeSearch();
+    navigateToStockDetail(navigation, item.symbol);
+  };
+
   const openIndex = (nextSymbol: string) => {
     navigation?.push?.('IndexDetail', { symbol: nextSymbol, tf: selectedTf });
   };
@@ -416,10 +450,68 @@ export function IndexDetailScreen({ navigation, route }: any) {
                 </AppText>
               </View>
 
-              <Pressable style={styles.refreshButton} onPress={onRefresh}>
-                <RefreshCcw size={16} color={colors.textPrimary} />
+              <Pressable style={styles.refreshButton} onPress={() => setSearchOpen((value) => !value)}>
+                {searchOpen ? <X size={18} color={colors.textPrimary} /> : <Search size={18} color={colors.textPrimary} />}
               </Pressable>
             </View>
+
+            {searchOpen ? (
+              <View style={styles.searchCard}>
+                <View style={styles.searchInputRow}>
+                  <Search size={16} color={colors.textMuted} />
+                  <TextInput
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                    placeholder="Search stocks or companies"
+                    placeholderTextColor={colors.textMuted}
+                    style={styles.searchInput}
+                    autoFocus
+                    autoCapitalize="characters"
+                    autoCorrect={false}
+                    returnKeyType="search"
+                    onSubmitEditing={submitTickerSearch}
+                  />
+                  {searchQuery.trim() ? (
+                    <Pressable onPress={() => setSearchQuery('')} style={styles.clearSearchButton}>
+                      <X size={14} color={colors.textMuted} />
+                    </Pressable>
+                  ) : null}
+                </View>
+
+                {searchLoading ? (
+                  <View style={styles.searchStateRow}>
+                    <ActivityIndicator size="small" color={colors.textMuted} />
+                    <AppText style={styles.searchStateText}>Searching…</AppText>
+                  </View>
+                ) : searchError ? (
+                  <AppText style={styles.searchStateText}>{searchError}</AppText>
+                ) : searchQuery.trim() ? (
+                  results.length ? (
+                    <View style={styles.searchResultsList}>
+                      {results.map((item: any, index) => (
+                        <Pressable
+                          key={`${item.symbol}-${index}`}
+                          style={[styles.searchResultRow, index === 0 && styles.searchResultRowFirst]}
+                          onPress={() => selectTickerSearchResult(item)}
+                        >
+                          <View style={styles.searchResultMain}>
+                            <AppText style={styles.searchResultSymbol}>{item.symbol}</AppText>
+                            <AppText numberOfLines={1} style={styles.searchResultName}>
+                              {item.name || 'Unknown company'}
+                            </AppText>
+                          </View>
+                          {item.exchange ? <AppText style={styles.searchResultMeta}>{item.exchange}</AppText> : null}
+                        </Pressable>
+                      ))}
+                    </View>
+                  ) : (
+                    <AppText style={styles.searchStateText}>No matches found.</AppText>
+                  )
+                ) : (
+                  <AppText style={styles.searchHintText}>Search by stock symbol or company name.</AppText>
+                )}
+              </View>
+            ) : null}
 
             {!symbol ? (
               <EmptyCard styles={styles} title="Missing symbol" message="Open this screen with a valid index symbol." />
@@ -460,14 +552,14 @@ export function IndexDetailScreen({ navigation, route }: any) {
 
                       <View style={styles.chartValueLine}>
                         <AppText style={styles.chartHeadlinePrice}>
-                          {displayPrice == null ? '--' : formatCurrency(displayPrice)}
+                          {displayPrice == null ? '--' : formatMarketValue(displayPrice)}
                         </AppText>
                         <AppText style={[styles.chartHeadlineDelta, isPositive ? styles.positiveText : styles.negativeText]}>
                           {typeof snapshot?.change === 'number' && typeof snapshot?.changePercent === 'number'
                             ? `${formatSignedNumber(snapshot.change)} (${formatSignedPercent(snapshot.changePercent)})`
                             : '--'}
                         </AppText>
-                        <AppText style={styles.chartHeadlineTf}>{selectedTf}</AppText>
+                        <AppText style={styles.chartHeadlineTf}>{selectedTf === 'ALL' ? 'All' : selectedTf}</AppText>
                       </View>
                     </View>
 
@@ -527,7 +619,11 @@ export function IndexDetailScreen({ navigation, route }: any) {
                     )}
                   </View>
 
-                  <View style={styles.chartTfWrap}>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.chartTfWrap}
+                  >
                     {INDEX_TIMEFRAMES.map((tf) => {
                       const active = tf === selectedTf;
                       return (
@@ -536,11 +632,13 @@ export function IndexDetailScreen({ navigation, route }: any) {
                           onPress={() => onSelectTimeframe(tf)}
                           style={[styles.chartTfChip, active && styles.chartTfChipActive]}
                         >
-                          <AppText style={[styles.chartTfChipText, active && styles.chartTfChipTextActive]}>{tf}</AppText>
+                          <AppText style={[styles.chartTfChipText, active && styles.chartTfChipTextActive]}>
+                            {tf === 'ALL' ? 'All' : tf}
+                          </AppText>
                         </Pressable>
                       );
                     })}
-                  </View>
+                  </ScrollView>
                 </View>
 
                 <View style={styles.section}>
@@ -668,7 +766,7 @@ const createStyles = (colors: any, theme: string) =>
       fontFamily: FONT.medium,
     },
     screenTitle: {
-      fontSize: 30,
+      fontSize: 20,
       lineHeight: 34,
       color: colors.textPrimary,
       fontFamily: FONT.extraBold,
@@ -685,6 +783,89 @@ const createStyles = (colors: any, theme: string) =>
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: colors.shellBg,
+    },
+    searchCard: {
+      borderRadius: 18,
+      backgroundColor: colors.chartCardBg,
+      padding: 12,
+      gap: 10,
+    },
+    searchInputRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      borderRadius: 14,
+      backgroundColor: colors.chartChipBg,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+    },
+    searchInput: {
+      flex: 1,
+      color: colors.textPrimary,
+      fontSize: 14,
+      paddingVertical: 0,
+      fontFamily: FONT.regular,
+    },
+    clearSearchButton: {
+      width: 24,
+      height: 24,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    searchResultsList: {
+      overflow: 'hidden',
+      borderRadius: 14,
+      backgroundColor: colors.chartTopTint,
+    },
+    searchResultRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 12,
+      paddingHorizontal: 12,
+      paddingVertical: 11,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: colors.chartGrid,
+    },
+    searchResultRowFirst: {
+      borderTopWidth: 0,
+    },
+    searchResultMain: {
+      flex: 1,
+      gap: 3,
+    },
+    searchResultSymbol: {
+      fontSize: 14,
+      color: colors.textPrimary,
+      fontFamily: FONT.semiBold,
+    },
+    searchResultName: {
+      fontSize: 12,
+      color: colors.textMuted,
+      fontFamily: FONT.regular,
+    },
+    searchResultMeta: {
+      fontSize: 11,
+      color: colors.textMuted,
+      fontFamily: FONT.medium,
+    },
+    searchStateRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingHorizontal: 4,
+    },
+    searchStateText: {
+      fontSize: 12,
+      color: colors.textMuted,
+      fontFamily: FONT.regular,
+    },
+    searchHintText: {
+      fontSize: 12,
+      color: colors.textMuted,
+      fontFamily: FONT.regular,
+      paddingHorizontal: 4,
     },
     chartHeroCard: {
       overflow: 'hidden',
@@ -711,7 +892,7 @@ const createStyles = (colors: any, theme: string) =>
       flexWrap: 'wrap',
     },
     chartTitle: {
-      fontSize: 22,
+      fontSize: 18,
       color: colors.textPrimary,
       fontFamily: FONT.extraBold,
     },
@@ -796,9 +977,9 @@ const createStyles = (colors: any, theme: string) =>
     chartCanvasShell: {
       borderRadius: 18,
       backgroundColor: colors.chartTopTint,
-      paddingHorizontal: 6,
+      paddingHorizontal: 8,
       paddingTop: 8,
-      paddingBottom: 6,
+      paddingBottom: 4,
     },
     chartWrap: {
       position: 'relative',
@@ -806,7 +987,7 @@ const createStyles = (colors: any, theme: string) =>
     chartLegendRow: {
       flexDirection: 'row',
       justifyContent: 'space-between',
-      marginTop: 8,
+      marginTop: 4,
       paddingHorizontal: 2,
     },
     chartLegendText: {
@@ -850,9 +1031,9 @@ const createStyles = (colors: any, theme: string) =>
     },
     chartTfWrap: {
       flexDirection: 'row',
-      flexWrap: 'wrap',
       gap: 8,
-      paddingTop: 2,
+      paddingTop: 4,
+      paddingRight: 8,
     },
     chartTfChip: {
       minWidth: 50,

@@ -194,6 +194,50 @@ export const removeSymbol = async (authFetch: FetchLike, id: string, ticker: str
   return mapMeta(unwrapWatchlist(payload));
 };
 
-export { normalizeSymbol };
+export const getSimpleWatchlistTickers = async (
+  authFetch: FetchLike,
+  signal?: AbortSignal,
+): Promise<string[]> => {
+  const payload = await requestJson(authFetch, '/api/watchlist', {}, signal);
+  const rawData = payload?.data;
+  const candidates = Array.isArray(rawData)
+    ? rawData
+    : Array.isArray((rawData as JsonMap | undefined)?.tickers)
+      ? (((rawData as JsonMap).tickers || []) as unknown[])
+      : [];
 
+  return [...new Set(candidates.map((item) => normalizeSymbol(String(item || ''))).filter(Boolean))];
+};
+
+export const addSimpleWatchlistTicker = async (
+  authFetch: FetchLike,
+  ticker: string,
+): Promise<string[]> => {
+  const symbol = normalizeSymbol(ticker);
+  if (!symbol) throw new Error('Invalid symbol');
+
+  await requestJson(authFetch, '/api/watchlist', {
+    method: 'POST',
+    body: JSON.stringify({ ticker: symbol }),
+  });
+
+  return getSimpleWatchlistTickers(authFetch);
+};
+
+export const removeSimpleWatchlistTicker = async (
+  authFetch: FetchLike,
+  ticker: string,
+): Promise<string[]> => {
+  const symbol = normalizeSymbol(ticker);
+  if (!symbol) throw new Error('Invalid symbol');
+
+  await requestJson(authFetch, '/api/watchlist', {
+    method: 'DELETE',
+    body: JSON.stringify({ ticker: symbol }),
+  });
+
+  return getSimpleWatchlistTickers(authFetch);
+};
+
+export { normalizeSymbol };
 

@@ -17,6 +17,12 @@ import {
   updateStockAlert,
 } from './api';
 import { normalizeStockSymbol } from './navigation';
+import {
+  addSimpleWatchlistTicker,
+  getSimpleWatchlistTickers,
+  normalizeSymbol,
+  removeSimpleWatchlistTicker,
+} from '../../services/watchlistApi';
 
 const useStableResource = <T,>(
   key: string,
@@ -24,6 +30,7 @@ const useStableResource = <T,>(
   load: (signal: AbortSignal) => Promise<T>,
 ) => {
   const mountedRef = useRef(true);
+  const loadRef = useRef(load);
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState('');
@@ -37,13 +44,17 @@ const useStableResource = <T,>(
   }, []);
 
   useEffect(() => {
+    loadRef.current = load;
+  }, [load]);
+
+  useEffect(() => {
     if (!enabled) return;
 
     const controller = new AbortController();
     setLoading(true);
     setError('');
 
-    load(controller.signal)
+    loadRef.current(controller.signal)
       .then((next) => {
         if (!mountedRef.current || controller.signal.aborted) return;
         setData(next);
@@ -60,7 +71,7 @@ const useStableResource = <T,>(
     return () => {
       controller.abort();
     };
-  }, [enabled, key, load, reloadTick]);
+  }, [enabled, key, reloadTick]);
 
   const reload = useCallback(() => {
     setReloadTick((value) => value + 1);
@@ -206,5 +217,116 @@ export const useTickerAlerts = (symbol: string, enabled = true) => {
     createAlert,
     removeAlert,
     toggleAlert,
+  };
+};
+
+export const useTickerWatchlist = (symbol: string, enabled = true) => {
+  const { authFetch, token } = useUser() as any;
+  const normalizedSymbol = useMemo(() => normalizeSymbol(symbol), [symbol]);
+  const [inWatchlist, setInWatchlist] = useState(false);
+  const [loading, setLoading] = useState(Boolean(enabled && token && normalizedSymbol));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const refresh = useCallback(async (signal?: AbortSignal) => {
+    if (!enabled || !token || !normalizedSymbol) {
+      setInWatchlist(false);
+      setLoading(false);
+      setError('');
+      return false;
+    }
+
+    setLoading(true);
+    setError('');
+
+    try {
+      const tickers = await getSimpleWatchlistTickers(authFetch as any, signal);
+      const exists = tickers.includes(normalizedSymbol);
+      setInWatchlist(exists);
+      return exists;
+    } catch (err: any) {
+      if (String(err?.message || '').toLowerCase().includes('abort')) {
+        throw err;
+      }
+      setError(err?.message || 'Unable to load watchlist.');
+      setInWatchlist(false);
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  }, [authFetch, enabled, normalizedSymbol, token]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    refresh(controller.signal).catch((err) => {
+      if (!String(err?.message || '').toLowerCase().includes('abort')) {
+        setError(err?.message || 'Unable to load watchlist.');
+      }
+    });
+    return () => controller.abort();
+  }, [refresh]);
+
+  const add = useCallback(async () => {
+    if (!token) {
+      throw new Error('Sign in to save stocks to your watchlist.');
+    }
+    if (!normalizedSymbol) {
+      throw new Error('Invalid symbol');
+    }
+
+    setSaving(true);
+    setError('');
+    try {
+      const tickers = await addSimpleWatchlistTicker(authFetch as any, normalizedSymbol);
+      const exists = tickers.includes(normalizedSymbol);
+      setInWatchlist(exists);
+      return exists;
+    } catch (err: any) {
+      setError(err?.message || 'Unable to add to watchlist.');
+      throw err;
+    } finally {
+      setSaving(false);
+    }
+  }, [authFetch, normalizedSymbol, token]);
+
+  const remove = useCallback(async () => {
+    if (!token) {
+      throw new Error('Sign in to manage your watchlist.');
+    }
+    if (!normalizedSymbol) {
+      throw new Error('Invalid symbol');
+    }
+
+    setSaving(true);
+    setError('');
+    try {
+      const tickers = await removeSimpleWatchlistTicker(authFetch as any, normalizedSymbol);
+      const exists = tickers.includes(normalizedSymbol);
+      setInWatchlist(exists);
+      return exists;
+    } catch (err: any) {
+      setError(err?.message || 'Unable to remove from watchlist.');
+      throw err;
+    } finally {
+      setSaving(false);
+    }
+  }, [authFetch, normalizedSymbol, token]);
+
+  const toggle = useCallback(async () => {
+    if (inWatchlist) {
+      return remove();
+    }
+    return add();
+  }, [add, inWatchlist, remove]);
+
+  return {
+    inWatchlist,
+    loading,
+    saving,
+    error,
+    refresh,
+    add,
+    remove,
+    toggle,
   };
 };
