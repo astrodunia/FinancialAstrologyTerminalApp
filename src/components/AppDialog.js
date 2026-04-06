@@ -4,10 +4,14 @@ import { useUser } from '../store/UserContext';
 
 const FONT = {
   regular: 'NotoSans-Regular',
-  medium: 'NotoSans-Medium',
   semiBold: 'NotoSans-SemiBold',
-  extraBold: 'NotoSans-ExtraBold',
 };
+
+const getDangerSurface = (theme) =>
+  theme === 'dark' ? 'rgba(240, 140, 140, 0.16)' : 'rgba(207, 63, 88, 0.10)';
+
+const getDangerBorder = (theme) =>
+  theme === 'dark' ? 'rgba(240, 140, 140, 0.22)' : 'rgba(207, 63, 88, 0.18)';
 
 export default function AppDialog({
   visible,
@@ -18,27 +22,30 @@ export default function AppDialog({
   tone = 'default',
   icon: Icon,
 }) {
-  const { themeColors } = useUser();
-  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+  const { theme, themeColors } = useUser();
+  const styles = useMemo(() => createStyles(themeColors, theme), [themeColors, theme]);
   const accentColor = tone === 'danger' ? themeColors.negative : themeColors.accent;
-  const iconSurface = tone === 'danger' ? 'rgba(207, 63, 88, 0.12)' : themeColors.surfaceAlt;
-  const iconBorder = tone === 'danger' ? 'transparent' : themeColors.border;
+  const iconSurface = tone === 'danger' ? getDangerSurface(theme) : themeColors.surfaceAlt;
+  const iconBorder = tone === 'danger' ? getDangerBorder(theme) : themeColors.border;
+  const primaryTextColor = theme === 'dark' ? '#0B0B0C' : '#FFFFFF';
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onRequestClose}>
       <View style={styles.overlay}>
-        <View style={styles.scrim} />
+        <Pressable style={styles.scrim} onPress={onRequestClose} />
 
-        <View style={[styles.dialogCard, { borderTopWidth: 4, borderTopColor: accentColor }]}>
-          <View style={styles.header}>
-            {Icon ? (
-              <View style={[styles.iconWrap, { backgroundColor: iconSurface, borderColor: iconBorder }]}>
-                <Icon size={18} color={accentColor} />
-              </View>
-            ) : null}
-            <Text style={styles.title}>{title}</Text>
-            {!!message && <Text style={styles.message}>{message}</Text>}
-          </View>
+        <View style={styles.dialogCard}>
+          {(Icon || title || message) && (
+            <View style={styles.header}>
+              {Icon ? (
+                <View style={[styles.iconWrap, { backgroundColor: iconSurface, borderColor: iconBorder }]}>
+                  <Icon size={18} color={accentColor} />
+                </View>
+              ) : null}
+              {!!title && <Text style={styles.title}>{title}</Text>}
+              {!!message && <Text style={styles.message}>{message}</Text>}
+            </View>
+          )}
 
           <View style={styles.actionsRow}>
             {actions.map((action, index) => {
@@ -52,15 +59,15 @@ export default function AppDialog({
 
               const textStyle =
                 variant === 'primary'
-                  ? styles.actionButtonTextPrimary
+                  ? [styles.actionButtonText, { color: primaryTextColor }]
                   : variant === 'danger'
-                  ? styles.actionButtonTextDanger
-                  : styles.actionButtonTextGhost;
+                  ? [styles.actionButtonText, { color: themeColors.negative }]
+                  : [styles.actionButtonText, { color: themeColors.textPrimary }];
 
               return (
                 <Pressable
                   key={`${action.label}-${index}`}
-                  style={buttonStyle}
+                  style={({ pressed }) => [buttonStyle, pressed && styles.actionButtonPressed]}
                   onPress={action.onPress}
                 >
                   <Text style={textStyle}>{action.label}</Text>
@@ -74,28 +81,29 @@ export default function AppDialog({
   );
 }
 
-const createStyles = (colors) =>
+const createStyles = (colors, theme) =>
   StyleSheet.create({
     overlay: {
       flex: 1,
       justifyContent: 'center',
-      paddingHorizontal: 24,
+      paddingHorizontal: 20,
       paddingVertical: 24,
     },
     scrim: {
       ...StyleSheet.absoluteFillObject,
-      backgroundColor: 'rgba(7, 10, 18, 0.58)',
+      backgroundColor: theme === 'dark' ? 'rgba(3, 6, 12, 0.64)' : 'rgba(10, 18, 32, 0.34)',
     },
     dialogCard: {
-      borderRadius: 24,
+      borderRadius: 22,
       borderWidth: 1,
       borderColor: colors.border,
       backgroundColor: colors.surface,
-      shadowColor: '#000',
-      shadowOpacity: 0.2,
+      overflow: 'hidden',
+      shadowColor: '#000000',
+      shadowOpacity: theme === 'dark' ? 0.28 : 0.14,
       shadowRadius: 24,
-      shadowOffset: { width: 0, height: 12 },
-      elevation: 10,
+      shadowOffset: { width: 0, height: 14 },
+      elevation: 12,
     },
     header: {
       paddingHorizontal: 22,
@@ -104,9 +112,9 @@ const createStyles = (colors) =>
       gap: 8,
     },
     iconWrap: {
-      width: 44,
-      height: 44,
-      borderRadius: 16,
+      width: 46,
+      height: 46,
+      borderRadius: 14,
       borderWidth: 1,
       alignItems: 'center',
       justifyContent: 'center',
@@ -115,15 +123,15 @@ const createStyles = (colors) =>
     title: {
       fontFamily: FONT.semiBold,
       color: colors.textPrimary,
-      fontSize: 21,
-      lineHeight: 27,
+      fontSize: 18,
+      lineHeight: 24,
       includeFontPadding: false,
     },
     message: {
       fontFamily: FONT.regular,
       color: colors.textMuted,
       fontSize: 14,
-      lineHeight: 22,
+      lineHeight: 21,
       includeFontPadding: false,
     },
     actionsRow: {
@@ -137,39 +145,30 @@ const createStyles = (colors) =>
     },
     actionButton: {
       flex: 1,
-      minHeight: 46,
-      borderRadius: 16,
+      minHeight: 48,
+      borderRadius: 14,
       alignItems: 'center',
       justifyContent: 'center',
       paddingHorizontal: 14,
-    },
-    actionButtonPrimary: {},
-    actionButtonGhost: {
       borderWidth: 1,
+    },
+    actionButtonPrimary: {
+      borderColor: 'transparent',
+    },
+    actionButtonGhost: {
       borderColor: colors.border,
       backgroundColor: colors.surfaceAlt,
     },
     actionButtonDanger: {
-      borderWidth: 1,
-      borderColor: 'rgba(207, 63, 88, 0.28)',
-      backgroundColor: 'rgba(207, 63, 88, 0.10)',
+      borderColor: getDangerBorder(theme),
+      backgroundColor: getDangerSurface(theme),
     },
-    actionButtonTextPrimary: {
-      fontFamily: FONT.semiBold,
-      color: '#FFFFFF',
-      fontSize: 13,
-      includeFontPadding: false,
+    actionButtonPressed: {
+      opacity: 0.88,
     },
-    actionButtonTextGhost: {
+    actionButtonText: {
       fontFamily: FONT.semiBold,
-      color: colors.textPrimary,
-      fontSize: 13,
-      includeFontPadding: false,
-    },
-    actionButtonTextDanger: {
-      fontFamily: FONT.semiBold,
-      color: colors.negative,
-      fontSize: 13,
+      fontSize: 14,
       includeFontPadding: false,
     },
   });

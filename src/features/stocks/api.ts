@@ -480,33 +480,37 @@ export const fetchStockHistory = (
 ) => {
   const config = getChartTimeframeConfig(timeframe);
   const normalizedTimeframe = normalizeChartTimeframe(timeframe);
+  const periodCandidates = normalizedTimeframe === 'ALL' ? [config.period, '5y'] : [config.period];
   const fallbacks =
     TF_INTERVAL_FALLBACKS[normalizedTimeframe as keyof typeof TF_INTERVAL_FALLBACKS] || [config.interval];
   const tried = new Set();
 
   const load = async () => {
-    for (const interval of fallbacks) {
-      if (tried.has(interval)) continue;
-      tried.add(interval);
+    for (const period of periodCandidates) {
+      for (const interval of fallbacks) {
+        const attemptKey = `${period}:${interval}`;
+        if (tried.has(attemptKey)) continue;
+        tried.add(attemptKey);
 
-      const payload = await requestJson(
-        fetcher,
-        `/api/tagx/stocks/${encodeURIComponent(normalizeStockSymbol(symbol))}/history?period=${encodeURIComponent(
-          config.period,
-        )}&interval=${encodeURIComponent(interval)}`,
-        { signal },
-      );
+        const payload = await requestJson(
+          fetcher,
+          `/api/tagx/stocks/${encodeURIComponent(normalizeStockSymbol(symbol))}/history?period=${encodeURIComponent(
+            period,
+          )}&interval=${encodeURIComponent(interval)}`,
+          { signal },
+        );
 
-      const aggs = buildAggsFromTagx((payload as any)?.data || payload);
-      if (aggs.length) {
-        return payload;
+        const aggs = buildAggsFromTagx((payload as any)?.data || payload);
+        if (aggs.length) {
+          return payload;
+        }
       }
     }
 
     return requestJson(
       fetcher,
       `/api/tagx/stocks/${encodeURIComponent(normalizeStockSymbol(symbol))}/history?period=${encodeURIComponent(
-        config.period,
+        periodCandidates[0],
       )}&interval=${encodeURIComponent(config.interval)}`,
       { signal },
     );

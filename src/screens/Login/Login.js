@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   SafeAreaView,
   ScrollView,
@@ -9,11 +9,14 @@ import {
   StatusBar,
   View,
 } from 'react-native';
+import { getAuth, GoogleAuthProvider, signInWithCredential, signOut as firebaseSignOut } from '@react-native-firebase/auth';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { Apple, Chrome, Eye, EyeOff, Lock, Mail, ShieldCheck, Sparkles } from 'lucide-react-native';
 import AppText from '../../components/AppText';
 import AppTextInput from '../../components/AppTextInput';
 import DialogX from '../../components/DialogX';
 import GradientBackground from '../../components/GradientBackground';
+import { GOOGLE_WEB_CLIENT_ID } from '../../config/googleAuth';
 import { API_BASE_URL, useUser } from '../../store/UserContext';
 import {
   logRequestError,
@@ -33,6 +36,7 @@ const MAX_WIDTH = 420;
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_WIDTH = Math.min(MAX_WIDTH, SCREEN_WIDTH - 32);
 const TOP_INSET = Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 12 : 16;
+const GOOGLE_AUTH_ENDPOINTS = ['/api/auth/google', '/api/auth/google-login', '/api/auth/google/signin'];
 
 const createPalette = (themeColors, theme) => ({
   ...themeColors,
@@ -68,9 +72,27 @@ const Login = ({ navigation }) =>
   const [takeOverDialogVisible, setTakeOverDialogVisible] = useState(false);
   const [takeOverResolver, setTakeOverResolver] = useState(null);
 
+  useEffect(() => {
+    GoogleSignin.configure({
+      webClientId: GOOGLE_WEB_CLIENT_ID,
+    });
+  }, []);
+
   const showError = (message) => {
     setStatusType('error');
     setStatusMessage(message);
+  };
+
+  const applyAuthSession = async ({ data, deviceId, identifier }) => {
+    const responseUser = data?.user || data?.data?.user || data?.session?.user || data?.data || null;
+
+    await setAuthSession({
+      token: data?.token || '',
+      refreshToken: data?.refresh_token || '',
+      deviceId,
+      identifier,
+      user: responseUser,
+    });
   };
 
   const performLogin = async ({ identifier, passwordValue, force }) => {
@@ -163,15 +185,7 @@ const Login = ({ navigation }) =>
         );
       }
 
-      const responseUser = data?.user || data?.data?.user || data?.session?.user || data?.data || null;
-
-      await setAuthSession({
-        token: data?.token || '',
-        refreshToken: data?.refresh_token || '',
-        deviceId,
-        identifier: trimmedUsername,
-        user: responseUser,
-      });
+      await applyAuthSession({ data, deviceId, identifier: trimmedUsername });
 
       setStatusType('success');
       setStatusMessage('Login successful.');
@@ -179,6 +193,138 @@ const Login = ({ navigation }) =>
       logRequestError({ label: 'auth.login', url: loginUrl, error });
       const loopbackHint = networkHintForAndroidLoopback({ apiBaseUrl: API_BASE_URL, error });
       showError(loopbackHint || error?.message || 'Login failed. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const performGoogleBackendLogin = async ({ idToken, email, force }) => {
+    const deviceId = await getOrCreateDeviceId();
+    let lastError = null;
+
+    for (const endpoint of GOOGLE_AUTH_ENDPOINTS) {
+      const loginUrl = `${API_BASE_URL}${endpoint}`;
+
+      try {
+        logRequestStart({
+          label: 'auth.google',
+          url: loginUrl,
+          method: 'POST',
+          meta: {
+            email,
+            force,
+            hasDeviceId: Boolean(deviceId),
+            hasIdToken: Boolean(idToken),
+            apiBaseUrl: API_BASE_URL,
+          },
+        });
+
+        const response = await fetch(loginUrl, {
+          method: 'POST',
+          headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/json',
+            'x-device-id': deviceId,
+          },
+          body: JSON.stringify({
+            id_token: idToken,
+            idToken,
+            token: idToken,
+            email,
+            device_id: deviceId,
+            force,
+          }),
+        });
+        await logResponse({ label: 'auth.google', response });
+
+        const data = await response.json().catch(() => null);
+        if (response.status === 404) {
+          lastError = new Error(`Google auth endpoint not found at ${endpoint}`);
+          continue;
+        }
+
+        return { response, data, deviceId, loginUrl };
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    throw lastError || new Error('Google login is not configured on the backend.');
+  };
+
+  const handleGoogleLogin = async () => {
+    setStatusType('');
+    setStatusMessage('');
+    setIsSubmitting(true);
+
+    try {
+      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+      const signInResult = await GoogleSignin.signIn();
+      const idToken = signInResult?.data?.idToken || signInResult?.idToken;
+
+      if (!idToken) {
+        throw new Error('No ID token found from Google Sign-In.');
+      }
+
+      const googleCredential = GoogleAuthProvider.credential(idToken);
+      const credentialResult = await signInWithCredential(getAuth(), googleCredential);
+      const firebaseUser = credentialResult?.user;
+      const firebaseToken = (await firebaseUser?.getIdToken?.()) || idToken;
+      const email = firebaseUser?.email || '';
+
+      let { response, data, deviceId } = await performGoogleBackendLogin({
+        idToken: firebaseToken,
+        email,
+        force: false,
+      });
+
+      if (response.status === 409 && data?.error === 'device_limit_reached') {
+        const shouldTakeOver = await new Promise((resolve) => {
+          setTakeOverResolver(() => resolve);
+          setTakeOverDialogVisible(true);
+        });
+
+        if (!shouldTakeOver) {
+          setStatusType('');
+          setStatusMessage('');
+          return;
+        }
+
+        ({ response, data, deviceId } = await performGoogleBackendLogin({
+          idToken: firebaseToken,
+          email,
+          force: true,
+        }));
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          data?.message ||
+            data?.error ||
+            data?.errors?.[0]?.msg ||
+            `Google login failed via backend (${response.status}).`,
+        );
+      }
+
+      await applyAuthSession({
+        data,
+        deviceId,
+        identifier: email,
+      });
+
+      setStatusType('success');
+      setStatusMessage('Signed in with Google.');
+    } catch (error) {
+      try {
+        await GoogleSignin.signOut();
+      } catch {}
+
+      try {
+        await firebaseSignOut(getAuth());
+      } catch {}
+
+      const loopbackHint = networkHintForAndroidLoopback({ apiBaseUrl: API_BASE_URL, error });
+      showError(loopbackHint || error?.message || 'Google Sign-In failed. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -270,13 +416,13 @@ const Login = ({ navigation }) =>
               <View style={styles.divider} />
             </View>
 
-            <Pressable style={styles.socialButton}>
+            <Pressable style={styles.socialButton} onPress={handleGoogleLogin} disabled={isSubmitting}>
               <View style={styles.socialIconCircle}>
                 <Chrome size={14} color={colors.textPrimary} />
               </View>
               <AppText style={styles.socialText}>Continue with Google</AppText>
             </Pressable>
-            <Pressable style={styles.socialButton}>
+            <Pressable style={styles.socialButton} onPress={handleAppleLogin}>
               <View style={styles.socialIconCircle}>
                 <Apple size={14} color={colors.textPrimary} />
               </View>
@@ -286,7 +432,7 @@ const Login = ({ navigation }) =>
             <View style={styles.footerRow}>
               <AppText style={styles.footerText}>Don't have an account?</AppText>
               <Pressable onPress={() => navigation.navigate('Register')}>
-                <AppText style={styles.link}>Create one</AppText>
+                <AppText style={styles.link}>Create Account</AppText>
               </Pressable>
             </View>
           </View>

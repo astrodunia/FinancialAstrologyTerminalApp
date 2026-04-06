@@ -81,7 +81,7 @@ const HeatmapSkeleton = ({ styles }: { styles: any }) => (
 
 export default function MarketHeatmap({ items, loading, error, onPressSymbol, onRetry }: Props) {
   const { width: screenWidth } = useWindowDimensions();
-  const { theme, themeColors } = useUser();
+  const { theme, themeColors } = useUser() as any;
   const [helpVisible, setHelpVisible] = useState(false);
   const [selectedSymbol, setSelectedSymbol] = useState<HeatmapQuote | null>(null);
   const heatmapWidth = Math.max(280, screenWidth - 56);

@@ -339,6 +339,14 @@ const GlobalIndices = ({ navigation }) => {
     return 'Live';
   }, [error, loading]);
 
+  const openIndexDetail = useCallback(
+    (symbol) => {
+      if (!symbol) return;
+      navigation.navigate('IndexDetail', { symbol: String(symbol).toUpperCase(), tf: '1M' });
+    },
+    [navigation],
+  );
+
   const submitTickerSearch = useCallback(() => {
     const normalized = normalizeStockSymbol(searchQuery);
     if (/^[A-Z][A-Z0-9.-]{0,9}$/.test(normalized)) {
@@ -558,7 +566,7 @@ const GlobalIndices = ({ navigation }) => {
                   <Pressable
                     key={item.ticker}
                     style={({ pressed }) => [styles.moverCard, moverToneStyle, pressed && styles.moverCardPressed]}
-                    onPress={() => navigateToStockDetail(navigation, item.ticker)}
+                    onPress={() => openIndexDetail(item.ticker)}
                   >
                     <View style={styles.moverGlow} />
                     <View style={styles.moverHeaderRow}>
@@ -697,7 +705,7 @@ const GlobalIndices = ({ navigation }) => {
                         <Pressable
                           key={`${region}-${item.ticker}`}
                           style={({ pressed }) => [styles.miniCard, pressed && styles.miniCardPressed]}
-                          onPress={() => navigateToStockDetail(navigation, item.ticker)}
+                          onPress={() => openIndexDetail(item.ticker)}
                         >
                           <View style={styles.miniTopRow}>
                             <View style={styles.flex1}>

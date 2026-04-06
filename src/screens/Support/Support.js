@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -74,12 +74,17 @@ const Support = ({ navigation }) => {
   const [deletingId, setDeletingId] = useState('');
   const [deleteTicketId, setDeleteTicketId] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const authFetchRef = useRef(authFetch);
   const profileName = user?.displayName || user?.name || 'Trader';
   const { results, loading, error: searchError } = useTickerSearch(searchQuery);
 
+  useEffect(() => {
+    authFetchRef.current = authFetch;
+  }, [authFetch]);
+
   const loadSessionUser = useCallback(async () => {
     try {
-      const res = await authFetch('/api/auth/session');
+      const res = await authFetchRef.current('/api/auth/session');
       const json = await safeJson(res);
       if (!res.ok) return null;
       const nextUser = extractSessionUser(json);
@@ -88,7 +93,7 @@ const Support = ({ navigation }) => {
     } catch {
       return null;
     }
-  }, [authFetch]);
+  }, []);
 
   const loadTickets = useCallback(
     async (existingSessionUser) => {
@@ -96,14 +101,14 @@ const Support = ({ navigation }) => {
       setError('');
 
       try {
-        const resolvedUser = existingSessionUser || sessionUser || (await loadSessionUser());
+        const resolvedUser = existingSessionUser || (await loadSessionUser());
         const userId = resolvedUser?.id || resolvedUser?._id;
         if (!userId) {
           setTickets([]);
           return;
         }
 
-        const res = await authFetch(`/api/help/queries?user_id=${encodeURIComponent(userId)}`);
+        const res = await authFetchRef.current(`/api/help/queries?user_id=${encodeURIComponent(userId)}`);
         if (res.status === 404) {
           setTickets([]);
           return;
@@ -122,7 +127,7 @@ const Support = ({ navigation }) => {
         setLoadingTickets(false);
       }
     },
-    [authFetch, loadSessionUser, sessionUser],
+    [loadSessionUser],
   );
 
   useEffect(() => {
@@ -495,7 +500,8 @@ const createStyles = (colors) =>
     content: {
       paddingHorizontal: 16,
       paddingTop: 12,
-      paddingBottom: 32,
+      paddingBottom: 120,
+      flexGrow: 1,
       gap: 14,
     },
     errorBanner: {

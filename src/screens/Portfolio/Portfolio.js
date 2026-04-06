@@ -1,13 +1,37 @@
-import React from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Platform,
+  Pressable,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  View,
+  useWindowDimensions,
+} from 'react-native';
+import {
+  BarChart3,
+  CircleDollarSign,
+  Pencil,
+  Plus,
+  Search,
+  Target,
+  Trash2,
+  TrendingDown,
+  TrendingUp,
+} from 'lucide-react-native';
+import Svg, { Circle, Line, Polygon, Polyline, Rect, Text as SvgText } from 'react-native-svg';
 import AppText from '../../components/AppText';
 import AppTextInput from '../../components/AppTextInput';
 import BottomTabs from '../../components/BottomTabs';
 import GradientBackground from '../../components/GradientBackground';
 import ProfileAvatarButton from '../../components/ProfileAvatarButton';
 import { useUser } from '../../store/UserContext';
+import { navigateToStockDetail } from '../../features/stocks/navigation';
+import { usePortfolio } from '../../hooks/usePortfolio';
 import { MAIN_TAB_ROUTES, useHorizontalSwipe } from '../../navigation/useHorizontalSwipe';
-import { useUser } from '../../store/UserContext';
 
 const fmtMoney = (value) => `$${Number(value || 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
 const fmtNum = (value) => Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 4 });

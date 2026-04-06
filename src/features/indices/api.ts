@@ -1,6 +1,6 @@
 import { API_BASE_URL } from '../../store/UserContext';
 
-export type IndexTimeframe = '1D' | '5D' | '1M' | '2M' | '3M' | '6M' | '1Y' | '5Y';
+export type IndexTimeframe = '1D' | '5D' | '1M' | '2M' | '3M' | '6M' | '1Y' | '5Y' | 'ALL';
 
 export type IndexSnapshot = {
   symbol: string;
@@ -32,7 +32,7 @@ type IndexCandlesResponse = {
   data?: IndexCandle[];
 };
 
-export const INDEX_TIMEFRAMES: IndexTimeframe[] = ['1D', '5D', '1M', '2M', '3M', '6M', '1Y', '5Y'];
+export const INDEX_TIMEFRAMES: IndexTimeframe[] = ['1D', '5D', '1M', '2M', '3M', '6M', '1Y', '5Y', 'ALL'];
 
 export const INDEX_NAME_MAP: Record<string, string> = {
   GSPC: 'S&P 500',
@@ -105,22 +105,40 @@ export const fetchIndexSnapshots = async (symbols: string[], signal?: AbortSigna
 export const fetchIndexCandles = async (symbol: string, tf: IndexTimeframe, signal?: AbortSignal) => {
   const normalizedSymbol = normalizeIndexSymbol(symbol);
   const normalizedTf = normalizeIndexTimeframe(tf);
-  const apiTf = normalizedTf === '2M' ? '3M' : normalizedTf;
+  const apiTfCandidates =
+    normalizedTf === '2M'
+      ? ['3M']
+      : normalizedTf === 'ALL'
+        ? ['ALL', 'MAX', '5Y']
+        : [normalizedTf];
 
   if (!normalizedSymbol) {
     throw new Error('Missing index symbol');
   }
 
-  const payload = await requestJson<IndexCandlesResponse>(
-    `/api/market/index/${encodeURIComponent(normalizedSymbol)}/candles?tf=${encodeURIComponent(apiTf)}`,
-    signal,
-  );
+  let lastError: Error | null = null;
 
-  if (!payload?.ok || !Array.isArray(payload.data)) {
-    throw new Error('Bad payload');
+  for (const apiTf of apiTfCandidates) {
+    try {
+      const payload = await requestJson<IndexCandlesResponse>(
+        `/api/market/index/${encodeURIComponent(normalizedSymbol)}/candles?tf=${encodeURIComponent(apiTf)}`,
+        signal,
+      );
+
+      if (payload?.ok && Array.isArray(payload.data)) {
+        return payload.data;
+      }
+
+      lastError = new Error('Bad payload');
+    } catch (error) {
+      if ((error as Error)?.name === 'AbortError') {
+        throw error;
+      }
+      lastError = error as Error;
+    }
   }
 
-  return payload.data;
+  throw lastError || new Error('Bad payload');
 };
 
 export const sliceCandlesForTimeframe = (candles: IndexCandle[], tf: IndexTimeframe) => {

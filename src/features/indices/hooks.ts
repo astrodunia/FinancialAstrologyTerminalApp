@@ -18,6 +18,7 @@ const useStableResource = <T,>(
   load: (signal: AbortSignal) => Promise<T>,
 ) => {
   const mountedRef = useRef(true);
+  const loadRef = useRef(load);
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState('');
@@ -31,6 +32,10 @@ const useStableResource = <T,>(
   }, []);
 
   useEffect(() => {
+    loadRef.current = load;
+  }, [load]);
+
+  useEffect(() => {
     if (!enabled) {
       setLoading(false);
       return undefined;
@@ -40,7 +45,7 @@ const useStableResource = <T,>(
     setLoading(true);
     setError('');
 
-    load(controller.signal)
+    loadRef.current(controller.signal)
       .then((next) => {
         if (!mountedRef.current || controller.signal.aborted) return;
         setData(next);
@@ -58,7 +63,7 @@ const useStableResource = <T,>(
     return () => {
       controller.abort();
     };
-  }, [enabled, key, load, reloadTick]);
+  }, [enabled, key, reloadTick]);
 
   const reload = useCallback(() => {
     setReloadTick((value) => value + 1);

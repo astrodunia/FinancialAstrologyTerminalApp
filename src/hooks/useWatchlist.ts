@@ -82,6 +82,11 @@ export const useWatchlist = () => {
   const listAbortRef = useRef<AbortController | null>(null);
   const detailAbortRef = useRef<AbortController | null>(null);
   const quoteAbortRef = useRef<AbortController | null>(null);
+  const activeSymbolsRef = useRef<string[]>([]);
+
+  useEffect(() => {
+    activeSymbolsRef.current = active?.symbols || [];
+  }, [active?.symbols]);
 
   const sortedRows = useMemo(
     () => [...rows].sort((a, b) => compareRows(a, b, sortKey, sortDir)),
@@ -91,7 +96,7 @@ export const useWatchlist = () => {
   const priceHeaderLabel = phase === 'open' || phase === 'extended' ? 'LIVE PRICE' : 'CLOSE';
 
   const syncSuggestions = useCallback(
-    (value: string, symbolPool: string[] = active?.symbols || []) => {
+    (value: string, symbolPool: string[] = activeSymbolsRef.current) => {
       const query = normalizeSymbol(value || '');
       if (!query) {
         setSuggestions([]);
@@ -104,11 +109,11 @@ export const useWatchlist = () => {
         .slice(0, 8);
       setSuggestions(next);
     },
-    [active?.symbols],
+    [],
   );
 
   const refreshQuotes = useCallback(
-    async (symbols: string[] = active?.symbols || []) => {
+    async (symbols: string[] = activeSymbolsRef.current) => {
       quoteAbortRef.current?.abort();
       const ac = new AbortController();
       quoteAbortRef.current = ac;
@@ -127,7 +132,7 @@ export const useWatchlist = () => {
         if (String(error?.message || '').toLowerCase().includes('abort')) return;
       }
     },
-    [active?.symbols],
+    [],
   );
 
   const loadLists = useCallback(async () => {
@@ -364,6 +369,5 @@ export const useWatchlist = () => {
     refreshQuotes,
   };
 };
-
 
 

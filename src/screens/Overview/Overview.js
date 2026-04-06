@@ -890,9 +890,11 @@ const createStyles = (colors) =>
       backgroundColor: colors.surfaceAlt,
     },
     metaRow: {
-      flexDirection: 'row',    
+      flexDirection: 'row',
       flexWrap: 'wrap',
       gap: 8,
+      marginTop: 8,
+      marginBottom: 8,
     },
     metaPill: {
       color: colors.textPrimary,
@@ -1157,6 +1159,5 @@ const createStyles = (colors) =>
   });
 
 export default Overview;
-
 
 
