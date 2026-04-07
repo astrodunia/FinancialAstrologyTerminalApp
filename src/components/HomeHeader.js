@@ -261,6 +261,7 @@ export default function HomeHeader({
   showSearchResults = false,
   onPressSearchResult,
   onSubmitSearch,
+  searchPlaceholder = 'Search stocks or companies',
 }) {
   const styles = useMemo(() => createStyles(themeColors), [themeColors]);
   const displayName = profileName || 'Trader';
@@ -318,7 +319,7 @@ export default function HomeHeader({
             onSubmitEditing={() => onSubmitSearch?.()}
             autoCapitalize="characters"
             autoCorrect={false}
-            placeholder="Search stocks or companies"
+            placeholder={searchPlaceholder}
             placeholderTextColor={themeColors.textMuted}
             style={styles.searchInput}
           />

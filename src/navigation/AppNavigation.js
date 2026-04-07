@@ -59,6 +59,7 @@ const AppNavigation = () => {
     const activeRouteNameRef = useRef(null);
     const hideLoadingTimerRef = useRef(null);
     const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+    const appInitialRoute = entryRoute === 'Plans' ? 'Plans' : 'Home';
 
     const stopRouteLoading = useCallback((delayMs = 140) => {
       if (hideLoadingTimerRef.current) {
@@ -143,13 +144,14 @@ const AppNavigation = () => {
        >
           <Stack.Navigator
             key={token ? 'app-stack' : 'auth-stack'}
+            initialRouteName={token ? appInitialRoute : 'Login'}
             screenOptions={{ headerShown: false, animation: 'none' }}
             screenListeners={stackScreenListeners}
           >
             {token ? (
               <>
-                {entryRoute === 'Plans' ? <Stack.Screen name="Plans" component={Plans} /> : <Stack.Screen name="Home" component={Home} />}
-                {entryRoute === 'Plans' ? <Stack.Screen name="Home" component={Home} /> : <Stack.Screen name="Plans" component={Plans} />}
+                <Stack.Screen name="Home" component={Home} />
+                <Stack.Screen name="Plans" component={Plans} />
                 <Stack.Screen name="Watchlist" component={Watchlist} />
                 <Stack.Screen name="Sectors" component={Sectors} />
                 <Stack.Screen name="Portfolio" component={Portfolio} />
@@ -161,7 +163,6 @@ const AppNavigation = () => {
                 <Stack.Screen name="Products" component={Products} />
                 <Stack.Screen name="ProductDetail" component={ProductDetail} />
                 <Stack.Screen name="AboutTerminal" component={AboutTerminal} />
-                <Stack.Screen name="Plans" component={Plans} />
                 <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicy} />
                 <Stack.Screen name="Support" component={Support} />
 

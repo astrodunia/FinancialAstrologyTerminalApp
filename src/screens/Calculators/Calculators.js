@@ -585,8 +585,7 @@ const Calculators = ({ navigation }) => {
                         <View style={styles.tagPill}>
                           <AppText style={styles.tagText}>{item.tags?.[0] || section.section}</AppText>
                         </View>
-                        <View style={styles.openWrap}>
-                          <AppText style={styles.openText}>Open</AppText>
+                        <View style={styles.openIconBtn}>
                           <ChevronRight size={12} color={themeColors.textMuted} />
                         </View>
                       </View>
@@ -886,14 +885,15 @@ const createStyles = (colors, isLight) =>
       color: colors.textMuted,
       fontSize: 10,
     },
-    openWrap: {
-      flexDirection: 'row',
+    openIconBtn: {
+      width: 22,
+      height: 22,
+      borderRadius: 11,
+      borderWidth: 1,
+      borderColor: colors.border,
       alignItems: 'center',
-      gap: 2,
-    },
-    openText: {
-      color: colors.textMuted,
-      fontSize: 11,
+      justifyContent: 'center',
+      backgroundColor: colors.surfaceAlt,
     },
     emptyCard: {
       borderRadius: 12,
@@ -949,12 +949,13 @@ const createStyles = (colors, isLight) =>
     bannerBtnGhost: {
       borderRadius: 999,
       borderWidth: 1,
-      borderColor: 'rgba(255,255,255,0.7)',
+      borderColor: isLight ? 'transparent' : 'rgba(255,255,255,0.7)',
+      backgroundColor: isLight ? '#ffffff' : 'transparent',
       paddingHorizontal: 12,
       paddingVertical: 7,
     },
     bannerBtnGhostText: {
-      color: '#ffffff',
+      color: isLight ? '#2b5cab' : '#ffffff',
       fontSize: 12,
       fontFamily: FONT.semiBold,
     },
@@ -1021,6 +1022,7 @@ const createStyles = (colors, isLight) =>
   });
 
 export default Calculators;
+
 
 
 
