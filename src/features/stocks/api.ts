@@ -28,6 +28,25 @@ const toNumber = (value: unknown): number | null => {
 
 const toString = (value: unknown): string => (typeof value === 'string' ? value : '');
 
+const normalizeTimestamp = (value: unknown): number | null => {
+  const numeric = toNumber(value);
+  if (numeric == null) {
+    if (typeof value === 'string') {
+      const parsed = new Date(value).getTime();
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+    return null;
+  }
+
+  const abs = Math.abs(numeric);
+  if (abs >= 1e15) return Math.trunc(numeric / 1000);
+  if (abs >= 1e12) return Math.trunc(numeric);
+  if (abs >= 1e10) return Math.trunc(numeric);
+  if (abs >= 1e9) return Math.trunc(numeric * 1000);
+
+  return null;
+};
+
 const toArray = <T = Record<string, unknown>>(payload: unknown): T[] => {
   if (Array.isArray(payload)) return payload as T[];
   if (Array.isArray((payload as any)?.data)) return (payload as any).data as T[];
@@ -201,11 +220,9 @@ export const mapCompanyProfile = (payload: unknown): CompanyProfile => {
 
 const historyPointFromObject = (entry: Record<string, unknown>): StockHistoryPoint | null => {
   const timestamp =
-    toNumber(entry.timestamp) ??
-    toNumber(entry.date) ??
-    toNumber(entry.datetime) ??
-    (typeof entry.date === 'string' ? new Date(entry.date).getTime() : null) ??
-    (typeof entry.datetime === 'string' ? new Date(entry.datetime).getTime() : null);
+    normalizeTimestamp(entry.timestamp) ??
+    normalizeTimestamp(entry.date) ??
+    normalizeTimestamp(entry.datetime);
 
   const close = toNumber(entry.close ?? entry.adjclose ?? entry.value ?? entry.price);
   const open = toNumber(entry.open);
@@ -254,7 +271,7 @@ export const mapHistory = (payload: unknown): StockHistoryPoint[] => {
 
   return timestamps
     .map((ts: unknown, index: number) => {
-      const timestamp = typeof ts === 'number' ? ts * 1000 : new Date(String(ts)).getTime();
+      const timestamp = normalizeTimestamp(ts);
       const value = toNumber(closes[index]);
       if (!Number.isFinite(timestamp) || value == null) return null;
 
@@ -284,25 +301,27 @@ export const buildAggsFromTagx = (data?: any): StockHistoryPoint[] => {
   const aggs: StockHistoryPoint[] = [];
 
   keys.forEach((ts) => {
-    let t = Number(ts);
+    const t = normalizeTimestamp(ts);
     if (!Number.isFinite(t)) return;
-    if (t < 1e12) t *= 1000;
 
-    const c = Number(closeMap?.[ts] ?? openMap?.[ts] ?? 0);
-    const h = Number(highMap?.[ts] ?? c);
-    const l = Number(lowMap?.[ts] ?? c);
-    const v = Number(volumeMap?.[ts] ?? 0);
+    const close = toNumber(closeMap?.[ts] ?? openMap?.[ts]);
+    if (close == null || close <= 0) return;
 
-    if (!Number.isFinite(c) || !Number.isFinite(h) || !Number.isFinite(l)) return;
+    const open = toNumber(openMap?.[ts]);
+    const high = toNumber(highMap?.[ts]) ?? close;
+    const low = toNumber(lowMap?.[ts]) ?? close;
+    const volume = toNumber(volumeMap?.[ts]) ?? 0;
+
+    if (!Number.isFinite(high) || !Number.isFinite(low) || high <= 0 || low <= 0) return;
 
     aggs.push({
       timestamp: t,
-      value: c,
-      close: c,
-      open: Number.isFinite(Number(openMap?.[ts])) ? Number(openMap?.[ts]) : c,
-      high: h,
-      low: l,
-      volume: Number.isFinite(v) ? v : 0,
+      value: close,
+      close,
+      open: open != null && open > 0 ? open : close,
+      high,
+      low,
+      volume: volume > 0 ? volume : 0,
     });
   });
 

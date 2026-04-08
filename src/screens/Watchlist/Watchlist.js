@@ -1,15 +1,24 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Linking, Platform, Pressable, ScrollView, StatusBar, StyleSheet, View, useWindowDimensions } from 'react-native';
-import { ArrowLeft, CirclePlus, Pencil, Plus, Radio, Trash2, UserCircle } from 'lucide-react-native';
+import { ActivityIndicator, Alert, BackHandler, FlatList, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { AlertTriangle, ArrowLeft, ChevronRight, CirclePlus, Pencil, Plus, Trash2 } from 'lucide-react-native';
 import AppText from '../../components/AppText';
 import AppTextInput from '../../components/AppTextInput';
 import BottomTabs from '../../components/BottomTabs';
 import GradientBackground from '../../components/GradientBackground';
+import HomeHeader from '../../components/HomeHeader';
 import { API_BASE_URL, useUser } from '../../store/UserContext';
-import { navigateToStockDetail } from '../../features/stocks/navigation';
+import { useTickerSearch } from '../../features/stocks/useTickerSearch';
+import { navigateToStockDetail, normalizeStockSymbol } from '../../features/stocks/navigation';
 import { MAIN_TAB_ROUTES, useHorizontalSwipe } from '../../navigation/useHorizontalSwipe';
 import { useWatchlist } from '../../hooks/useWatchlist';
 import { LIVE_API_BASE } from '../../utils/apiBaseUrl';
+
+const FONT = {
+  regular: 'NotoSans-Regular',
+  medium: 'NotoSans-Medium',
+  semiBold: 'NotoSans-SemiBold',
+  extraBold: 'NotoSans-ExtraBold',
+};
 
 const PRESET_SECTIONS = [
   {
@@ -83,6 +92,7 @@ const COMPANY_SHORT_FALLBACK = {
 };
 
 const normalizeSymbol = (value) => String(value || '').toUpperCase().replace(/[^A-Z0-9.-]/g, '');
+const looksLikeTicker = (value) => /^[A-Z][A-Z0-9.-]{0,9}$/.test(normalizeStockSymbol(value));
 const symbolKey = (value) => String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 const symbolCandidates = (symbol) => {
   const base = normalizeSymbol(symbol);
@@ -292,8 +302,13 @@ const Watchlist = ({ navigation }) => {
   const { width } = useWindowDimensions();
   const isWide = width >= 920;
   const isCompact = width < 430;
-  const styles = useMemo(() => createStyles(themeColors, theme === 'light'), [themeColors, theme]);
+  const styles = useMemo(() => createStyles(themeColors, theme === 'light', isWide, isCompact), [themeColors, theme, isWide, isCompact]);
   const swipeHandlers = useHorizontalSwipe(MAIN_TAB_ROUTES, 'Watchlist', (route) => navigation.navigate(route));
+  const [searchQuery, setSearchQuery] = useState('');
+  const [createDialogVisible, setCreateDialogVisible] = useState(false);
+  const [createInFlight, setCreateInFlight] = useState(false);
+  const [deleteDialogVisible, setDeleteDialogVisible] = useState(false);
+  const [deleteInFlight, setDeleteInFlight] = useState(false);
 
   const [activePreset, setActivePreset] = useState(null);
   const [presetRows, setPresetRows] = useState([]);
@@ -301,6 +316,7 @@ const Watchlist = ({ navigation }) => {
   const [presetError, setPresetError] = useState('');
   const [livePresetCache, setLivePresetCache] = useState({});
   const presetAbortRef = useRef(null);
+  const addSymbolInputRef = useRef(null);
 
   const {
     lists: watchlists,
@@ -314,7 +330,6 @@ const Watchlist = ({ navigation }) => {
     isEditingTitle,
     symInput: newSymbol,
     suggestions,
-    phase,
     setNewTitle: setNewListTitle,
     setEditTitle,
     setIsEditingTitle,
@@ -328,16 +343,71 @@ const Watchlist = ({ navigation }) => {
   } = useWatchlist();
 
   const displayName = user?.displayName || user?.name || 'Trader';
+  const symbolCount = customRows.length;
+  const createButtonColor = theme === 'light' ? '#ffffff' : '#0b1220';
+  const { results: tickerResults, loading: tickerSearchLoading, error: tickerSearchError } = useTickerSearch(searchQuery);
+
+  const submitTickerSearch = useCallback(() => {
+    const normalized = normalizeStockSymbol(searchQuery);
+    if (looksLikeTicker(normalized)) {
+      navigateToStockDetail(navigation, normalized);
+      return;
+    }
+
+    if (tickerResults[0]?.symbol) {
+      navigateToStockDetail(navigation, tickerResults[0].symbol);
+    }
+  }, [navigation, searchQuery, tickerResults]);
+
+  const selectTickerSearchResult = useCallback((item) => {
+    if (!item?.symbol) return;
+    setSearchQuery(item.symbol);
+    navigateToStockDetail(navigation, item.symbol);
+  }, [navigation]);
+
   const confirmDeleteWatchlist = () => {
     if (!selectedList) return;
-    Alert.alert(
-      'Delete watchlist?',
-      `Are you sure you want to delete "${selectedList.title}"?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', style: 'destructive', onPress: () => deleteSelectedWatchlist() },
-      ],
-    );
+    setDeleteDialogVisible(true);
+  };
+
+  const closeCreateDialog = () => {
+    if (creatingList) return;
+    setCreateDialogVisible(false);
+    setCreateInFlight(false);
+    if (newListTitle) setNewListTitle('');
+  };
+
+  const closeDeleteDialog = () => {
+    if (deleteInFlight) return;
+    setDeleteDialogVisible(false);
+  };
+
+  const handleCreateWatchlist = async () => {
+    if (!String(newListTitle || '').trim()) {
+      Alert.alert('Missing title', 'Please enter a watchlist title.');
+      return;
+    }
+    setCreateInFlight(true);
+    try {
+      await Promise.resolve(createWatchlist());
+    } catch {
+      setCreateInFlight(false);
+    }
+  };
+
+  const handleDeleteWatchlist = async () => {
+    if (!selectedList) {
+      setDeleteDialogVisible(false);
+      return;
+    }
+
+    setDeleteInFlight(true);
+    try {
+      await Promise.resolve(deleteSelectedWatchlist());
+      setDeleteDialogVisible(false);
+    } finally {
+      setDeleteInFlight(false);
+    }
   };
 
   const addPresetToCurrentList = (symbols) => {
@@ -345,8 +415,14 @@ const Watchlist = ({ navigation }) => {
       Alert.alert('No watchlist', 'Create a watchlist first.');
       return;
     }
+    addSymbolInputRef.current?.blur?.();
     symbols.forEach((sym) => onAddTicker(sym));
   };
+
+  const handleAddSymbol = useCallback(async (value) => {
+    addSymbolInputRef.current?.blur?.();
+    await onAddTicker(value);
+  }, [onAddTicker]);
 
   const loadPresetRows = useCallback(async (section) => {
     if (!section?.symbols?.length) return;
@@ -460,6 +536,13 @@ const Watchlist = ({ navigation }) => {
 
   useEffect(() => () => presetAbortRef.current?.abort(), []);
   useEffect(() => {
+    if (creatingList) return;
+    if (createInFlight && !newListTitle.trim()) {
+      setCreateDialogVisible(false);
+      setCreateInFlight(false);
+    }
+  }, [createInFlight, creatingList, newListTitle]);
+  useEffect(() => {
     if (!activePreset?.symbols?.length) return undefined;
     const timer = setInterval(() => {
       loadPresetRows(activePreset);
@@ -467,57 +550,102 @@ const Watchlist = ({ navigation }) => {
     return () => clearInterval(timer);
   }, [activePreset, loadPresetRows]);
 
+  useEffect(() => {
+    if (!activePreset) return undefined;
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      setActivePreset(null);
+      return true;
+    });
+    return () => subscription.remove();
+  }, [activePreset]);
+
   const renderPresetAndPlan = () => (
     <>
-      <AppText style={styles.sectionTitle}>Browse Preset Sections</AppText>
-      <View style={styles.presetGrid}>
-        {PRESET_SECTIONS.map((section) => {
-          const tint = theme === 'light' ? section.tintLight : section.tintDark;
-          const preview = section.symbols.slice(0, isWide ? 8 : 6).join(' · ');
-          return (
-            <Pressable
-              key={section.title}
-              style={[styles.presetCard, { backgroundColor: tint }]}
-              onPress={() => {
-                setActivePreset(section);
-                loadPresetRows(section);
-              }}
-              onLongPress={() => addPresetToCurrentList(section.symbols)}
-            >
-              <View style={styles.presetHead}>
-                <AppText style={styles.presetTitle} numberOfLines={2}>{section.title}</AppText>
-                <View style={styles.countPill}>
-                  <AppText style={styles.countText}>{`${section.symbols.length} symbols`}</AppText>
-                </View>
-              </View>
-              <AppText style={styles.presetPreview} numberOfLines={2}>{preview}</AppText>
-            </Pressable>
-          );
-        })}
-      </View>
-
-      <View style={styles.planCard}>
-        <View style={styles.liveOverlineRow}>
-          <View style={styles.liveIconWrap}>
-            <Radio size={14} color="#16c784" />
+      <View style={styles.sectionHeaderRow}>
+        <View style={styles.sectionHeaderCopy}>
+          <View style={styles.sectionEyebrow}>
+            <AppText style={styles.sectionEyebrowText}>Preset Baskets</AppText>
           </View>
-          <AppText style={styles.liveOverline}>PLAN</AppText>
+          <AppText style={styles.sectionTitle}>Browse Preset Sections</AppText>
+          <AppText style={styles.sectionSubTitle}>Quick-build themed lists and long-press to add the full basket.</AppText>
         </View>
-        <AppText style={styles.planTitle}>Plan the Year. Not Just the Trade.</AppText>
-        <AppText style={styles.liveBody}>
-          Daily updates keep you sharp. Live broadcasts keep you fast. But strategy is built on foresight.
-        </AppText>
-        <View style={styles.liveActions}>
-          <Pressable style={styles.livePrimary} onPress={() => Linking.openURL('https://finance.rajeevprakash.com/products/annual-letter-2026/').catch(() => {})}>
-            <AppText style={styles.livePrimaryText}>Order Annual Letter 2026</AppText>
-            <AppText style={styles.livePrimaryText}>-</AppText>
-          </Pressable>
-          <Pressable style={styles.liveGhost} onPress={() => Linking.openURL('https://finance.rajeevprakash.com/products/live-signals/').catch(() => {})}>
-            <AppText style={styles.liveGhostText}>Bundle with Live Signals</AppText>
-            <AppText style={styles.liveGhostText}>⚡</AppText>
-          </Pressable>
-        </View>
+        {isWide ? (
+          <View style={styles.sectionMetaPill}>
+            <AppText style={styles.sectionMetaText}>{PRESET_SECTIONS.length} sections</AppText>
+          </View>
+        ) : null}
       </View>
+      {isWide ? (
+        <View style={styles.presetGrid}>
+          {PRESET_SECTIONS.map((section) => {
+            const tint = theme === 'light' ? section.tintLight : section.tintDark;
+            const preview = section.symbols.slice(0, 8).join(' · ');
+            return (
+              <Pressable
+                key={section.title}
+                style={[styles.presetCard, styles.presetCardWide, { backgroundColor: tint }]}
+                onPress={() => {
+                  setActivePreset(section);
+                  loadPresetRows(section);
+                }}
+                onLongPress={() => addPresetToCurrentList(section.symbols)}
+              >
+                <View style={styles.presetHead}>
+                  <View style={styles.presetTag}>
+                    <AppText style={styles.presetTagText}>Curated</AppText>
+                  </View>
+                  <View style={styles.countPill}>
+                    <AppText style={styles.countText}>{section.symbols.length} symbols</AppText>
+                  </View>
+                </View>
+                <AppText style={styles.presetTitle} numberOfLines={2}>{section.title}</AppText>
+                <AppText style={styles.presetPreview} numberOfLines={2}>{preview}</AppText>
+                <View style={styles.presetFooter}>
+                  <View style={styles.presetActionPill}>
+                    <AppText style={styles.presetFooterText}>Open Basket</AppText>
+                    <ChevronRight size={15} color={themeColors.textPrimary} />
+                  </View>
+                </View>
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.presetRail}>
+          {PRESET_SECTIONS.map((section) => {
+            const tint = theme === 'light' ? section.tintLight : section.tintDark;
+            const preview = section.symbols.slice(0, isWide ? 8 : 6).join(' · ');
+            return (
+              <Pressable
+                key={section.title}
+                style={[styles.presetCard, { backgroundColor: tint }]}
+                onPress={() => {
+                  setActivePreset(section);
+                  loadPresetRows(section);
+                }}
+                onLongPress={() => addPresetToCurrentList(section.symbols)}
+              >
+                <View style={styles.presetHead}>
+                  <View style={styles.presetTag}>
+                    <AppText style={styles.presetTagText}>Curated</AppText>
+                  </View>
+                  <View style={styles.countPill}>
+                    <AppText style={styles.countText}>{section.symbols.length} symbols</AppText>
+                  </View>
+                </View>
+                <AppText style={styles.presetTitle} numberOfLines={2}>{section.title}</AppText>
+                <AppText style={styles.presetPreview} numberOfLines={2}>{preview}</AppText>
+                <View style={styles.presetFooter}>
+                  <View style={styles.presetActionPill}>
+                    <AppText style={styles.presetFooterText}>Open Basket</AppText>
+                    <ChevronRight size={15} color={themeColors.textPrimary} />
+                  </View>
+                </View>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      )}
     </>
   );
 
@@ -525,43 +653,54 @@ const Watchlist = ({ navigation }) => {
     return (
       <View style={styles.safeArea}>
         <GradientBackground>
-          <View style={styles.header}>
-            <View>
-              <AppText style={styles.title}>{activePreset.title}</AppText>
-              <AppText style={styles.subtitle}>{`${activePreset.symbols.length} symbols`}</AppText>
-            </View>
-            <Pressable style={styles.sectionBtn} onPress={() => setActivePreset(null)}>
-              <ArrowLeft size={14} color={themeColors.textPrimary} />
-              <AppText style={styles.sectionBtnText}>Custom Watchlist</AppText>
-            </Pressable>
-          </View>
+          <HomeHeader
+            themeColors={themeColors}
+            profileName={displayName}
+            searchQuery={searchQuery}
+            onChangeSearchQuery={setSearchQuery}
+            searchResults={tickerResults}
+            searchLoading={tickerSearchLoading}
+            searchError={tickerSearchError}
+            showSearchResults={Boolean(searchQuery.trim())}
+            onPressSearchResult={selectTickerSearchResult}
+            onSubmitSearch={submitTickerSearch}
+            onPressProfile={() => navigation.navigate('Profile')}
+            onPressGlobalIndices={() => navigation.navigate('GlobalIndices')}
+          />
 
-          <View style={styles.tableHead}>
-            <AppText style={[styles.th, styles.thSym]}>SYMBOL</AppText>
-            <AppText style={[styles.th, styles.thName]}>NAME</AppText>
-            <AppText style={[styles.th, styles.thNum]}>PRICE</AppText>
-            <AppText style={[styles.th, styles.thNum]}>% CHANGE</AppText>
-            <AppText style={[styles.th, styles.thNum]}>CHANGE</AppText>
-            <AppText style={[styles.th, styles.thNum]}>VOLUME</AppText>
-          </View>
-
-          <ScrollView contentContainerStyle={styles.sectionRows} showsVerticalScrollIndicator={false}>
+          <ScrollView contentContainerStyle={styles.presetPageContent} showsVerticalScrollIndicator={false}>
             {presetLoading && <ActivityIndicator size="small" color={themeColors.textPrimary} />}
             {!!presetError && <AppText style={styles.errorText}>{presetError}</AppText>}
-            {!presetLoading &&
-              presetRows.map((row) => {
-                const up = (row.pct || 0) >= 0;
-                return (
-                  <Pressable key={row.symbol} style={styles.rowCard} onPress={() => navigateToStockDetail(navigation, row.symbol)}>
-                    <AppText style={[styles.cell, styles.cellSym]}>{row.symbol}</AppText>
-                    <AppText style={[styles.cell, styles.cellName]} numberOfLines={1}>{row.name}</AppText>
-                    <AppText style={[styles.cell, styles.cellNum, up ? styles.up : styles.down]}>{fmtPrice(row.price)}</AppText>
-                    <AppText style={[styles.cell, styles.cellNum, up ? styles.up : styles.down]}>{fmtPct(row.pct)}</AppText>
-                    <AppText style={[styles.cell, styles.cellNum, up ? styles.up : styles.down]}>{fmtChange(row.change)}</AppText>
-                    <AppText style={[styles.cell, styles.cellNum]}>{fmtVol(row.volume)}</AppText>
-                  </Pressable>
-                );
-              })}
+            {!presetLoading && !!presetRows.length ? (
+              <View style={styles.presetTableCard}>
+                <View style={styles.tableHead}>
+                  <AppText style={[styles.th, styles.thSym]}>SYMBOL</AppText>
+                  <AppText style={[styles.th, styles.thNum]}>PRICE</AppText>
+                  <AppText style={[styles.th, styles.thNum]}>% CHANGE</AppText>
+                  <AppText style={[styles.th, styles.thNum]}>CHANGE</AppText>
+                  <AppText style={[styles.th, styles.thNum]}>VOLUME</AppText>
+                </View>
+                <View style={styles.presetTableBody}>
+                  {presetRows.map((row, index) => {
+                    const up = (row.pct || 0) >= 0;
+                    const isLast = index === presetRows.length - 1;
+                    return (
+                      <Pressable
+                        key={row.symbol}
+                        style={[styles.presetTableRow, isLast ? styles.presetTableRowLast : null]}
+                        onPress={() => navigateToStockDetail(navigation, row.symbol)}
+                      >
+                        <AppText style={[styles.cell, styles.cellSym]}>{row.symbol}</AppText>
+                        <AppText style={[styles.cell, styles.cellNum, up ? styles.up : styles.down]}>{fmtPrice(row.price)}</AppText>
+                        <AppText style={[styles.cell, styles.cellNum, up ? styles.up : styles.down]}>{fmtPct(row.pct)}</AppText>
+                        <AppText style={[styles.cell, styles.cellNum, up ? styles.up : styles.down]}>{fmtChange(row.change)}</AppText>
+                        <AppText style={[styles.cell, styles.cellNum]}>{fmtVol(row.volume)}</AppText>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+            ) : null}
             {!presetLoading && renderPresetAndPlan()}
           </ScrollView>
 
@@ -574,39 +713,35 @@ const Watchlist = ({ navigation }) => {
   return (
     <View style={styles.safeArea} {...swipeHandlers}>
       <GradientBackground>
-        <View style={styles.header}>
-          <View>
-            <AppText style={styles.title}>My Watchlists</AppText>
-            <AppText style={styles.subtitle}>{`Welcome, ${displayName} • ${String(phase || '').toUpperCase()}`}</AppText>
-          </View>
-          <Pressable style={styles.iconButton} onPress={() => navigation.navigate('Profile')}>
-            <UserCircle size={18} color={themeColors.textPrimary} />
-          </Pressable>
-        </View>
+        <HomeHeader
+          themeColors={themeColors}
+          profileName={displayName}
+          searchQuery={searchQuery}
+          onChangeSearchQuery={setSearchQuery}
+          searchResults={tickerResults}
+          searchLoading={tickerSearchLoading}
+          searchError={tickerSearchError}
+          showSearchResults={Boolean(searchQuery.trim())}
+          onPressSearchResult={selectTickerSearchResult}
+          onSubmitSearch={submitTickerSearch}
+          onPressProfile={() => navigation.navigate('Profile')}
+          onPressGlobalIndices={() => navigation.navigate('GlobalIndices')}
+        />
 
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-          <View style={[styles.createRow, isCompact && styles.createRowCompact]}>
-            <View style={styles.inputShell}>
-              <CirclePlus size={15} color={themeColors.textMuted} />
-              <AppTextInput
-                value={newListTitle}
-                onChangeText={setNewListTitle}
-                placeholder="New watchlist title (e.g. Tech Momentum)"
-                placeholderTextColor={themeColors.textMuted}
-                style={styles.input}
-              />
+          <View style={styles.topActionRow}>
+            <View style={styles.topActionCopy}>
+              <AppText style={styles.sectionTitle}>My Lists</AppText>
             </View>
             <Pressable
-              style={[styles.createBtn, isCompact && styles.createBtnCompact, creatingList && styles.createBtnLoading]}
-              onPress={createWatchlist}
+              style={[styles.createBtn, creatingList && styles.createBtnLoading]}
+              onPressIn={() => setCreateDialogVisible(true)}
+              onPress={() => setCreateDialogVisible(true)}
+              hitSlop={8}
               disabled={creatingList}
             >
-              {creatingList ? (
-                <ActivityIndicator size="small" color={styles.createBtnText.color} />
-              ) : (
-                <Plus size={14} color={styles.createBtnText.color} />
-              )}
-              <AppText style={styles.createBtnText}>{creatingList ? 'Creating...' : 'Create'}</AppText>
+              <Plus size={14} color={createButtonColor} />
+              <AppText style={styles.createBtnText}>New Watchlist</AppText>
             </Pressable>
           </View>
 
@@ -616,6 +751,11 @@ const Watchlist = ({ navigation }) => {
               return (
                 <Pressable key={list.id} style={[styles.listChip, active && styles.listChipActive]} onPress={() => setSelectedListId(list.id)}>
                   <AppText style={[styles.listChipText, active && styles.listChipTextActive]}>{list.title}</AppText>
+                  <View style={[styles.listChipCount, active && styles.listChipCountActive]}>
+                    <AppText style={[styles.listChipCountText, active && styles.listChipCountTextActive]}>
+                      {Number.isFinite(Number(list?.count)) ? Number(list.count) : Array.isArray(list?.symbols) ? list.symbols.length : 0}
+                    </AppText>
+                  </View>
                 </Pressable>
               );
             })}
@@ -664,15 +804,19 @@ const Watchlist = ({ navigation }) => {
             <View style={styles.addSymbolRow}>
               <View style={styles.inputShell}>
                 <AppTextInput
+                  ref={addSymbolInputRef}
                   value={newSymbol}
                   onChangeText={setNewSymbol}
                   placeholder="Add symbol (e.g. NVDA)"
                   placeholderTextColor={themeColors.textMuted}
                   style={styles.input}
                   autoCapitalize="characters"
+                  autoCorrect={false}
+                  blurOnSubmit
+                  onSubmitEditing={() => handleAddSymbol()}
                 />
               </View>
-              <Pressable style={styles.plusBtn} onPress={() => onAddTicker()}>
+              <Pressable style={styles.plusBtn} onPress={() => handleAddSymbol()}>
                 <Plus size={16} color={themeColors.textPrimary} />
               </Pressable>
             </View>
@@ -680,15 +824,18 @@ const Watchlist = ({ navigation }) => {
             {!!suggestions.length && (
               <View style={styles.suggestionBox}>
                 {suggestions.map((item) => (
-                  <Pressable key={item.symbol} style={styles.suggestionRow} onPress={() => onAddTicker(item.symbol)}>
+                  <Pressable key={item.symbol} style={styles.suggestionRow} onPress={() => handleAddSymbol(item.symbol)}>
                     <AppText style={styles.suggestionSym}>{item.symbol}</AppText>
                     <AppText style={styles.suggestionName} numberOfLines={1}>{item.name}</AppText>
                   </Pressable>
                 ))}
               </View>
             )}
-            {loadingList && !customRows.length ? (
-              <ActivityIndicator size="small" color={themeColors.textPrimary} />
+            {loadingList ? (
+              <View style={styles.workspaceLoadingState}>
+                <ActivityIndicator size="small" color={themeColors.textPrimary} />
+                <AppText style={styles.emptyText}>Loading watchlist...</AppText>
+              </View>
             ) : customRows.length ? (
               <FlatList
                 data={customRows}
@@ -698,16 +845,21 @@ const Watchlist = ({ navigation }) => {
                 renderItem={({ item: row }) => {
                   const up = (row.pct || 0) >= 0;
                   return (
-                    <Pressable style={styles.rowCard} onPress={() => navigateToStockDetail(navigation, row.symbol)}>
-                      <AppText style={[styles.cell, styles.cellSym]}>{row.symbol}</AppText>
-                      <AppText style={[styles.cell, styles.cellName]} numberOfLines={1}>{toShortName(row.name, row.symbol)}</AppText>
-                      <AppText style={[styles.cell, styles.cellNum, up ? styles.up : styles.down]}>{fmtPrice(row.price)}</AppText>
-                      <AppText style={[styles.cell, styles.cellNum, up ? styles.up : styles.down]}>{fmtPct(row.pct)}</AppText>
-                      <AppText style={[styles.cell, styles.cellNum, up ? styles.up : styles.down]}>{fmtChange(row.change)}</AppText>
-                      <AppText style={[styles.cell, styles.cellNum]}>{fmtVol(row.volume)}</AppText>
-                      <Pressable onPress={() => removeSymbol(row.symbol)} hitSlop={8}>
-                        <Trash2 size={14} color={themeColors.negative} />
-                      </Pressable>
+                    <Pressable style={styles.symbolCard} onPress={() => navigateToStockDetail(navigation, row.symbol)}>
+                      <View style={styles.symbolCardMain}>
+                        <View style={styles.symbolIdentity}>
+                          <AppText style={styles.symbolNameInline} numberOfLines={1}>{row.symbol}</AppText>
+                        </View>
+
+                        <View style={styles.symbolInlineMetrics}>
+                          <AppText style={[styles.symbolChange, up ? styles.up : styles.down]}>{fmtPct(row.pct)}</AppText>
+                          <AppText style={styles.symbolPrice}>{fmtPrice(row.price)}</AppText>
+                          <AppText style={styles.symbolMeta}>{fmtChange(row.change)}</AppText>
+                          <Pressable style={styles.removeChip} onPress={() => removeSymbol(row.symbol)} hitSlop={8}>
+                            <Trash2 size={13} color={themeColors.negative} />
+                          </Pressable>
+                        </View>
+                      </View>
                     </Pressable>
                   );
                 }}
@@ -722,35 +874,93 @@ const Watchlist = ({ navigation }) => {
           {renderPresetAndPlan()}
         </ScrollView>
 
+        {createDialogVisible ? (
+          <View style={styles.dialogOverlay} pointerEvents="box-none">
+            <Pressable style={styles.dialogScrim} onPress={closeCreateDialog} />
+            <View style={styles.dialogCard}>
+              <View style={styles.dialogBadge}>
+                <CirclePlus size={16} color={themeColors.textPrimary} />
+                <AppText style={styles.dialogBadgeText}>Create Watchlist</AppText>
+              </View>
+              <AppText style={styles.dialogTitle}>Name your next watchlist</AppText>
+              <AppText style={styles.dialogBody}>
+                Create a focused list for a theme, sector, strategy, or short-term setup.
+              </AppText>
+              <View style={styles.dialogInputShell}>
+                <AppTextInput
+                  value={newListTitle}
+                  onChangeText={setNewListTitle}
+                  placeholder="Tech Momentum"
+                  placeholderTextColor={themeColors.textMuted}
+                  style={styles.dialogInput}
+                  autoFocus
+                />
+              </View>
+              <View style={styles.dialogActions}>
+                <Pressable style={styles.dialogGhost} onPress={closeCreateDialog} disabled={creatingList}>
+                  <AppText style={styles.dialogGhostText}>Cancel</AppText>
+                </Pressable>
+                <Pressable style={[styles.dialogPrimary, creatingList ? styles.createBtnLoading : null]} onPress={handleCreateWatchlist} disabled={creatingList}>
+                  {creatingList ? <ActivityIndicator size="small" color="#ffffff" /> : <Plus size={14} color="#ffffff" />}
+                  <AppText style={styles.dialogPrimaryText}>{creatingList ? 'Creating...' : 'Create'}</AppText>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        ) : null}
+
+        {deleteDialogVisible ? (
+          <View style={styles.dialogOverlay} pointerEvents="box-none">
+            <Pressable style={styles.dialogScrim} onPress={closeDeleteDialog} />
+            <View style={styles.dialogCard}>
+              <View style={[styles.dialogBadge, styles.dialogBadgeDanger]}>
+                <AlertTriangle size={16} color={themeColors.negative} />
+                <AppText style={styles.dialogBadgeText}>Delete Watchlist</AppText>
+              </View>
+              <AppText style={styles.dialogTitle}>Delete this watchlist?</AppText>
+              <AppText style={styles.dialogBody}>
+                {selectedList
+                  ? `This will permanently remove "${selectedList.title}" and its saved symbols from your account.`
+                  : 'This will permanently remove the selected watchlist and its saved symbols from your account.'}
+              </AppText>
+              <View style={styles.dialogActions}>
+                <Pressable style={styles.dialogGhost} onPress={closeDeleteDialog} disabled={deleteInFlight}>
+                  <AppText style={styles.dialogGhostText}>Cancel</AppText>
+                </Pressable>
+                <Pressable
+                  style={[styles.dialogDanger, deleteInFlight ? styles.createBtnLoading : null]}
+                  onPress={handleDeleteWatchlist}
+                  disabled={deleteInFlight}
+                >
+                  {deleteInFlight ? (
+                    <ActivityIndicator size="small" color="#ffffff" />
+                  ) : (
+                    <Trash2 size={14} color="#ffffff" />
+                  )}
+                  <AppText style={styles.dialogPrimaryText}>{deleteInFlight ? 'Deleting...' : 'Delete'}</AppText>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        ) : null}
+
         <BottomTabs activeRoute="Watchlist" navigation={navigation} />
       </GradientBackground>
     </View>
   );
 };
 
-const createStyles = (colors, isLight) =>
+const createStyles = (colors, isLight, isWide, isCompact) =>
   StyleSheet.create({
     safeArea: { flex: 1, backgroundColor: colors.background },
     header: {
-      paddingHorizontal: 16,
-      paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 6 : 12,
-      paddingBottom: 10,
       flexDirection: 'row',
-      alignItems: 'center',
+      alignItems: 'flex-start',
       justifyContent: 'space-between',
+      gap: 12,
     },
-    title: { color: colors.textPrimary, fontSize: 26 },
-    subtitle: { color: colors.textMuted, fontSize: 12, marginTop: 2 },
-    iconButton: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
-      borderWidth: 1,
-      borderColor: colors.border,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: colors.surfaceAlt,
-    },
+    title: { color: colors.textPrimary, fontSize: 30, fontFamily: FONT.extraBold },
+    subtitle: { color: colors.textMuted, fontSize: 12, marginTop: 0, fontFamily: FONT.regular },
     sectionActions: {
       paddingHorizontal: 12,
       paddingBottom: 8,
@@ -770,19 +980,20 @@ const createStyles = (colors, isLight) =>
       gap: 6,
       paddingHorizontal: 10,
     },
-    sectionBtnText: { color: colors.textPrimary, fontSize: 12 },
+    sectionBtnText: { color: colors.textPrimary, fontSize: 12, fontFamily: FONT.medium },
     tableHead: {
-      paddingHorizontal: 14,
-      paddingBottom: 6,
+      paddingHorizontal: 16,
+      paddingTop: 16,
+      paddingBottom: 10,
       flexDirection: 'row',
       alignItems: 'center',
       borderBottomWidth: 1,
       borderBottomColor: colors.border,
+      backgroundColor: isLight ? 'rgba(255,255,255,0.44)' : 'rgba(10,15,26,0.24)',
     },
-    th: { color: colors.textMuted, fontSize: 10 },
-    thSym: { width: 58 },
-    thName: { flex: 1, paddingRight: 6 },
-    thNum: { width: 56, textAlign: 'right' },
+    th: { color: colors.textPrimary, fontSize: 10, fontFamily: FONT.semiBold },
+    thSym: { flex: 1.1 },
+    thNum: { flex: 1, textAlign: 'right' },
     sectionRows: { paddingHorizontal: 10, paddingVertical: 10, gap: 8, paddingBottom: 110 },
     rowCard: {
       borderRadius: 14,
@@ -794,16 +1005,60 @@ const createStyles = (colors, isLight) =>
       flexDirection: 'row',
       alignItems: 'center',
     },
-    cell: { color: colors.textPrimary, fontSize: 12 },
-    cellSym: { width: 58, fontSize: 12 },
-    cellName: { flex: 1, color: colors.textPrimary, fontSize: 12, paddingRight: 6 },
-    cellNum: { width: 56, textAlign: 'right', fontSize: 11 },
+    cell: { color: colors.textPrimary, fontSize: 12, fontFamily: FONT.medium },
+    cellSym: { flex: 1.1, fontSize: 12, fontFamily: FONT.semiBold },
+    cellNum: { flex: 1, textAlign: 'right', fontSize: 11, fontFamily: FONT.medium },
     up: { color: '#34d399' },
     down: { color: '#fb7185' },
-    errorText: { color: colors.negative, fontSize: 12, paddingHorizontal: 4 },
-    content: { paddingHorizontal: 12, paddingBottom: 110, gap: 14 },
-    createRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
-    createRowCompact: { flexDirection: 'column', alignItems: 'stretch' },
+    errorText: { color: colors.negative, fontSize: 12, paddingHorizontal: 4, fontFamily: FONT.medium },
+    content: {
+      width: '100%',
+      alignSelf: 'center',
+      maxWidth: isWide ? 1320 : 760,
+      paddingHorizontal: isWide ? 20 : 12,
+      paddingTop: 12,
+      paddingBottom: 110,
+      gap: 12,
+    },
+    presetPageContent: {
+      width: '100%',
+      alignSelf: 'center',
+      maxWidth: isWide ? 1320 : 760,
+      paddingHorizontal: isWide ? 20 : 12,
+      paddingTop: 14,
+      paddingBottom: 110,
+      gap: 14,
+    },
+    presetTableCard: {
+      borderRadius: 24,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceGlass,
+      overflow: 'hidden',
+      shadowColor: '#000000',
+      shadowOpacity: isLight ? 0.06 : 0.2,
+      shadowRadius: 16,
+      shadowOffset: { width: 0, height: 8 },
+      elevation: 5,
+    },
+    presetTableBody: {
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+    },
+    presetTableRow: {
+      paddingHorizontal: 6,
+      paddingVertical: 12,
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
+    presetTableRowLast: {
+      borderBottomWidth: 0,
+    },
+    topActionRow: { flexDirection: 'row', gap: 10, alignItems: 'center', justifyContent: 'space-between', minHeight: isWide ? 46 : undefined },
+    topActionCopy: { flex: 1, minWidth: 0 },
+    createRowCompact: { width: '100%' },
     inputShell: {
       flex: 1,
       minHeight: 42,
@@ -816,29 +1071,33 @@ const createStyles = (colors, isLight) =>
       gap: 8,
       paddingHorizontal: 10,
     },
-    input: { flex: 1, color: colors.textPrimary, paddingVertical: 8, fontSize: 14 },
+    input: { flex: 1, color: colors.textPrimary, paddingVertical: 8, fontSize: 14, fontFamily: FONT.medium },
     createBtn: {
-      minHeight: 40,
-      borderRadius: 10,
-      paddingHorizontal: 12,
+      height: 38,
+      borderRadius: 999,
+      minWidth: 150,
+      paddingHorizontal: 14,
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
       gap: 6,
+      flexShrink: 0,
       borderWidth: 1,
       borderColor: colors.border,
-      backgroundColor: isLight ? '#8b93a1' : 'rgba(148,163,184,0.25)',
+      backgroundColor: isLight ? '#111827' : '#f8fafc',
     },
     createBtnCompact: { width: '100%' },
     createBtnLoading: { opacity: 0.8 },
-    createBtnText: { color: '#ffffff', fontSize: 14 },
+    createBtnText: { color: isLight ? '#ffffff' : '#0b1220', fontSize: 13, fontFamily: FONT.semiBold },
     workspace: {
-      borderRadius: 18,
+      width: '100%',
+      borderRadius: 24,
       borderWidth: 1,
       borderColor: colors.border,
       backgroundColor: colors.surfaceGlass,
-      padding: 10,
-      gap: 10,
+      padding: isWide ? 18 : 14,
+      gap: 12,
+      overflow: 'hidden',
     },
     workspaceHead: {
       flexDirection: 'row',
@@ -855,6 +1114,7 @@ const createStyles = (colors, isLight) =>
     workspaceTitle: {
       color: colors.textPrimary,
       fontSize: 20,
+      fontFamily: FONT.extraBold,
     },
     renameInput: {
       minHeight: 36,
@@ -878,19 +1138,42 @@ const createStyles = (colors, isLight) =>
       paddingHorizontal: 8,
       paddingVertical: 5,
     },
-    renameActionText: { color: colors.textPrimary, fontSize: 11 },
-    listTabs: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+    renameActionText: { color: colors.textPrimary, fontSize: 11, fontFamily: FONT.medium },
+    listTabs: { flexDirection: 'row', flexWrap: 'wrap', gap: isWide ? 10 : 6, marginTop: -2, alignItems: 'center' },
     listChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
       borderRadius: 999,
       borderWidth: 1,
       borderColor: colors.border,
       backgroundColor: colors.surfaceAlt,
-      paddingHorizontal: 10,
-      paddingVertical: 5,
+      paddingLeft: 11,
+      paddingRight: 8,
+      paddingVertical: 6,
     },
     listChipActive: { backgroundColor: colors.accent, borderColor: colors.accent },
-    listChipText: { color: colors.textMuted, fontSize: 12 },
-    listChipTextActive: { color: isLight ? '#ffffff' : '#0b0f1f' },
+    listChipText: { color: colors.textMuted, fontSize: 12, fontFamily: FONT.medium },
+    listChipTextActive: { color: isLight ? '#ffffff' : '#0b0f1f', fontFamily: FONT.semiBold },
+    listChipCount: {
+      minWidth: 22,
+      height: 22,
+      borderRadius: 11,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: isLight ? 'rgba(15,23,42,0.08)' : 'rgba(255,255,255,0.12)',
+    },
+    listChipCountActive: {
+      backgroundColor: isLight ? 'rgba(255,255,255,0.22)' : 'rgba(10,15,26,0.18)',
+    },
+    listChipCountText: {
+      color: colors.textPrimary,
+      fontSize: 11,
+      fontFamily: FONT.semiBold,
+    },
+    listChipCountTextActive: {
+      color: isLight ? '#ffffff' : '#0b0f1f',
+    },
     addSymbolRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
     suggestionBox: {
       borderWidth: 1,
@@ -908,8 +1191,14 @@ const createStyles = (colors, isLight) =>
       borderBottomWidth: 1,
       borderBottomColor: colors.border,
     },
-    suggestionSym: { color: colors.textPrimary, fontSize: 12, width: 56 },
-    suggestionName: { color: colors.textMuted, fontSize: 12, flex: 1 },
+    suggestionSym: { color: colors.textPrimary, fontSize: 12, width: 56, fontFamily: FONT.semiBold },
+    suggestionName: { color: colors.textMuted, fontSize: 12, flex: 1, fontFamily: FONT.regular },
+    workspaceLoadingState: {
+      minHeight: 180,
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 10,
+    },
     sortRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingTop: 4 },
     sortChip: {
       borderWidth: 1,
@@ -941,29 +1230,73 @@ const createStyles = (colors, isLight) =>
       fontSize: 12,
       marginTop: -2,
     },
-    symbolWrap: { gap: 8, minHeight: 36 },
-    symbolRow: {
+    symbolWrap: { gap: isWide ? 10 : 8, minHeight: 36 },
+    symbolCard: {
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceGlass,
+      paddingHorizontal: isWide ? 16 : 12,
+      paddingVertical: isWide ? 14 : 12,
+    },
+    symbolCardMain: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      borderRadius: 10,
-      borderWidth: 1,
-      borderColor: colors.border,
-      backgroundColor: colors.surfaceAlt,
-      paddingHorizontal: 12,
-      paddingVertical: 10,
+      gap: 10,
     },
-    symbolRowLeft: {
+    symbolIdentity: {
+      minWidth: 72,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    symbolNameInline: { color: colors.textPrimary, fontSize: 15, fontFamily: FONT.medium },
+    symbolInlineMetrics: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'flex-end',
+      gap: 12,
       flex: 1,
+      minWidth: 0,
+    },
+    symbolPrice: {
+      color: colors.textPrimary,
+      fontSize: 16,
+      fontFamily: FONT.semiBold,
+      minWidth: 72,
+      textAlign: 'right',
+    },
+    symbolChange: {
+      fontSize: 12,
+      fontFamily: FONT.medium,
+      minWidth: 58,
+      textAlign: 'right',
+    },
+    symbolMeta: {
+      color: colors.textMuted,
+      fontSize: 11,
+      fontFamily: FONT.medium,
+      minWidth: 56,
+      textAlign: 'right',
+    },
+    removeChip: {
+      width: 34,
+      height: 34,
+      borderRadius: 17,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 1,
+      borderColor: 'rgba(207,63,88,0.18)',
+      backgroundColor: 'rgba(207,63,88,0.08)',
+      marginLeft: 2,
     },
     symbolActions: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 12,
     },
-    symbolText: { color: colors.textPrimary, fontSize: 13 },
-    removeText: { color: colors.textMuted, fontSize: 12 },
-    emptyText: { color: colors.textMuted, fontSize: 12, paddingVertical: 8 },
+    emptyText: { color: colors.textMuted, fontSize: 12, paddingVertical: 8, fontFamily: FONT.regular },
     cancelEditBtn: {
       alignSelf: 'flex-start',
       borderRadius: 8,
@@ -977,86 +1310,252 @@ const createStyles = (colors, isLight) =>
       color: colors.textMuted,
       fontSize: 12,
     },
-    sectionTitle: { color: colors.textPrimary, fontSize: 26, textAlign: 'center', marginTop: 2 },
-    presetGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-    presetCard: {
-      minWidth: 160,
-      flexGrow: 1,
-      flexBasis: 160,
-      borderRadius: 14,
+    sectionHeaderRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-end',
+      justifyContent: 'space-between',
+      gap: 5,
+      marginTop: isWide ? 12 : 8,
+      marginBottom: isWide ? 6 : 2,
+    },
+    sectionHeaderCopy: {
+      flex: 1,
+      minWidth: 0,
+      gap: 5,
+    },
+    sectionEyebrow: {
+      alignSelf: 'flex-start',
+      borderRadius: 999,
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      backgroundColor: isLight ? 'rgba(17,24,39,0.06)' : 'rgba(255,255,255,0.08)',
       borderWidth: 1,
       borderColor: colors.border,
-      padding: 12,
-      gap: 10,
     },
-    presetHead: { gap: 8 },
-    presetTitle: { color: colors.textPrimary, fontSize: 22, minHeight: 56 },
+    sectionEyebrowText: {
+      color: colors.textPrimary,
+      fontSize: 10,
+      fontFamily: FONT.semiBold,
+      textTransform: 'uppercase',
+      letterSpacing: 0.6,
+    },
+    sectionMetaPill: {
+      borderRadius: 999,
+      paddingHorizontal: 12,
+      paddingVertical: 7,
+      backgroundColor: colors.surfaceAlt,
+      borderWidth: 1,
+      borderColor: colors.border,
+      marginLeft: 12,
+    },
+    sectionMetaText: {
+      color: colors.textMuted,
+      fontSize: 12,
+      fontFamily: FONT.medium,
+    },
+    sectionTitle: { color: colors.textPrimary, fontSize: 24, lineHeight: 28, marginTop: 0, fontFamily: FONT.extraBold },
+    sectionSubTitle: { color: colors.textMuted, fontSize: 12, lineHeight: 18, fontFamily: FONT.regular },
+    presetRail: {
+      gap: 14,
+      paddingTop: 8,
+      paddingRight: 12,
+      paddingBottom: 14,
+    },
+    presetGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 18,
+      paddingTop: 8,
+      paddingBottom: 14,
+    },
+    presetCard: {
+      width: 212,
+      minHeight: 196,
+      borderRadius: 28,
+      borderWidth: 1,
+      borderColor: colors.border,
+      paddingHorizontal: 18,
+      paddingVertical: 18,
+      gap: 16,
+      backgroundColor: colors.surfaceGlass,
+      shadowColor: '#000000',
+      shadowOpacity: isLight ? 0.1 : 0.24,
+      shadowRadius: 24,
+      shadowOffset: { width: 0, height: 10 },
+      elevation: 7,
+      marginBottom: 2,
+    },
+    presetCardWide: {
+      width: '31.9%',
+      minWidth: isCompact ? 212 : 280,
+      flexGrow: 1,
+    },
+    presetHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+    presetTag: {
+      borderRadius: 999,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      backgroundColor: isLight ? 'rgba(255,255,255,0.45)' : 'rgba(255,255,255,0.08)',
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    presetTagText: {
+      color: colors.textPrimary,
+      fontSize: 10,
+      fontFamily: FONT.semiBold,
+      textTransform: 'uppercase',
+      letterSpacing: 0.5,
+    },
+    presetTitle: { color: colors.textPrimary, fontSize: 23, minHeight: 56, fontFamily: FONT.extraBold, lineHeight: 28 },
     countPill: {
       borderRadius: 999,
       borderWidth: 1,
       borderColor: colors.border,
-      backgroundColor: isLight ? 'rgba(255,255,255,0.45)' : 'rgba(10,15,26,0.35)',
-      paddingHorizontal: 8,
-      paddingVertical: 3,
-      alignSelf: 'flex-end',
+      backgroundColor: isLight ? 'rgba(255,255,255,0.62)' : 'rgba(10,15,26,0.28)',
+      minWidth: 38,
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
-    countText: { color: colors.textPrimary, fontSize: 11 },
-    presetPreview: { color: colors.textMuted, fontSize: 12, lineHeight: 17 },
-    liveCard: {
+    countText: { color: colors.textPrimary, fontSize: 11, fontFamily: FONT.semiBold },
+    presetPreview: { color: colors.textMuted, fontSize: 12, lineHeight: 20, fontFamily: FONT.regular, minHeight: 42 },
+    presetFooter: {
+      marginTop: 'auto',
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'flex-start',
+      paddingTop: 4,
+    },
+    presetActionPill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      borderRadius: 999,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      backgroundColor: isLight ? 'rgba(255,255,255,0.54)' : 'rgba(10,15,26,0.22)',
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    presetFooterText: {
+      color: colors.textPrimary,
+      fontSize: 13,
+      fontFamily: FONT.semiBold,
+    },
+    dialogOverlay: {
+      ...StyleSheet.absoluteFillObject,
+      justifyContent: 'center',
+      paddingHorizontal: 20,
+      paddingVertical: 24,
+      zIndex: 20,
+      elevation: 20,
+    },
+    dialogScrim: {
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: isLight ? 'rgba(15,23,42,0.28)' : 'rgba(3,6,12,0.7)',
+    },
+    dialogCard: {
+      borderRadius: 24,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+      paddingHorizontal: 18,
+      paddingTop: 18,
+      paddingBottom: 16,
+      gap: 14,
+    },
+    dialogBadge: {
+      alignSelf: 'flex-start',
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      borderRadius: 999,
+      paddingHorizontal: 12,
+      paddingVertical: 7,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceAlt,
+    },
+    dialogBadgeText: {
+      color: colors.textPrimary,
+      fontSize: 12,
+      fontFamily: FONT.semiBold,
+    },
+    dialogBadgeDanger: {
+      borderColor: isLight ? 'rgba(220, 38, 38, 0.18)' : 'rgba(248, 113, 113, 0.22)',
+      backgroundColor: isLight ? 'rgba(254, 242, 242, 0.98)' : 'rgba(127, 29, 29, 0.24)',
+    },
+    dialogTitle: {
+      color: colors.textPrimary,
+      fontSize: 24,
+      fontFamily: FONT.extraBold,
+    },
+    dialogBody: {
+      color: colors.textMuted,
+      fontSize: 13,
+      lineHeight: 20,
+      fontFamily: FONT.regular,
+    },
+    dialogInputShell: {
+      minHeight: 48,
       borderRadius: 16,
       borderWidth: 1,
       borderColor: colors.border,
-      backgroundColor: isLight ? '#eef8ec' : 'rgba(9, 45, 33, 0.45)',
-      padding: 14,
-      gap: 10,
-      marginBottom: 6,
+      backgroundColor: colors.surfaceAlt,
+      paddingHorizontal: 12,
+      justifyContent: 'center',
     },
-    liveOverlineRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-    liveIconWrap: {
-      width: 28,
-      height: 28,
+    dialogInput: {
+      color: colors.textPrimary,
+      fontSize: 15,
+      fontFamily: FONT.medium,
+      paddingVertical: 8,
+    },
+    dialogActions: {
+      flexDirection: 'row',
+      gap: 10,
+    },
+    dialogGhost: {
+      flex: 1,
+      minHeight: 46,
       borderRadius: 14,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceAlt,
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: isLight ? 'rgba(22,199,132,0.12)' : 'rgba(22,199,132,0.18)',
     },
-    liveOverline: { color: isLight ? '#1f8a63' : '#67e6b5', fontSize: 12 },
-    liveTitle: { color: colors.textPrimary, fontSize: 30 },
-    liveBody: { color: colors.textMuted, fontSize: 13, lineHeight: 20 },
-    liveActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-    livePrimary: {
+    dialogGhostText: {
+      color: colors.textPrimary,
+      fontSize: 14,
+      fontFamily: FONT.semiBold,
+    },
+    dialogPrimary: {
       flex: 1,
-      minWidth: 220,
-      minHeight: 42,
-      borderRadius: 9,
-      backgroundColor: '#22a559',
+      minHeight: 46,
+      borderRadius: 14,
+      backgroundColor: '#111827',
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
       gap: 8,
-      paddingHorizontal: 12,
     },
-    livePrimaryText: { color: '#ffffff', fontSize: 13 },
-    liveGhost: {
+    dialogDanger: {
       flex: 1,
-      minWidth: 220,
-      minHeight: 42,
-      borderRadius: 9,
-      borderWidth: 1,
-      borderColor: colors.border,
-      backgroundColor: colors.surfaceAlt,
+      minHeight: 46,
+      borderRadius: 14,
+      backgroundColor: isLight ? '#B42318' : '#DC2626',
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      gap: 6,
-      paddingHorizontal: 12,
+      gap: 8,
     },
-    liveGhostText: { color: colors.textPrimary, fontSize: 13 },
+    dialogPrimaryText: {
+      color: '#ffffff',
+      fontSize: 14,
+      fontFamily: FONT.semiBold,
+    },
   });
 
 export default Watchlist;
-
-
-
-
-

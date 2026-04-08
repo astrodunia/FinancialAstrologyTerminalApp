@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Modal,
   PanResponder,
   Pressable,
   ScrollView,
@@ -12,11 +13,19 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Bell, Bookmark, RefreshCcw, Search, X } from 'lucide-react-native';
 import Svg, { Circle, Line, Path, Rect } from 'react-native-svg';
+import AppDialog from '../../components/AppDialog';
 import AppText from '../../components/AppText';
 import BottomTabs from '../../components/BottomTabs';
 import GradientBackground from '../../components/GradientBackground';
 import { useUser } from '../../store/UserContext';
 import { navigateToStockDetail, normalizeStockSymbol } from '../../features/stocks/navigation';
+import {
+  addSymbol as addSymbolToWatchlist,
+  createList as createWatchlist,
+  getListById,
+  getLists as getWatchlists,
+  removeSymbol as removeSymbolFromWatchlist,
+} from '../../services/watchlistApi';
 import { useTickerSearch } from '../../features/stocks/useTickerSearch';
 import {
   INDEX_TIMEFRAMES,
@@ -29,6 +38,8 @@ import {
   type IndexTimeframe,
 } from '../../features/indices/api';
 import { useIndexCandles, useIndexInfo, useIndexSnapshots } from '../../features/indices/hooks';
+
+const nakshatraTransitData = require('../../../nakshatra-transits.json');
 
 const INDEX_LIST = [
   { id: 'GSPC', name: 'S&P 500' },
@@ -80,15 +91,17 @@ const formatVolume = (value: number | null | undefined) => {
   }).format(value);
 };
 
-const formatDateTime = (timestamp: number) => {
-  if (!timestamp || Number.isNaN(timestamp)) return '--';
+const formatDateTime = (timestamp: number | string | null | undefined) => {
+  if (timestamp == null || timestamp === '') return '--';
+  const dt = new Date(timestamp);
+  if (!Number.isFinite(dt.getTime())) return '--';
   return new Intl.DateTimeFormat('en-US', {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
-  }).format(new Date(timestamp));
+  }).format(dt);
 };
 
 const downsampleCandlesForChart = (candles: IndexCandle[], timeframe: IndexTimeframe) => {
@@ -118,6 +131,328 @@ const downsampleCandlesForChart = (candles: IndexCandle[], timeframe: IndexTimef
   return sampled;
 };
 
+type TransitMode = 'planetary' | 'nakshatra';
+
+type TransitRow = {
+  planet: string;
+  rashi: string;
+  start: string;
+  end: string | null;
+  metadata?: {
+    calendarYear?: number;
+    timezone?: string;
+    source?: string;
+  };
+  extras?: {
+    nakshatra?: string | null;
+    motion?: string | null;
+    comment?: string | null;
+  };
+};
+
+type TransitPerformance = {
+  key: string;
+  mode: TransitMode;
+  planet: string;
+  label: string;
+  subLabel: string;
+  start: string;
+  end: string | null;
+  startClose: number;
+  endClose: number;
+  absChange: number;
+  pctChange: number;
+  isActive: boolean;
+};
+
+const TRANSIT_SOURCE_NAKSHATRA = 'drikpanchang-nakshatra';
+const DRIK_PLANET_MAP: Record<string, string> = {
+  surya: 'Sun',
+  chandra: 'Moon',
+  mangal: 'Mars',
+  budha: 'Mercury',
+  guru: 'Jupiter',
+  shukra: 'Venus',
+  shani: 'Saturn',
+  rahu: 'Rahu',
+  ketu: 'Ketu',
+  arun: 'Uranus',
+  varun: 'Neptune',
+  yama: 'Pluto',
+};
+
+const parseTransitIso = (value?: string | null) => {
+  if (!value) return null;
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(value)) {
+    const dt = new Date(`${value}+05:30`);
+    return Number.isFinite(dt.getTime()) ? dt.toISOString() : null;
+  }
+  const dt = new Date(value);
+  return Number.isFinite(dt.getTime()) ? dt.toISOString() : null;
+};
+
+const normalizeNakshatraLabel = (raw?: string | null) => {
+  const cleaned = String(raw || '').trim();
+  if (!cleaned) {
+    return { label: 'Unknown', nakshatra: 'Unknown', motion: null as string | null };
+  }
+
+  const hasTruePrefix = /^True\s+/i.test(cleaned);
+  const deTrue = cleaned.replace(/^True\s+/i, '').trim();
+  const transitMatch = deTrue.match(/transits to\s+(.+)$/i);
+  const target = (transitMatch?.[1] || deTrue).trim();
+  const motion = hasTruePrefix ? 'True' : null;
+
+  return {
+    label: motion ? `${motion} ${target}` : target,
+    nakshatra: target,
+    motion,
+  };
+};
+
+const buildNakshatraRows = (dataset: any): TransitRow[] => {
+  const years = dataset?.years || {};
+  const byPlanet = new Map<string, any[]>();
+
+  Object.entries(years).forEach(([yearKey, planetMap]) => {
+    const yearNum = Number(yearKey);
+    if (!Number.isFinite(yearNum) || !planetMap || typeof planetMap !== 'object') return;
+
+    Object.entries(planetMap as Record<string, any>).forEach(([planetKey, payload]) => {
+      const planet = DRIK_PLANET_MAP[planetKey.toLowerCase()] || planetKey;
+      const transits = Array.isArray(payload?.transits) ? payload.transits : [];
+      const parsed = transits
+        .map((transit: any) => {
+          const start = parseTransitIso(transit?.transitTime);
+          if (!start) return null;
+          const end = parseTransitIso(transit?.transitEndTime);
+          const label = normalizeNakshatraLabel(transit?.nakshatra);
+          return {
+            planet,
+            yearNum,
+            start,
+            end,
+            label,
+            raw: typeof transit?.nakshatra === 'string' ? transit.nakshatra : '',
+          };
+        })
+        .filter(Boolean)
+        .sort((a: any, b: any) => a.start.localeCompare(b.start));
+
+      const bucket = byPlanet.get(planet) || [];
+      bucket.push(...parsed);
+      byPlanet.set(planet, bucket);
+    });
+  });
+
+  const rows: TransitRow[] = [];
+  byPlanet.forEach((entries, planet) => {
+    const sorted = entries.slice().sort((a: any, b: any) => a.start.localeCompare(b.start));
+    sorted.forEach((entry: any, index: number) => {
+      const next = sorted[index + 1];
+      rows.push({
+        planet,
+        rashi: entry.label.label,
+        start: entry.start,
+        end: entry.end || (next ? next.start : null),
+        metadata: {
+          calendarYear: entry.yearNum,
+          timezone: 'Asia/Kolkata',
+          source: TRANSIT_SOURCE_NAKSHATRA,
+        },
+        extras: {
+          nakshatra: entry.label.nakshatra,
+          motion: entry.label.motion,
+          comment: entry.raw ? `Raw: ${entry.raw}` : null,
+        },
+      });
+    });
+  });
+
+  return rows.sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+};
+
+const ALL_NAKSHATRA_ROWS: TransitRow[] = buildNakshatraRows(nakshatraTransitData);
+
+const overlapsRange = (row: TransitRow, startTs: number, endTs: number) => {
+  const rowStart = new Date(row.start).getTime();
+  const rowEnd = row.end ? new Date(row.end).getTime() : endTs;
+  if (!Number.isFinite(rowStart) || !Number.isFinite(rowEnd)) return false;
+  return rowEnd >= startTs && rowStart <= endTs;
+};
+
+const findCandleAtOrAfter = (points: IndexCandle[], targetTs: number) => {
+  for (let index = 0; index < points.length; index += 1) {
+    if (points[index].t >= targetTs) return points[index];
+  }
+  return null;
+};
+
+const findCandleAtOrBefore = (points: IndexCandle[], targetTs: number) => {
+  for (let index = points.length - 1; index >= 0; index -= 1) {
+    if (points[index].t <= targetTs) return points[index];
+  }
+  return null;
+};
+
+const computeTransitPerformance = (
+  rows: TransitRow[],
+  candles: IndexCandle[],
+  rangeEndTs: number,
+  mode: TransitMode,
+): TransitPerformance[] =>
+  rows
+    .map((row, index) => {
+      const startTs = new Date(row.start).getTime();
+      const endTs = row.end ? new Date(row.end).getTime() : rangeEndTs;
+      if (!Number.isFinite(startTs) || !Number.isFinite(endTs) || endTs < startTs) return null;
+
+      const startPoint = findCandleAtOrAfter(candles, startTs) || findCandleAtOrBefore(candles, startTs);
+      const endPoint = findCandleAtOrBefore(candles, endTs) || findCandleAtOrAfter(candles, endTs);
+      const startClose = startPoint?.c ?? null;
+      const endClose = endPoint?.c ?? null;
+      if (startClose == null || endClose == null || startClose === 0) return null;
+
+      const absChange = endClose - startClose;
+      const pctChange = (absChange / startClose) * 100;
+      const now = Date.now();
+      const activeEndTs = row.end ? endTs : Math.max(endTs, now);
+      const isActive = startTs <= now && now <= activeEndTs;
+
+      const label = mode === 'nakshatra' ? row.extras?.nakshatra || row.rashi || row.planet : `${row.planet} • ${row.rashi}`;
+      const subLabel =
+        mode === 'nakshatra'
+          ? row.planet
+          : row.extras?.nakshatra
+            ? `${row.rashi} • ${row.extras.nakshatra}`
+            : row.rashi;
+
+      return {
+        key: [
+          mode,
+          row.planet,
+          row.start,
+          row.end || 'open',
+          row.rashi,
+          row.extras?.nakshatra || '',
+          row.metadata?.source || 'unknown',
+          row.metadata?.calendarYear ?? 'na',
+          index,
+        ].join(':'),
+        mode,
+        planet: row.planet,
+        label,
+        subLabel,
+        start: row.start,
+        end: row.end,
+        startClose,
+        endClose,
+        absChange,
+        pctChange,
+        isActive,
+      };
+    })
+    .filter((item): item is TransitPerformance => item != null)
+    .sort((a, b) => new Date(b.start).getTime() - new Date(a.start).getTime());
+
+async function fetchPlanetaryTransitRows(authFetch: any, years: number[], signal?: AbortSignal): Promise<TransitRow[]> {
+  const allRows: TransitRow[] = [];
+
+  for (const year of years) {
+    const response = await authFetch(`/api/transits?year=${encodeURIComponent(String(year))}`, {
+      method: 'GET',
+      signal,
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      const message = payload?.error || payload?.message || `Failed to fetch transit rows for ${year}.`;
+      throw new Error(message);
+    }
+    const rows = Array.isArray(payload?.rows) ? payload.rows : [];
+    allRows.push(...rows);
+  }
+
+  return allRows;
+}
+
+const useTransitPerformance = (candles: IndexCandle[], authFetch: any) => {
+  const [planetaryRows, setPlanetaryRows] = useState<TransitRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const sortedCandles = useMemo(
+    () => (Array.isArray(candles) ? candles.slice().sort((a, b) => a.t - b.t) : []),
+    [candles],
+  );
+
+  const range = useMemo(() => {
+    if (!sortedCandles.length) return null;
+    return {
+      startTs: sortedCandles[0].t,
+      endTs: sortedCandles[sortedCandles.length - 1].t,
+    };
+  }, [sortedCandles]);
+
+  useEffect(() => {
+    if (!range || !authFetch) {
+      setPlanetaryRows([]);
+      setLoading(false);
+      setError('');
+      return;
+    }
+
+    const startYear = new Date(range.startTs).getUTCFullYear();
+    const endYear = new Date(range.endTs).getUTCFullYear();
+    const years = [];
+    for (let year = startYear; year <= endYear; year += 1) {
+      years.push(year);
+    }
+
+    let active = true;
+    const controller = new AbortController();
+    setLoading(true);
+    setError('');
+
+    fetchPlanetaryTransitRows(authFetch, years, controller.signal)
+      .then((rows) => {
+        if (!active) return;
+        setPlanetaryRows(rows);
+      })
+      .catch((err: any) => {
+        if (!active || String(err?.name || '').toLowerCase() === 'aborterror') return;
+        setPlanetaryRows([]);
+        setError(err?.message || 'Unable to load planetary transits.');
+      })
+      .finally(() => {
+        if (!active) return;
+        setLoading(false);
+      });
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [authFetch, range]);
+
+  const nakshatraResults = useMemo(() => {
+    if (!range || !sortedCandles.length) return [];
+    const rows = ALL_NAKSHATRA_ROWS.filter((row) => overlapsRange(row, range.startTs, range.endTs));
+    return computeTransitPerformance(rows, sortedCandles, range.endTs, 'nakshatra');
+  }, [range, sortedCandles]);
+
+  const planetaryResults = useMemo(() => {
+    if (!range || !sortedCandles.length || !planetaryRows.length) return [];
+    const rows = planetaryRows.filter((row) => overlapsRange(row, range.startTs, range.endTs));
+    return computeTransitPerformance(rows, sortedCandles, range.endTs, 'planetary');
+  }, [planetaryRows, range, sortedCandles]);
+
+  return {
+    loading,
+    error,
+    planetaryResults,
+    nakshatraResults,
+  };
+};
 const createPalette = (themeColors: any, theme: string) => ({
   background: themeColors.background,
   surface: themeColors.surface,
@@ -202,6 +537,75 @@ const EmptyCard = ({ styles, title, message }: { styles: any; title: string; mes
     <AppText style={styles.centerTitle}>{title}</AppText>
     <AppText style={styles.centerMessage}>{message}</AppText>
   </View>
+);
+
+const WatchlistPicker = ({
+  visible,
+  lists,
+  onClose,
+  onSelect,
+  onSave,
+  selectedId,
+  pending,
+  styles,
+}: {
+  visible: boolean;
+  lists: { id: string; title: string; count?: number; symbols?: string[] }[];
+  onClose: () => void;
+  onSelect: (id: string) => void;
+  onSave: () => void;
+  selectedId: string;
+  pending: boolean;
+  styles: any;
+}) => (
+  <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <View style={styles.watchlistModalOverlay}>
+      <Pressable style={styles.watchlistModalScrim} onPress={pending ? undefined : onClose} />
+      <View style={styles.watchlistModalCard}>
+        <AppText style={styles.watchlistModalTitle}>Choose watchlist</AppText>
+        <AppText style={styles.watchlistModalMessage}>Select which watchlist should store this index.</AppText>
+
+        <ScrollView style={styles.watchlistModalList} contentContainerStyle={styles.watchlistModalListContent}>
+          {lists.map((list) => (
+            <Pressable
+              key={list.id}
+              style={[
+                styles.watchlistOptionRow,
+                list.id === selectedId ? styles.watchlistOptionRowSelected : null,
+                pending ? styles.watchlistOptionRowDisabled : null,
+              ]}
+              onPress={() => onSelect(list.id)}
+              disabled={pending}
+            >
+              <View style={styles.watchlistOptionTextBlock}>
+                <AppText style={styles.watchlistOptionTitle}>{list.title}</AppText>
+                <AppText style={styles.watchlistOptionMeta}>
+                  {list.count === 1 ? '1 stock' : `${list.count || 0} stocks`}
+                </AppText>
+              </View>
+              <View style={[styles.watchlistOptionDot, list.id === selectedId ? styles.watchlistOptionDotSelected : null]} />
+            </Pressable>
+          ))}
+        </ScrollView>
+
+        <View style={styles.watchlistModalActions}>
+          <Pressable style={styles.watchlistModalCancel} onPress={onClose} disabled={pending}>
+            <AppText style={styles.watchlistModalCancelText}>Cancel</AppText>
+          </Pressable>
+          <Pressable
+            style={[
+              styles.watchlistModalSave,
+              (!selectedId || pending) ? styles.watchlistModalSaveDisabled : null,
+            ]}
+            onPress={onSave}
+            disabled={!selectedId || pending}
+          >
+            <AppText style={styles.watchlistModalSaveText}>{pending ? 'Saving...' : 'Save'}</AppText>
+          </Pressable>
+        </View>
+      </View>
+    </View>
+  </Modal>
 );
 
 const MainChart = ({
@@ -339,7 +743,7 @@ const MainChart = ({
 };
 
 export function IndexDetailScreen({ navigation, route }: any) {
-  const { theme, themeColors } = useUser() as any;
+  const { theme, themeColors, token, authFetch } = useUser() as any;
   const colors = useMemo(() => createPalette(themeColors, theme), [theme, themeColors]);
   const styles = useMemo(() => createStyles(colors, theme), [colors, theme]);
 
@@ -350,10 +754,105 @@ export function IndexDetailScreen({ navigation, route }: any) {
   const [selectedTf, setSelectedTf] = useState<IndexTimeframe>(initialTf);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [watchlistAdded, setWatchlistAdded] = useState(false);
+  const [watchlistBusy, setWatchlistBusy] = useState(false);
+  const [watchlistLoading, setWatchlistLoading] = useState(Boolean(token && symbol));
+  const [watchlistPickerVisible, setWatchlistPickerVisible] = useState(false);
+  const [watchlistOptions, setWatchlistOptions] = useState<any[]>([]);
+  const [selectedWatchlistId, setSelectedWatchlistId] = useState('');
+  const [watchlistMemberships, setWatchlistMemberships] = useState<Array<{ id: string; title: string }>>([]);
+  const [watchlistDialog, setWatchlistDialog] = useState({
+    visible: false,
+    title: '',
+    message: '',
+  });
+  const [transitMode, setTransitMode] = useState<TransitMode>('planetary');
+  const [selectedTransitPlanet, setSelectedTransitPlanet] = useState('All');
 
   useEffect(() => {
     setSelectedTf(initialTf);
   }, [initialTf, symbol]);
+
+  const openWatchlistDialog = (title: string, message: string) => {
+    setWatchlistDialog({ visible: true, title, message });
+  };
+
+  const closeWatchlistDialog = () => {
+    setWatchlistDialog((prev) => ({ ...prev, visible: false }));
+  };
+
+  const watchlistDialogActions: { label: string; onPress: () => void }[] =
+    watchlistDialog.title === 'Added to watchlist'
+      ? []
+      : [
+          {
+            label: 'OK',
+            onPress: closeWatchlistDialog,
+          },
+        ];
+
+  useEffect(() => {
+    if (!watchlistDialog.visible || watchlistDialog.title !== 'Added to watchlist') return undefined;
+    const timer = setTimeout(() => {
+      setWatchlistDialog((prev) => ({ ...prev, visible: false }));
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [watchlistDialog.title, watchlistDialog.visible]);
+
+  const loadDetailedWatchlists = async (signal?: AbortSignal) => {
+    const lists = await getWatchlists(authFetch, signal);
+    const detailed = await Promise.all(
+      lists.map(async (list: any) => {
+        try {
+          const detail = await getListById(authFetch, list.id, signal);
+          return {
+            ...list,
+            ...detail,
+            symbols: Array.isArray(detail?.symbols) ? detail.symbols : list.symbols || [],
+            count: typeof detail?.count === 'number' ? detail.count : list.count,
+          };
+        } catch {
+          return list;
+        }
+      }),
+    );
+
+    return detailed;
+  };
+
+  const refreshWatchlistMembership = async (signal?: AbortSignal) => {
+    if (!token || !symbol) {
+      setWatchlistAdded(false);
+      setWatchlistMemberships([]);
+      setWatchlistLoading(false);
+      return [];
+    }
+
+    setWatchlistLoading(true);
+    try {
+      const lists = await loadDetailedWatchlists(signal);
+      const matches = lists.filter((list: any) => Array.isArray(list?.symbols) && list.symbols.includes(symbol));
+      setWatchlistAdded(matches.length > 0);
+      setWatchlistMemberships(
+        matches
+          .map((list: any) => ({ id: String(list.id || ''), title: String(list.title || 'Watchlist') }))
+          .filter((item) => item.id),
+      );
+      return lists;
+    } catch {
+      setWatchlistAdded(false);
+      setWatchlistMemberships([]);
+      return [];
+    } finally {
+      setWatchlistLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    const controller = new AbortController();
+    refreshWatchlistMembership(controller.signal).catch(() => {});
+    return () => controller.abort();
+  }, [authFetch, symbol, token]);
 
   const indexInfo = useIndexInfo(symbol);
   const candlesState = useIndexCandles(symbol, selectedTf);
@@ -385,9 +884,36 @@ export function IndexDetailScreen({ navigation, route }: any) {
     () => chartCandles.map((item) => ({ x: new Date(item.t), y: item.c })),
     [chartCandles],
   );
+  const { loading: transitLoading, error: transitError, planetaryResults, nakshatraResults } = useTransitPerformance(
+    candlesState.candles,
+    authFetch,
+  );
+  const transitResults = transitMode === 'planetary' ? planetaryResults : nakshatraResults;
+  const latestTransitTimestamp = candlesState.candles.length ? candlesState.candles[candlesState.candles.length - 1].t : null;
+  const transitPlanets = useMemo(() => {
+    const set = new Set<string>();
+    transitResults.forEach((item) => {
+      if (item.planet) set.add(item.planet);
+    });
+    return ['All', ...Array.from(set).sort((a, b) => a.localeCompare(b))];
+  }, [transitResults]);
+  const filteredTransitResults = useMemo(() => {
+    if (selectedTransitPlanet === 'All') return transitResults;
+    return transitResults.filter((item) => item.planet === selectedTransitPlanet);
+  }, [selectedTransitPlanet, transitResults]);
+  const featuredTransit = useMemo(
+    () => filteredTransitResults.find((item) => item.isActive) || filteredTransitResults[0] || null,
+    [filteredTransitResults],
+  );
 
   const fullScreenLoading =
     !symbol || ((indexInfo.loading || candlesState.loading) && !snapshot && candlesState.candles.length === 0);
+
+  useEffect(() => {
+    if (!transitPlanets.includes(selectedTransitPlanet)) {
+      setSelectedTransitPlanet('All');
+    }
+  }, [selectedTransitPlanet, transitPlanets]);
 
   const onSelectTimeframe = (nextTf: IndexTimeframe) => {
     setSelectedTf(nextTf);
@@ -427,6 +953,112 @@ export function IndexDetailScreen({ navigation, route }: any) {
 
   const openIndex = (nextSymbol: string) => {
     navigation?.push?.('IndexDetail', { symbol: nextSymbol, tf: selectedTf });
+  };
+
+  const handleOpenAlerts = () => {
+    if (!symbol) return;
+    navigateToStockDetail(navigation, symbol, { tab: 'alerts' });
+  };
+
+  const closeWatchlistPicker = () => {
+    if (watchlistBusy) return;
+    setWatchlistPickerVisible(false);
+    setWatchlistOptions([]);
+    setSelectedWatchlistId('');
+  };
+
+  const addToChosenWatchlist = async (list: any) => {
+    if (!list?.id || !symbol) return;
+
+    if (Array.isArray(list?.symbols) && list.symbols.includes(symbol)) {
+      openWatchlistDialog('Already added', `${symbol} already exists in "${list.title}".`);
+      return;
+    }
+
+    setWatchlistBusy(true);
+    try {
+      await addSymbolToWatchlist(authFetch, list.id, symbol);
+      setWatchlistAdded(true);
+      setWatchlistMemberships([{ id: String(list.id), title: String(list.title || 'Watchlist') }]);
+      setWatchlistPickerVisible(false);
+      setWatchlistOptions([]);
+      setSelectedWatchlistId('');
+      openWatchlistDialog('Added to watchlist', `${symbol} was added to "${list.title}".`);
+      await refreshWatchlistMembership();
+    } catch (error: any) {
+      openWatchlistDialog('Watchlist', error?.message || 'Unable to add index to watchlist.');
+    } finally {
+      setWatchlistBusy(false);
+    }
+  };
+
+  const handleRemoveFromWatchlist = async () => {
+    if (!symbol || !watchlistMemberships.length || watchlistBusy) return;
+
+    setWatchlistBusy(true);
+    try {
+      await Promise.all(
+        watchlistMemberships.map((item) => removeSymbolFromWatchlist(authFetch, item.id, symbol)),
+      );
+      setWatchlistAdded(false);
+      setWatchlistMemberships([]);
+      openWatchlistDialog('Removed from watchlist', `${symbol} was removed from your watchlist.`);
+      await refreshWatchlistMembership();
+    } catch (error: any) {
+      openWatchlistDialog('Watchlist', error?.message || 'Unable to remove index from watchlist.');
+    } finally {
+      setWatchlistBusy(false);
+    }
+  };
+
+  const handleToggleWatchlist = async () => {
+    if (!token) {
+      openWatchlistDialog('Sign in required', 'Sign in to save indices to your watchlist.');
+      return;
+    }
+
+    if (!symbol || watchlistBusy) return;
+
+    try {
+      if (watchlistAdded) {
+        await handleRemoveFromWatchlist();
+        return;
+      }
+
+      setWatchlistBusy(true);
+      const lists = await loadDetailedWatchlists();
+
+      if (!lists.length) {
+        const created = await createWatchlist(authFetch, 'Custom Watchlist');
+        if (!created?.id) {
+          throw new Error('Watchlist was created without an id.');
+        }
+
+        await addSymbolToWatchlist(authFetch, created.id, symbol);
+        setWatchlistAdded(true);
+        setWatchlistMemberships([{ id: String(created.id), title: String(created.title || 'Custom Watchlist') }]);
+        openWatchlistDialog('Added to watchlist', `${symbol} was added to "${created.title || 'Custom Watchlist'}".`);
+        await refreshWatchlistMembership();
+        return;
+      }
+
+      if (lists.length === 1) {
+        await addSymbolToWatchlist(authFetch, lists[0].id, symbol);
+        setWatchlistAdded(true);
+        setWatchlistMemberships([{ id: String(lists[0].id), title: String(lists[0].title || 'Watchlist') }]);
+        openWatchlistDialog('Added to watchlist', `${symbol} was added to "${lists[0].title || 'Watchlist'}".`);
+        await refreshWatchlistMembership();
+        return;
+      }
+
+      setWatchlistOptions(lists);
+      setSelectedWatchlistId(lists[0]?.id || '');
+      setWatchlistPickerVisible(true);
+    } catch (error: any) {
+      openWatchlistDialog('Watchlist', error?.message || 'Unable to update watchlist.');
+    } finally {
+      setWatchlistBusy(false);
+    }
   };
 
   const rangeTone =
@@ -588,14 +1220,30 @@ export function IndexDetailScreen({ navigation, route }: any) {
                   </View>
 
                   <View style={styles.actionPillsRow}>
-                    <Pressable style={styles.actionPill}>
+                    <Pressable style={styles.actionPill} onPress={handleOpenAlerts}>
                       <Bell size={14} color={colors.textMuted} />
                       <AppText style={styles.actionPillText}>Alert</AppText>
                     </Pressable>
 
-                    <Pressable style={styles.actionPill}>
-                      <Bookmark size={14} color={colors.textMuted} />
-                      <AppText style={styles.actionPillText}>Watch</AppText>
+                    <Pressable
+                      style={[
+                        styles.actionPill,
+                        watchlistAdded ? styles.actionPillAdded : null,
+                        watchlistLoading || watchlistBusy ? styles.actionPillDisabled : null,
+                      ]}
+                      onPress={handleToggleWatchlist}
+                      disabled={watchlistLoading || watchlistBusy}
+                    >
+                      {watchlistAdded ? (
+                        <View style={styles.actionPillDangerIcon}>
+                          <X size={11} strokeWidth={2.25} color={colors.negative} />
+                        </View>
+                      ) : (
+                        <Bookmark size={14} color={colors.textMuted} />
+                      )}
+                      <AppText style={[styles.actionPillText, watchlistAdded ? styles.actionPillTextAdded : null]}>
+                        {watchlistLoading || watchlistBusy ? 'Saving...' : watchlistAdded ? 'Remove' : 'Watch'}
+                      </AppText>
                     </Pressable>
                   </View>
 
@@ -639,6 +1287,147 @@ export function IndexDetailScreen({ navigation, route }: any) {
                       );
                     })}
                   </ScrollView>
+                </View>
+
+                <View style={styles.section}>
+                  <View style={styles.cardHeaderRow}>
+                    <View>
+                      <AppText style={styles.sectionTitle}>Transit Performance</AppText>
+                      <AppText style={styles.chartTransitCaption}>
+                        Index move across the current chart range using planet transit API and local nakshatra windows.
+                      </AppText>
+                    </View>
+                  </View>
+
+                  <View style={styles.chartTransitModeRow}>
+                    {(['planetary', 'nakshatra'] as TransitMode[]).map((mode) => {
+                      const active = mode === transitMode;
+                      return (
+                        <Pressable
+                          key={mode}
+                          onPress={() => setTransitMode(mode)}
+                          style={[styles.chartTransitModeChip, active ? styles.chartTransitModeChipActive : null]}
+                        >
+                          <AppText style={[styles.chartTransitModeText, active ? styles.chartTransitModeTextActive : null]}>
+                            {mode === 'planetary' ? 'Planetary' : 'Nakshatra'}
+                          </AppText>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+
+                  {transitPlanets.length > 1 ? (
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.remainingRow}>
+                      {transitPlanets.map((planet) => {
+                        const active = planet === selectedTransitPlanet;
+                        return (
+                          <Pressable
+                            key={planet}
+                            onPress={() => setSelectedTransitPlanet(planet)}
+                            style={[styles.chartTfChip, active ? styles.chartTfChipActive : null]}
+                          >
+                            <AppText style={[styles.chartTfChipText, active ? styles.chartTfChipTextActive : null]}>{planet}</AppText>
+                          </Pressable>
+                        );
+                      })}
+                    </ScrollView>
+                  ) : null}
+
+                  {featuredTransit ? (
+                    <View style={styles.transitFeaturedCard}>
+                      <View style={styles.transitFeaturedHeader}>
+                        <View style={styles.transitFeaturedTitleBlock}>
+                          <AppText style={styles.transitFeaturedEyebrow}>
+                            {featuredTransit.isActive ? 'Current Transit' : 'Latest Transit'}
+                          </AppText>
+                          <AppText style={styles.transitFeaturedTitle}>{featuredTransit.label}</AppText>
+                          <AppText style={styles.transitFeaturedSub}>{featuredTransit.subLabel}</AppText>
+                        </View>
+                        <View style={styles.transitFeaturedValueBlock}>
+                          <AppText
+                            style={[
+                              styles.transitFeaturedPct,
+                              { color: featuredTransit.pctChange >= 0 ? colors.positive : colors.negative },
+                            ]}
+                          >
+                            {featuredTransit.pctChange >= 0 ? '+' : ''}
+                            {featuredTransit.pctChange.toFixed(2)}%
+                          </AppText>
+                          <AppText style={styles.transitFeaturedValue}>
+                            {featuredTransit.absChange >= 0 ? '+' : ''}
+                            {formatValue(featuredTransit.absChange, 2)}
+                          </AppText>
+                        </View>
+                      </View>
+
+                      <AppText style={styles.transitFeaturedRange}>
+                        {formatDateTime(featuredTransit.start)} {'->'} {formatDateTime(featuredTransit.end || latestTransitTimestamp)}
+                      </AppText>
+
+                      <View style={styles.transitMetricRow}>
+                        <View style={styles.transitMetricCard}>
+                          <AppText style={styles.transitMetricLabel}>Start</AppText>
+                          <AppText style={styles.transitMetricValue}>{formatValue(featuredTransit.startClose, 2)}</AppText>
+                        </View>
+                        <View style={styles.transitMetricCard}>
+                          <AppText style={styles.transitMetricLabel}>End</AppText>
+                          <AppText style={styles.transitMetricValue}>{formatValue(featuredTransit.endClose, 2)}</AppText>
+                        </View>
+                      </View>
+                    </View>
+                  ) : null}
+
+                  {transitLoading ? (
+                    <View style={styles.chartTransitState}>
+                      <ActivityIndicator size="small" color={colors.textPrimary} />
+                      <AppText style={styles.centerMessage}>Loading transit windows...</AppText>
+                    </View>
+                  ) : transitMode === 'planetary' && transitError ? (
+                    <AppText style={styles.centerMessage}>{transitError}</AppText>
+                  ) : filteredTransitResults.length ? (
+                    <View style={styles.transitList}>
+                      {filteredTransitResults.slice(0, 8).map((item) => (
+                        <View key={item.key} style={styles.transitListCard}>
+                          <View style={styles.transitListHeader}>
+                            <View style={styles.transitListTitleBlock}>
+                              <AppText style={styles.transitListTitle}>{item.label}</AppText>
+                              <AppText style={styles.transitListSub}>{item.subLabel}</AppText>
+                            </View>
+                            <AppText
+                              style={[
+                                styles.transitListPct,
+                                { color: item.pctChange >= 0 ? colors.positive : colors.negative },
+                              ]}
+                            >
+                              {item.pctChange >= 0 ? '+' : ''}
+                              {item.pctChange.toFixed(2)}%
+                            </AppText>
+                          </View>
+                          <AppText style={styles.transitListRange}>
+                            {formatDateTime(item.start)} {'->'} {formatDateTime(item.end || latestTransitTimestamp)}
+                          </AppText>
+                          <View style={styles.transitListFooter}>
+                            <AppText style={styles.transitListValue}>
+                              {formatValue(item.startClose, 2)} {'->'} {formatValue(item.endClose, 2)}
+                            </AppText>
+                            <AppText
+                              style={[
+                                styles.transitListValue,
+                                { color: item.absChange >= 0 ? colors.positive : colors.negative },
+                              ]}
+                            >
+                              {item.absChange >= 0 ? '+' : ''}
+                              {formatValue(item.absChange, 2)}
+                            </AppText>
+                          </View>
+                        </View>
+                      ))}
+                    </View>
+                  ) : (
+                    <AppText style={styles.centerMessage}>
+                      No {transitMode === 'planetary' ? 'planetary' : 'nakshatra'} transit performance matched this chart range.
+                    </AppText>
+                  )}
                 </View>
 
                 <View style={styles.section}>
@@ -725,6 +1514,28 @@ export function IndexDetailScreen({ navigation, route }: any) {
             )}
           </ScrollView>
 
+          <WatchlistPicker
+            visible={watchlistPickerVisible}
+            lists={watchlistOptions}
+            onClose={closeWatchlistPicker}
+            onSelect={setSelectedWatchlistId}
+            onSave={() => {
+              const selected = watchlistOptions.find((item: any) => item.id === selectedWatchlistId);
+              if (!selected || watchlistBusy) return;
+              addToChosenWatchlist(selected);
+            }}
+            selectedId={selectedWatchlistId}
+            pending={watchlistBusy}
+            styles={styles}
+          />
+          <AppDialog
+            visible={watchlistDialog.visible}
+            title={watchlistDialog.title}
+            message={watchlistDialog.message}
+            onRequestClose={closeWatchlistDialog}
+            icon={Bookmark}
+            actions={watchlistDialogActions as any}
+          />
           <BottomTabs activeRoute="Overview" navigation={navigation} />
         </SafeAreaView>
       </GradientBackground>
@@ -968,10 +1779,156 @@ const createStyles = (colors: any, theme: string) =>
       paddingVertical: 8,
       borderRadius: 999,
       backgroundColor: colors.chartChipBg,
+      borderWidth: 1,
+      borderColor: 'transparent',
+    },
+    actionPillDisabled: {
+      opacity: 0.72,
+    },
+    actionPillAdded: {
+      backgroundColor: 'rgba(207, 63, 88, 0.08)',
+      borderColor: 'rgba(207, 63, 88, 0.24)',
+    },
+    actionPillDangerIcon: {
+      width: 18,
+      height: 18,
+      borderRadius: 999,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'rgba(207, 63, 88, 0.12)',
     },
     actionPillText: {
       fontSize: 13,
       color: colors.textMuted,
+      fontFamily: FONT.medium,
+    },
+    actionPillTextAdded: {
+      fontSize: 13,
+      color: colors.negative,
+      fontFamily: FONT.semiBold,
+    },
+    watchlistModalOverlay: {
+      flex: 1,
+      justifyContent: 'center',
+      paddingHorizontal: 22,
+      paddingVertical: 24,
+    },
+    watchlistModalScrim: {
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: theme === 'dark' ? 'rgba(3, 6, 12, 0.68)' : 'rgba(10, 18, 32, 0.34)',
+    },
+    watchlistModalCard: {
+      borderRadius: 22,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+      paddingHorizontal: 20,
+      paddingTop: 20,
+      paddingBottom: 16,
+      shadowColor: '#000000',
+      shadowOpacity: theme === 'dark' ? 0.28 : 0.16,
+      shadowRadius: 22,
+      shadowOffset: { width: 0, height: 14 },
+      elevation: 12,
+      gap: 14,
+    },
+    watchlistModalTitle: {
+      fontSize: 18,
+      color: colors.textPrimary,
+      fontFamily: FONT.semiBold,
+    },
+    watchlistModalMessage: {
+      fontSize: 13,
+      lineHeight: 19,
+      color: colors.textMuted,
+      fontFamily: FONT.regular,
+      marginTop: -6,
+    },
+    watchlistModalList: {
+      maxHeight: 240,
+    },
+    watchlistModalListContent: {
+      gap: 10,
+      paddingVertical: 2,
+    },
+    watchlistOptionRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 12,
+      borderRadius: 18,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceAlt,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+    },
+    watchlistOptionRowSelected: {
+      borderColor: colors.textPrimary,
+      backgroundColor: colors.chartChipBg,
+    },
+    watchlistOptionRowDisabled: {
+      opacity: 0.7,
+    },
+    watchlistOptionTextBlock: {
+      flex: 1,
+      gap: 4,
+    },
+    watchlistOptionTitle: {
+      fontSize: 14,
+      color: colors.textPrimary,
+      fontFamily: FONT.semiBold,
+    },
+    watchlistOptionMeta: {
+      fontSize: 12,
+      color: colors.textMuted,
+      fontFamily: FONT.regular,
+    },
+    watchlistOptionDot: {
+      width: 10,
+      height: 10,
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: 'transparent',
+    },
+    watchlistOptionDotSelected: {
+      backgroundColor: colors.textPrimary,
+      borderColor: colors.textPrimary,
+    },
+    watchlistModalActions: {
+      flexDirection: 'row',
+      gap: 10,
+    },
+    watchlistModalSave: {
+      flex: 1,
+      minHeight: 46,
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.textPrimary,
+    },
+    watchlistModalSaveDisabled: {
+      opacity: 0.45,
+    },
+    watchlistModalSaveText: {
+      fontSize: 14,
+      color: colors.background,
+      fontFamily: FONT.semiBold,
+    },
+    watchlistModalCancel: {
+      flex: 1,
+      minHeight: 46,
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceAlt,
+    },
+    watchlistModalCancelText: {
+      fontSize: 14,
+      color: colors.textPrimary,
       fontFamily: FONT.medium,
     },
     chartCanvasShell: {
@@ -1054,6 +2011,188 @@ const createStyles = (colors: any, theme: string) =>
     },
     chartTfChipTextActive: {
       color: colors.chartActiveChipText,
+    },
+    chartTransitCaption: {
+      marginTop: 4,
+      color: colors.textMuted,
+      fontSize: 12,
+      lineHeight: 18,
+      fontFamily: FONT.regular,
+    },
+    chartTransitModeRow: {
+      flexDirection: 'row',
+      gap: 8,
+      marginTop: 4,
+      marginBottom: 12,
+    },
+    chartTransitModeChip: {
+      flex: 1,
+      paddingVertical: 11,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceAlt,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    chartTransitModeChipActive: {
+      backgroundColor: colors.textPrimary,
+      borderColor: colors.textPrimary,
+    },
+    chartTransitModeText: {
+      color: colors.textMuted,
+      fontSize: 13,
+      fontFamily: FONT.medium,
+    },
+    chartTransitModeTextActive: {
+      color: colors.background,
+      fontFamily: FONT.semiBold,
+    },
+    chartTransitState: {
+      paddingVertical: 18,
+      gap: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    transitFeaturedCard: {
+      marginTop: 8,
+      borderRadius: 22,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceGlass,
+      padding: 16,
+      gap: 12,
+    },
+    transitFeaturedHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'flex-start',
+      gap: 12,
+    },
+    transitFeaturedTitleBlock: {
+      flex: 1,
+      gap: 4,
+    },
+    transitFeaturedValueBlock: {
+      alignItems: 'flex-end',
+      gap: 4,
+    },
+    transitFeaturedEyebrow: {
+      color: colors.textMuted,
+      fontSize: 11,
+      textTransform: 'uppercase',
+      letterSpacing: 0.4,
+      fontFamily: FONT.medium,
+    },
+    transitFeaturedTitle: {
+      color: colors.textPrimary,
+      fontSize: 18,
+      lineHeight: 24,
+      fontFamily: FONT.semiBold,
+    },
+    transitFeaturedSub: {
+      color: colors.textMuted,
+      fontSize: 12,
+      lineHeight: 18,
+      fontFamily: FONT.regular,
+    },
+    transitFeaturedPct: {
+      fontSize: 18,
+      lineHeight: 24,
+      fontFamily: FONT.extraBold,
+    },
+    transitFeaturedValue: {
+      color: colors.textPrimary,
+      fontSize: 13,
+      lineHeight: 18,
+      fontFamily: FONT.semiBold,
+    },
+    transitFeaturedRange: {
+      color: colors.textMuted,
+      fontSize: 12,
+      lineHeight: 18,
+      fontFamily: FONT.regular,
+    },
+    transitMetricRow: {
+      flexDirection: 'row',
+      gap: 10,
+    },
+    transitMetricCard: {
+      flex: 1,
+      borderRadius: 16,
+      backgroundColor: colors.surfaceAlt,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      gap: 4,
+    },
+    transitMetricLabel: {
+      color: colors.textMuted,
+      fontSize: 11,
+      fontFamily: FONT.medium,
+      textTransform: 'uppercase',
+      letterSpacing: 0.4,
+    },
+    transitMetricValue: {
+      color: colors.textPrimary,
+      fontSize: 15,
+      fontFamily: FONT.semiBold,
+    },
+    transitList: {
+      gap: 10,
+      marginTop: 12,
+    },
+    transitListCard: {
+      borderRadius: 18,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+      padding: 14,
+      gap: 8,
+    },
+    transitListHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      gap: 12,
+      alignItems: 'flex-start',
+    },
+    transitListTitleBlock: {
+      flex: 1,
+      gap: 2,
+    },
+    transitListTitle: {
+      color: colors.textPrimary,
+      fontSize: 14,
+      lineHeight: 20,
+      fontFamily: FONT.semiBold,
+    },
+    transitListSub: {
+      color: colors.textMuted,
+      fontSize: 12,
+      lineHeight: 18,
+      fontFamily: FONT.regular,
+    },
+    transitListPct: {
+      fontSize: 14,
+      lineHeight: 20,
+      fontFamily: FONT.extraBold,
+    },
+    transitListRange: {
+      color: colors.textMuted,
+      fontSize: 12,
+      lineHeight: 18,
+      fontFamily: FONT.regular,
+    },
+    transitListFooter: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      gap: 8,
+      alignItems: 'center',
+    },
+    transitListValue: {
+      color: colors.textPrimary,
+      fontSize: 12,
+      lineHeight: 18,
+      fontFamily: FONT.medium,
     },
     section: {
       gap: 10,

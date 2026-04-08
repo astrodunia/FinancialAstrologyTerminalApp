@@ -18,7 +18,6 @@ import {
   BarChart3,
   Bell,
   Bookmark,
-  Check,
   Briefcase,
   Building2,
   ChartNoAxesCombined,
@@ -31,6 +30,7 @@ import {
   TrendingUp,
   Users,
   Wallet,
+  X,
 } from 'lucide-react-native';
 import AppDialog from '../../components/AppDialog';
 import AppText from '../../components/AppText';
@@ -59,7 +59,10 @@ import {
   getListById,
   getLists as getWatchlists,
   normalizeSymbol as normalizeWatchlistSymbol,
+  removeSymbol as removeSymbolFromWatchlist,
 } from '../../services/watchlistApi';
+
+const nakshatraTransitData = require('../../../nakshatra-transits.json');
 
 const FONT = {
   regular: 'NotoSans-Regular',
@@ -154,6 +157,9 @@ const chartPath = (points: StockHistoryPoint[], width: number, height: number) =
 const downsampleHistoryForChart = (points: StockHistoryPoint[] | null, timeframe: string) => {
   if (!points?.length) return [];
 
+  const cleaned = sanitizeHistoryForChart(points);
+  if (!cleaned.length) return [];
+
   const maxPointsMap: Record<string, number> = {
     '1D': 72,
     '5D': 80,
@@ -167,11 +173,11 @@ const downsampleHistoryForChart = (points: StockHistoryPoint[] | null, timeframe
   };
 
   const maxPoints = maxPointsMap[timeframe] || 90;
-  if (points.length <= maxPoints) return points;
+  if (cleaned.length <= maxPoints) return cleaned;
 
-  const stride = Math.ceil(points.length / maxPoints);
-  const sampled = points.filter((_, index) => index % stride === 0);
-  const last = points[points.length - 1];
+  const stride = Math.ceil(cleaned.length / maxPoints);
+  const sampled = cleaned.filter((_, index) => index % stride === 0);
+  const last = cleaned[cleaned.length - 1];
 
   if (sampled[sampled.length - 1]?.timestamp !== last.timestamp) {
     sampled.push(last);
@@ -180,12 +186,396 @@ const downsampleHistoryForChart = (points: StockHistoryPoint[] | null, timeframe
   return sampled;
 };
 
+const ratioBetween = (a: number, b: number) => {
+  if (!Number.isFinite(a) || !Number.isFinite(b) || a <= 0 || b <= 0) return Number.POSITIVE_INFINITY;
+  return Math.max(a, b) / Math.min(a, b);
+};
+
+const isSuspiciousOutlier = (value: number, anchor: number) => ratioBetween(value, anchor) >= 3.5;
+
+const sanitizeHistoryForChart = (points: StockHistoryPoint[] | null) => {
+  if (!points?.length) return [];
+
+  const cleaned = points
+    .filter(
+      (point) =>
+        Number.isFinite(point?.timestamp) &&
+        Number.isFinite(point?.value) &&
+        (point?.value ?? 0) > 0,
+    )
+    .sort((a, b) => a.timestamp - b.timestamp)
+    .reduce<StockHistoryPoint[]>((acc, point) => {
+      if (acc.length && acc[acc.length - 1].timestamp === point.timestamp) {
+        acc[acc.length - 1] = point;
+      } else {
+        acc.push(point);
+      }
+      return acc;
+    }, []);
+
+  if (cleaned.length <= 2) return cleaned;
+
+  return cleaned.filter((point, index, arr) => {
+    if (arr.length <= 2) return true;
+
+    if (index === 0 && arr[1] && arr[2]) {
+      const anchor = (arr[1].value + arr[2].value) / 2;
+      return !(ratioBetween(arr[1].value, arr[2].value) <= 1.35 && isSuspiciousOutlier(point.value, anchor));
+    }
+
+    if (index === arr.length - 1 && arr[index - 1] && arr[index - 2]) {
+      const anchor = (arr[index - 1].value + arr[index - 2].value) / 2;
+      return !(
+        ratioBetween(arr[index - 1].value, arr[index - 2].value) <= 1.35 &&
+        isSuspiciousOutlier(point.value, anchor)
+      );
+    }
+
+    const prev = arr[index - 1];
+    const next = arr[index + 1];
+    if (!prev || !next) return true;
+
+    const anchor = (prev.value + next.value) / 2;
+    return !(ratioBetween(prev.value, next.value) <= 1.35 && isSuspiciousOutlier(point.value, anchor));
+  });
+};
+
+type TransitMode = 'planetary' | 'nakshatra';
+
+type TransitRow = {
+  planet: string;
+  rashi: string;
+  start: string;
+  end: string | null;
+  metadata?: {
+    calendarYear?: number;
+    timezone?: string;
+    source?: string;
+  };
+  extras?: {
+    nakshatra?: string | null;
+    motion?: string | null;
+    comment?: string | null;
+  };
+};
+
+type TransitPerformance = {
+  key: string;
+  mode: TransitMode;
+  planet: string;
+  label: string;
+  subLabel: string;
+  start: string;
+  end: string | null;
+  startClose: number;
+  endClose: number;
+  absChange: number;
+  pctChange: number;
+  isActive: boolean;
+};
+
+const TRANSIT_SOURCE_NAKSHATRA = 'drikpanchang-nakshatra';
+const DRIK_PLANET_MAP: Record<string, string> = {
+  surya: 'Sun',
+  chandra: 'Moon',
+  mangal: 'Mars',
+  budha: 'Mercury',
+  guru: 'Jupiter',
+  shukra: 'Venus',
+  shani: 'Saturn',
+  rahu: 'Rahu',
+  ketu: 'Ketu',
+  arun: 'Uranus',
+  varun: 'Neptune',
+  yama: 'Pluto',
+};
+
+const parseTransitIso = (value?: string | null) => {
+  if (!value) return null;
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(value)) {
+    const dt = new Date(`${value}+05:30`);
+    return Number.isFinite(dt.getTime()) ? dt.toISOString() : null;
+  }
+  const dt = new Date(value);
+  return Number.isFinite(dt.getTime()) ? dt.toISOString() : null;
+};
+
+const normalizeNakshatraLabel = (raw?: string | null) => {
+  const cleaned = String(raw || '').trim();
+  if (!cleaned) {
+    return { label: 'Unknown', nakshatra: 'Unknown', motion: null as string | null };
+  }
+
+  const hasTruePrefix = /^True\s+/i.test(cleaned);
+  const deTrue = cleaned.replace(/^True\s+/i, '').trim();
+  const transitMatch = deTrue.match(/transits to\s+(.+)$/i);
+  const target = (transitMatch?.[1] || deTrue).trim();
+  const motion = hasTruePrefix ? 'True' : null;
+
+  return {
+    label: motion ? `${motion} ${target}` : target,
+    nakshatra: target,
+    motion,
+  };
+};
+
+const buildNakshatraRows = (dataset: any): TransitRow[] => {
+  const years = dataset?.years || {};
+  const byPlanet = new Map<string, any[]>();
+
+  Object.entries(years).forEach(([yearKey, planetMap]) => {
+    const yearNum = Number(yearKey);
+    if (!Number.isFinite(yearNum) || !planetMap || typeof planetMap !== 'object') return;
+
+    Object.entries(planetMap as Record<string, any>).forEach(([planetKey, payload]) => {
+      const planet = DRIK_PLANET_MAP[planetKey.toLowerCase()] || planetKey;
+      const transits = Array.isArray(payload?.transits) ? payload.transits : [];
+      const parsed = transits
+        .map((transit: any) => {
+          const start = parseTransitIso(transit?.transitTime);
+          if (!start) return null;
+          const end = parseTransitIso(transit?.transitEndTime);
+          const label = normalizeNakshatraLabel(transit?.nakshatra);
+          return {
+            planet,
+            yearNum,
+            start,
+            end,
+            label,
+            raw: typeof transit?.nakshatra === 'string' ? transit.nakshatra : '',
+          };
+        })
+        .filter(Boolean)
+        .sort((a: any, b: any) => a.start.localeCompare(b.start));
+
+      const bucket = byPlanet.get(planet) || [];
+      bucket.push(...parsed);
+      byPlanet.set(planet, bucket);
+    });
+  });
+
+  const rows: TransitRow[] = [];
+  byPlanet.forEach((entries, planet) => {
+    const sorted = entries.slice().sort((a: any, b: any) => a.start.localeCompare(b.start));
+    sorted.forEach((entry: any, index: number) => {
+      const next = sorted[index + 1];
+      rows.push({
+        planet,
+        rashi: entry.label.label,
+        start: entry.start,
+        end: entry.end || (next ? next.start : null),
+        metadata: {
+          calendarYear: entry.yearNum,
+          timezone: 'Asia/Kolkata',
+          source: TRANSIT_SOURCE_NAKSHATRA,
+        },
+        extras: {
+          nakshatra: entry.label.nakshatra,
+          motion: entry.label.motion,
+          comment: entry.raw ? `Raw: ${entry.raw}` : null,
+        },
+      });
+    });
+  });
+
+  return rows.sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+};
+
+const ALL_NAKSHATRA_ROWS: TransitRow[] = buildNakshatraRows(nakshatraTransitData);
+
+const overlapsRange = (row: TransitRow, startTs: number, endTs: number) => {
+  const rowStart = new Date(row.start).getTime();
+  const rowEnd = row.end ? new Date(row.end).getTime() : endTs;
+  if (!Number.isFinite(rowStart) || !Number.isFinite(rowEnd)) return false;
+  return rowEnd >= startTs && rowStart <= endTs;
+};
+
+const findPointAtOrAfter = (points: StockHistoryPoint[], targetTs: number) => {
+  for (let index = 0; index < points.length; index += 1) {
+    if (points[index].timestamp >= targetTs) return points[index];
+  }
+  return null;
+};
+
+const findPointAtOrBefore = (points: StockHistoryPoint[], targetTs: number) => {
+  for (let index = points.length - 1; index >= 0; index -= 1) {
+    if (points[index].timestamp <= targetTs) return points[index];
+  }
+  return null;
+};
+
+const getHistoryPointClose = (point: StockHistoryPoint | null) => {
+  if (!point) return null;
+  return point.close ?? point.value ?? point.open ?? null;
+};
+
+const computeTransitPerformance = (
+  rows: TransitRow[],
+  history: StockHistoryPoint[],
+  rangeEndTs: number,
+  mode: TransitMode,
+): TransitPerformance[] => {
+  return rows
+    .map((row, index) => {
+      const startTs = new Date(row.start).getTime();
+      const endTs = row.end ? new Date(row.end).getTime() : rangeEndTs;
+      if (!Number.isFinite(startTs) || !Number.isFinite(endTs) || endTs < startTs) return null;
+
+      const startPoint = findPointAtOrAfter(history, startTs) || findPointAtOrBefore(history, startTs);
+      const endPoint = findPointAtOrBefore(history, endTs) || findPointAtOrAfter(history, endTs);
+      const startClose = getHistoryPointClose(startPoint);
+      const endClose = getHistoryPointClose(endPoint);
+      if (startClose == null || endClose == null || startClose === 0) return null;
+
+      const absChange = endClose - startClose;
+      const pctChange = (absChange / startClose) * 100;
+      const now = Date.now();
+      const activeEndTs = row.end ? endTs : Math.max(endTs, now);
+      const isActive = startTs <= now && now <= activeEndTs;
+
+      const label = mode === 'nakshatra' ? row.extras?.nakshatra || row.rashi || row.planet : `${row.planet} • ${row.rashi}`;
+      const subLabel =
+        mode === 'nakshatra'
+          ? row.planet
+          : row.extras?.nakshatra
+            ? `${row.rashi} • ${row.extras.nakshatra}`
+            : row.rashi;
+
+      return {
+        key: [
+          mode,
+          row.planet,
+          row.start,
+          row.end || 'open',
+          row.rashi,
+          row.extras?.nakshatra || '',
+          row.metadata?.source || 'unknown',
+          row.metadata?.calendarYear ?? 'na',
+          index,
+        ].join(':'),
+        mode,
+        planet: row.planet,
+        label,
+        subLabel,
+        start: row.start,
+        end: row.end,
+        startClose,
+        endClose,
+        absChange,
+        pctChange,
+        isActive,
+      };
+    })
+    .filter(Boolean)
+    .sort((a: any, b: any) => new Date(b.start).getTime() - new Date(a.start).getTime()) as TransitPerformance[];
+};
+
+async function fetchPlanetaryTransitRows(authFetch: any, years: number[], signal?: AbortSignal): Promise<TransitRow[]> {
+  const allRows: TransitRow[] = [];
+
+  for (const year of years) {
+    const response = await authFetch(`/api/transits?year=${encodeURIComponent(String(year))}`, {
+      method: 'GET',
+      signal,
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      const message = payload?.error || payload?.message || `Failed to fetch transit rows for ${year}.`;
+      throw new Error(message);
+    }
+    const rows = Array.isArray(payload?.rows) ? payload.rows : [];
+    allRows.push(...rows);
+  }
+
+  return allRows;
+}
+
+const useTransitPerformance = (history: StockHistoryPoint[] | null, authFetch: any) => {
+  const [planetaryRows, setPlanetaryRows] = useState<TransitRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const sortedHistory = useMemo(
+    () => (Array.isArray(history) ? history.slice().sort((a, b) => a.timestamp - b.timestamp) : []),
+    [history],
+  );
+
+  const range = useMemo(() => {
+    if (!sortedHistory.length) return null;
+    return {
+      startTs: sortedHistory[0].timestamp,
+      endTs: sortedHistory[sortedHistory.length - 1].timestamp,
+    };
+  }, [sortedHistory]);
+
+  useEffect(() => {
+    if (!range || !authFetch) {
+      setPlanetaryRows([]);
+      setLoading(false);
+      setError('');
+      return;
+    }
+
+    const startYear = new Date(range.startTs).getUTCFullYear();
+    const endYear = new Date(range.endTs).getUTCFullYear();
+    const years = [];
+    for (let year = startYear; year <= endYear; year += 1) {
+      years.push(year);
+    }
+
+    let active = true;
+    const controller = new AbortController();
+    setLoading(true);
+    setError('');
+
+    fetchPlanetaryTransitRows(authFetch, years, controller.signal)
+      .then((rows) => {
+        if (!active) return;
+        setPlanetaryRows(rows);
+      })
+      .catch((err: any) => {
+        if (!active || String(err?.name || '').toLowerCase() === 'aborterror') return;
+        setPlanetaryRows([]);
+        setError(err?.message || 'Unable to load planetary transits.');
+      })
+      .finally(() => {
+        if (!active) return;
+        setLoading(false);
+      });
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [authFetch, range]);
+
+  const nakshatraResults = useMemo(() => {
+    if (!range || !sortedHistory.length) return [];
+    const rows = ALL_NAKSHATRA_ROWS.filter((row) => overlapsRange(row, range.startTs, range.endTs));
+    return computeTransitPerformance(rows, sortedHistory, range.endTs, 'nakshatra');
+  }, [range, sortedHistory]);
+
+  const planetaryResults = useMemo(() => {
+    if (!range || !sortedHistory.length || !planetaryRows.length) return [];
+    const rows = planetaryRows.filter((row) => overlapsRange(row, range.startTs, range.endTs));
+    return computeTransitPerformance(rows, sortedHistory, range.endTs, 'planetary');
+  }, [planetaryRows, range, sortedHistory]);
+
+  return {
+    loading,
+    error,
+    planetaryResults,
+    nakshatraResults,
+  };
+};
+
 const OverviewTab = ({
   info,
   company,
   sparkline,
   sparklineLoading,
   sparklineError,
+  onAlertPress,
   onWatchPress,
   themeColors,
   watchlistAdded,
@@ -196,6 +586,7 @@ const OverviewTab = ({
   sparkline: StockHistoryPoint[] | null;
   sparklineLoading: boolean;
   sparklineError: string;
+  onAlertPress: () => void;
   onWatchPress: () => void;
   themeColors: Record<string, string>;
   watchlistAdded: boolean;
@@ -280,7 +671,7 @@ const OverviewTab = ({
           {updatedAt ? ` • Updated ${updatedAt}` : ''}
         </AppText>
         <View style={styles.actionRow}>
-          <Pressable style={styles.actionChip}>
+          <Pressable style={styles.actionChip} onPress={onAlertPress}>
             <Bell size={15} color={themeColors.textPrimary} />
             <AppText style={styles.actionChipText}>Alert</AppText>
           </Pressable>
@@ -294,12 +685,12 @@ const OverviewTab = ({
             disabled={watchlistBusy}
           >
             {watchlistAdded ? (
-              <Check size={15} color={themeColors.positive} />
+              <X size={14} strokeWidth={2} color={themeColors.negative} />
             ) : (
               <Bookmark size={15} color={themeColors.textPrimary} />
             )}
             <AppText style={[styles.actionChipText, watchlistAdded ? styles.actionChipTextAdded : null]}>
-              {watchlistBusy ? 'Saving...' : watchlistAdded ? 'Added' : 'Watch'}
+              {watchlistBusy ? 'Saving...' : watchlistAdded ? 'Remove' : 'Watch'}
             </AppText>
           </Pressable>
         </View>
@@ -360,10 +751,6 @@ const OverviewTab = ({
                 .join(' • ') || 'No company metadata available'}
             </AppText>
           </View>
-          <Pressable style={styles.refreshButton}>
-            <RefreshCcw size={15} color={themeColors.textPrimary} />
-            <AppText style={styles.refreshButtonText}>Refresh</AppText>
-          </Pressable>
         </View>
 
         <View style={styles.heroBadgeRow}>
@@ -565,10 +952,12 @@ const ChartTab = ({
   error,
   timeframe,
   onChangeTimeframe,
+  onAlertPress,
   onWatchPress,
   themeColors,
   watchlistAdded,
   watchlistBusy,
+  authFetch,
 }: {
   info: StockInfo | null;
   history: StockHistoryPoint[] | null;
@@ -576,13 +965,18 @@ const ChartTab = ({
   error: string;
   timeframe: string;
   onChangeTimeframe: (value: string) => void;
+  onAlertPress: () => void;
   onWatchPress: () => void;
   themeColors: Record<string, string>;
   watchlistAdded: boolean;
   watchlistBusy: boolean;
+  authFetch: any;
 }) => {
   const styles = useMemo(() => createStyles(themeColors), [themeColors]);
   const displayHistory = useMemo(() => downsampleHistoryForChart(history, timeframe), [history, timeframe]);
+  const [transitMode, setTransitMode] = useState<TransitMode>('planetary');
+  const [selectedTransitPlanet, setSelectedTransitPlanet] = useState('All');
+  const { loading: transitLoading, error: transitError, planetaryResults, nakshatraResults } = useTransitPerformance(history, authFetch);
   const trend = useMemo(() => {
     if (!displayHistory?.length) {
       return {
@@ -614,6 +1008,29 @@ const ChartTab = ({
       : info?.regularMarketChange != null && info.regularMarketChange < 0
         ? themeColors.negative
         : themeColors.positive;
+  const transitResults = transitMode === 'planetary' ? planetaryResults : nakshatraResults;
+  const latestHistoryTimestamp = history?.length ? history[history.length - 1].timestamp : null;
+  const transitPlanets = useMemo(() => {
+    const set = new Set<string>();
+    transitResults.forEach((item) => {
+      if (item.planet) set.add(item.planet);
+    });
+    return ['All', ...Array.from(set).sort((a, b) => a.localeCompare(b))];
+  }, [transitResults]);
+  const filteredTransitResults = useMemo(() => {
+    if (selectedTransitPlanet === 'All') return transitResults;
+    return transitResults.filter((item) => item.planet === selectedTransitPlanet);
+  }, [selectedTransitPlanet, transitResults]);
+  const featuredTransit = useMemo(
+    () => filteredTransitResults.find((item) => item.isActive) || filteredTransitResults[0] || null,
+    [filteredTransitResults],
+  );
+
+  useEffect(() => {
+    if (!transitPlanets.includes(selectedTransitPlanet)) {
+      setSelectedTransitPlanet('All');
+    }
+  }, [selectedTransitPlanet, transitPlanets]);
 
   return (
     <View style={styles.tabContent}>
@@ -628,7 +1045,7 @@ const ChartTab = ({
         </View>
 
         <View style={styles.actionRow}>
-          <Pressable style={styles.actionChip}>
+          <Pressable style={styles.actionChip} onPress={onAlertPress}>
             <Bell size={15} color={themeColors.textPrimary} />
             <AppText style={styles.actionChipText}>Alert</AppText>
           </Pressable>
@@ -642,12 +1059,12 @@ const ChartTab = ({
             disabled={watchlistBusy}
           >
             {watchlistAdded ? (
-              <Check size={15} color={themeColors.positive} />
+              <X size={14} strokeWidth={2} color={themeColors.negative} />
             ) : (
               <Bookmark size={15} color={themeColors.textPrimary} />
             )}
             <AppText style={[styles.actionChipText, watchlistAdded ? styles.actionChipTextAdded : null]}>
-              {watchlistBusy ? 'Saving...' : watchlistAdded ? 'Added' : 'Watch'}
+              {watchlistBusy ? 'Saving...' : watchlistAdded ? 'Remove' : 'Watch'}
             </AppText>
           </Pressable>
         </View>
@@ -688,6 +1105,147 @@ const ChartTab = ({
             );
           })}
         </View>
+      </View>
+
+      <View style={styles.card}>
+        <View style={styles.cardTitleRow}>
+          <View>
+            <AppText style={styles.cardTitle}>Transit Performance</AppText>
+            <AppText style={styles.chartTransitCaption}>
+              Stock move across the current chart range using planet transit API and local nakshatra windows.
+            </AppText>
+          </View>
+        </View>
+
+        <View style={styles.chartTransitModeRow}>
+          {(['planetary', 'nakshatra'] as TransitMode[]).map((mode) => {
+            const active = mode === transitMode;
+            return (
+              <Pressable
+                key={mode}
+                onPress={() => setTransitMode(mode)}
+                style={[styles.chartTransitModeChip, active ? styles.chartTransitModeChipActive : null]}
+              >
+                <AppText style={[styles.chartTransitModeText, active ? styles.chartTransitModeTextActive : null]}>
+                  {mode === 'planetary' ? 'Planetary' : 'Nakshatra'}
+                </AppText>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        {transitPlanets.length > 1 ? (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
+            {transitPlanets.map((planet) => {
+              const active = planet === selectedTransitPlanet;
+              return (
+                <Pressable
+                  key={planet}
+                  onPress={() => setSelectedTransitPlanet(planet)}
+                  style={[styles.chip, active ? styles.chipActive : null]}
+                >
+                  <AppText style={[styles.chipText, active ? styles.chipTextActive : null]}>{planet}</AppText>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        ) : null}
+
+        {featuredTransit ? (
+          <View style={styles.transitFeaturedCard}>
+            <View style={styles.transitFeaturedHeader}>
+              <View style={styles.transitFeaturedTitleBlock}>
+                <AppText style={styles.transitFeaturedEyebrow}>
+                  {featuredTransit.isActive ? 'Current Transit' : 'Latest Transit'}
+                </AppText>
+                <AppText style={styles.transitFeaturedTitle}>{featuredTransit.label}</AppText>
+                <AppText style={styles.transitFeaturedSub}>{featuredTransit.subLabel}</AppText>
+              </View>
+              <View style={styles.transitFeaturedValueBlock}>
+                <AppText
+                  style={[
+                    styles.transitFeaturedPct,
+                    { color: featuredTransit.pctChange >= 0 ? themeColors.positive : themeColors.negative },
+                  ]}
+                >
+                  {featuredTransit.pctChange >= 0 ? '+' : ''}
+                  {featuredTransit.pctChange.toFixed(2)}%
+                </AppText>
+                <AppText style={styles.transitFeaturedValue}>
+                  {featuredTransit.absChange >= 0 ? '+' : ''}
+                  {formatCurrency(featuredTransit.absChange, info?.currency)}
+                </AppText>
+              </View>
+            </View>
+
+            <AppText style={styles.transitFeaturedRange}>
+              {formatDateTime(featuredTransit.start)} {'->'} {formatDateTime(featuredTransit.end || latestHistoryTimestamp || '')}
+            </AppText>
+
+            <View style={styles.transitMetricRow}>
+              <View style={styles.transitMetricCard}>
+                <AppText style={styles.transitMetricLabel}>Start</AppText>
+                <AppText style={styles.transitMetricValue}>{formatCurrency(featuredTransit.startClose, info?.currency)}</AppText>
+              </View>
+              <View style={styles.transitMetricCard}>
+                <AppText style={styles.transitMetricLabel}>End</AppText>
+                <AppText style={styles.transitMetricValue}>{formatCurrency(featuredTransit.endClose, info?.currency)}</AppText>
+              </View>
+            </View>
+          </View>
+        ) : null}
+
+        {transitLoading ? (
+          <View style={styles.chartTransitState}>
+            <ActivityIndicator size="small" color={themeColors.textPrimary} />
+            <AppText style={styles.emptyText}>Loading transit windows...</AppText>
+          </View>
+        ) : transitMode === 'planetary' && transitError ? (
+          <AppText style={styles.emptyText}>{transitError}</AppText>
+        ) : filteredTransitResults.length ? (
+          <View style={styles.transitList}>
+            {filteredTransitResults.slice(0, 8).map((item) => (
+              <View key={item.key} style={styles.transitListCard}>
+                <View style={styles.transitListHeader}>
+                  <View style={styles.transitListTitleBlock}>
+                    <AppText style={styles.transitListTitle}>{item.label}</AppText>
+                    <AppText style={styles.transitListSub}>{item.subLabel}</AppText>
+                  </View>
+                  <AppText
+                    style={[
+                      styles.transitListPct,
+                      { color: item.pctChange >= 0 ? themeColors.positive : themeColors.negative },
+                    ]}
+                  >
+                    {item.pctChange >= 0 ? '+' : ''}
+                    {item.pctChange.toFixed(2)}%
+                  </AppText>
+                </View>
+                <AppText style={styles.transitListRange}>
+                  {formatDateTime(item.start)} {'->'} {formatDateTime(item.end || latestHistoryTimestamp || '')}
+                </AppText>
+                <View style={styles.transitListFooter}>
+                  <AppText style={styles.transitListValue}>
+                    {formatCurrency(item.startClose, info?.currency)} {'->'} {formatCurrency(item.endClose, info?.currency)}
+                  </AppText>
+                  <AppText
+                    style={[
+                      styles.transitListValue,
+                      { color: item.absChange >= 0 ? themeColors.positive : themeColors.negative },
+                    ]}
+                  >
+                    {item.absChange >= 0 ? '+' : ''}
+                    {formatCurrency(item.absChange, info?.currency)}
+                  </AppText>
+                </View>
+              </View>
+            ))}
+          </View>
+        ) : (
+          <AppText style={styles.emptyText}>
+            No {transitMode === 'planetary' ? 'planetary' : 'nakshatra'} transit performance matched this chart range.
+          </AppText>
+        )}
       </View>
 
       <View style={styles.metricsGrid}>
@@ -1581,15 +2139,17 @@ const MainChart = ({
   const { theme, themeColors } = useUser() as any;
   const styles = useMemo(() => createStyles(themeColors), [themeColors]);
   const { width } = useWindowDimensions();
+  const chartPoints = useMemo(() => sanitizeHistoryForChart(points), [points]);
+  const hasChartPoints = chartPoints.length > 0;
   const chartWidth = Math.max(width - 72, 240);
   const chartHeight = tall ? 372 : 292;
   const plotHeight = chartHeight - 28;
-  const values = points.map((item) => item.value);
+  const values = hasChartPoints ? chartPoints.map((item) => item.value) : [0];
   const min = Math.min(...values);
   const max = Math.max(...values);
-  const path = chartPath(points, chartWidth, plotHeight);
-  const areaPath = buildAreaPath(points, chartWidth, plotHeight);
-  const step = points.length === 1 ? 0 : chartWidth / (points.length - 1);
+  const path = hasChartPoints ? chartPath(chartPoints, chartWidth, plotHeight) : '';
+  const areaPath = hasChartPoints ? buildAreaPath(chartPoints, chartWidth, plotHeight) : '';
+  const step = chartPoints.length <= 1 ? 0 : chartWidth / (chartPoints.length - 1);
   const softenedColor =
     color === '#199E63' || color === '#49D18D'
       ? '#16A34A'
@@ -1600,11 +2160,15 @@ const MainChart = ({
 
   const setNearestPoint = useCallback(
     (touchX: number) => {
+      if (!chartPoints.length) {
+        setActiveIndex(null);
+        return;
+      }
       const clampedX = Math.max(0, Math.min(chartWidth, touchX));
       const index = step === 0 ? 0 : Math.round(clampedX / step);
-      setActiveIndex(Math.max(0, Math.min(points.length - 1, index)));
+      setActiveIndex(Math.max(0, Math.min(chartPoints.length - 1, index)));
     },
-    [chartWidth, points.length, step],
+    [chartPoints.length, chartWidth, step],
   );
 
   const panResponder = useMemo(
@@ -1625,16 +2189,16 @@ const MainChart = ({
   );
 
   const activePoint = useMemo(() => {
-    if (activeIndex == null) return null;
-    const point = points[activeIndex];
+    if (activeIndex == null || !chartPoints.length) return null;
+    const point = chartPoints[activeIndex];
     if (!point) return null;
     const x = step === 0 ? chartWidth / 2 : activeIndex * step;
     const y = plotHeight - ((point.value - min) / (max - min || 1)) * plotHeight;
-    const baseline = points[0]?.value ?? point.value;
+    const baseline = chartPoints[0]?.value ?? point.value;
     const delta = point.value - baseline;
     const pct = baseline ? (delta / baseline) * 100 : 0;
     return { point, x, y, delta, pct };
-  }, [activeIndex, chartWidth, max, min, plotHeight, points, step]);
+  }, [activeIndex, chartPoints, chartWidth, max, min, plotHeight, step]);
 
   const tooltipTheme = {
     backgroundColor: theme === 'light' ? 'rgba(15, 23, 42, 0.94)' : 'rgba(9, 14, 24, 0.9)',
@@ -1646,39 +2210,47 @@ const MainChart = ({
   return (
     <View>
       <View style={styles.chartWrap}>
-        <Svg width={chartWidth} height={chartHeight}>
-          <Defs>
-            <LinearGradient id="chartAreaGradient" x1="0" y1="0" x2="0" y2="1">
-              <Stop offset="0%" stopColor={softenedColor} stopOpacity="0.18" />
-              <Stop offset="100%" stopColor={softenedColor} stopOpacity="0.015" />
-            </LinearGradient>
-          </Defs>
-          <Line x1="0" y1={plotHeight} x2={chartWidth} y2={plotHeight} stroke="rgba(148,163,184,0.18)" strokeWidth="1" />
-          {tall ? (
-            <>
-              <Line x1={chartWidth * 0.38} y1={0} x2={chartWidth * 0.38} y2={plotHeight} stroke="rgba(148,163,184,0.12)" strokeWidth="1" />
-              <Line x1={0} y1={plotHeight * 0.45} x2={chartWidth} y2={plotHeight * 0.45} stroke="rgba(148,163,184,0.12)" strokeWidth="1" strokeDasharray="4 4" />
-            </>
-          ) : null}
-          <Path d={areaPath} fill="url(#chartAreaGradient)" />
-          <Path d={path} fill="none" stroke={softenedColor} strokeOpacity={0.92} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
-          {activePoint ? (
-            <>
-              <Line
-                x1={activePoint.x}
-                y1="0"
-                x2={activePoint.x}
-                y2={plotHeight}
-                stroke={themeColors.textMuted}
-                strokeOpacity={0.34}
-                strokeDasharray="4 4"
-                strokeWidth="1"
-              />
-              <Circle cx={activePoint.x} cy={activePoint.y} r="5" fill={softenedColor} stroke={themeColors.surface} strokeWidth="2.5" />
-            </>
-          ) : null}
-        </Svg>
-        <View style={StyleSheet.absoluteFill} {...panResponder.panHandlers} />
+        {hasChartPoints ? (
+          <>
+            <Svg width={chartWidth} height={chartHeight}>
+              <Defs>
+                <LinearGradient id="chartAreaGradient" x1="0" y1="0" x2="0" y2="1">
+                  <Stop offset="0%" stopColor={softenedColor} stopOpacity="0.18" />
+                  <Stop offset="100%" stopColor={softenedColor} stopOpacity="0.015" />
+                </LinearGradient>
+              </Defs>
+              <Line x1="0" y1={plotHeight} x2={chartWidth} y2={plotHeight} stroke="rgba(148,163,184,0.18)" strokeWidth="1" />
+              {tall ? (
+                <>
+                  <Line x1={chartWidth * 0.38} y1={0} x2={chartWidth * 0.38} y2={plotHeight} stroke="rgba(148,163,184,0.12)" strokeWidth="1" />
+                  <Line x1={0} y1={plotHeight * 0.45} x2={chartWidth} y2={plotHeight * 0.45} stroke="rgba(148,163,184,0.12)" strokeWidth="1" strokeDasharray="4 4" />
+                </>
+              ) : null}
+              <Path d={areaPath} fill="url(#chartAreaGradient)" />
+              <Path d={path} fill="none" stroke={softenedColor} strokeOpacity={0.92} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+              {activePoint ? (
+                <>
+                  <Line
+                    x1={activePoint.x}
+                    y1="0"
+                    x2={activePoint.x}
+                    y2={plotHeight}
+                    stroke={themeColors.textMuted}
+                    strokeOpacity={0.34}
+                    strokeDasharray="4 4"
+                    strokeWidth="1"
+                  />
+                  <Circle cx={activePoint.x} cy={activePoint.y} r="5" fill={softenedColor} stroke={themeColors.surface} strokeWidth="2.5" />
+                </>
+              ) : null}
+            </Svg>
+            <View style={StyleSheet.absoluteFill} {...panResponder.panHandlers} />
+          </>
+        ) : (
+          <View style={styles.chartLoaderWrap}>
+            <AppText style={styles.emptyText}>No chart data for this timeframe.</AppText>
+          </View>
+        )}
         {activePoint ? (
           <View
             style={[
@@ -1711,10 +2283,6 @@ const MainChart = ({
           </View>
         ) : null}
       </View>
-      <View style={styles.chartLegendRow}>
-        <AppText style={styles.chartLegendText}>{formatCurrency(min)}</AppText>
-        <AppText style={styles.chartLegendText}>{formatCurrency(max)}</AppText>
-      </View>
     </View>
   );
 };
@@ -1732,9 +2300,11 @@ const TabContent = ({
   symbol,
   token,
   themeColors,
+  onAlertPress,
   onWatchPress,
   watchlistAdded,
   watchlistBusy,
+  authFetch,
 }: any) => {
   if (activeTab === 'overview') {
     return (
@@ -1744,6 +2314,7 @@ const TabContent = ({
         sparkline={overviewSparkline.data}
         sparklineLoading={overviewSparkline.loading}
         sparklineError={overviewSparkline.error}
+        onAlertPress={onAlertPress}
         onWatchPress={onWatchPress}
         themeColors={themeColors}
         watchlistAdded={watchlistAdded}
@@ -1761,10 +2332,12 @@ const TabContent = ({
         error={chartState.error}
         timeframe={chartTimeframe}
         onChangeTimeframe={onChangeChartTimeframe}
+        onAlertPress={onAlertPress}
         onWatchPress={onWatchPress}
         themeColors={themeColors}
         watchlistAdded={watchlistAdded}
         watchlistBusy={watchlistBusy}
+        authFetch={authFetch}
       />
     );
   }
@@ -1819,6 +2392,7 @@ const StockDetailScreen = ({ route }: any) => {
   const [watchlistOptions, setWatchlistOptions] = useState<any[]>([]);
   const [selectedWatchlistId, setSelectedWatchlistId] = useState('');
   const [watchlistAdded, setWatchlistAdded] = useState(false);
+  const [watchlistMemberships, setWatchlistMemberships] = useState<Array<{ id: string; title: string }>>([]);
   const [watchlistMembershipTitles, setWatchlistMembershipTitles] = useState<string[]>([]);
   const [watchlistError, setWatchlistError] = useState('');
   const [watchlistDialog, setWatchlistDialog] = useState({
@@ -1906,6 +2480,14 @@ const StockDetailScreen = ({ route }: any) => {
     setWatchlistDialog((prev) => ({ ...prev, visible: false }));
   }, []);
 
+  useEffect(() => {
+    if (!watchlistDialog.visible || watchlistDialog.title !== 'Added to watchlist') return undefined;
+    const timer = setTimeout(() => {
+      setWatchlistDialog((prev) => ({ ...prev, visible: false }));
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [watchlistDialog.title, watchlistDialog.visible]);
+
   const loadDetailedWatchlists = useCallback(async (signal?: AbortSignal) => {
     const lists = await getWatchlists(authFetch, signal);
     const detailed = await Promise.all(
@@ -1930,6 +2512,7 @@ const StockDetailScreen = ({ route }: any) => {
   const refreshWatchlistMembership = useCallback(async (signal?: AbortSignal) => {
     if (!token || !normalizedWatchSymbol) {
       setWatchlistAdded(false);
+      setWatchlistMemberships([]);
       setWatchlistMembershipTitles([]);
       setWatchlistLoading(false);
       setWatchlistError('');
@@ -1943,6 +2526,11 @@ const StockDetailScreen = ({ route }: any) => {
       const lists = await loadDetailedWatchlists(signal);
       const matches = lists.filter((list: any) => Array.isArray(list?.symbols) && list.symbols.includes(normalizedWatchSymbol));
       setWatchlistAdded(matches.length > 0);
+      setWatchlistMemberships(
+        matches
+          .map((list: any) => ({ id: String(list.id || ''), title: String(list.title || 'Watchlist') }))
+          .filter((item) => item.id),
+      );
       setWatchlistMembershipTitles(matches.map((list: any) => String(list.title || 'Watchlist')));
       return lists;
     } catch (error: any) {
@@ -1950,6 +2538,7 @@ const StockDetailScreen = ({ route }: any) => {
         throw error;
       }
       setWatchlistAdded(false);
+      setWatchlistMemberships([]);
       setWatchlistMembershipTitles([]);
       setWatchlistError(error?.message || 'Unable to load watchlists.');
       return [];
@@ -1990,6 +2579,7 @@ const StockDetailScreen = ({ route }: any) => {
     try {
       await addSymbolToWatchlist(authFetch, list.id, normalizedWatchSymbol);
       setWatchlistAdded(true);
+      setWatchlistMemberships([{ id: String(list.id), title: String(list.title || 'Watchlist') }]);
       setWatchlistMembershipTitles([String(list.title || 'Watchlist')]);
       setWatchlistPickerVisible(false);
       setWatchlistOptions([]);
@@ -2003,6 +2593,39 @@ const StockDetailScreen = ({ route }: any) => {
     }
   }, [authFetch, normalizedWatchSymbol, openWatchlistDialog, refreshWatchlistMembership]);
 
+  const handleRemoveFromWatchlist = useCallback(async () => {
+    if (!normalizedWatchSymbol || !watchlistMemberships.length || watchlistBusy) {
+      return;
+    }
+
+    setWatchlistBusy(true);
+    setWatchlistError('');
+    try {
+      await Promise.all(
+        watchlistMemberships.map((item) => removeSymbolFromWatchlist(authFetch, item.id, normalizedWatchSymbol)),
+      );
+      setWatchlistAdded(false);
+      setWatchlistMemberships([]);
+      setWatchlistMembershipTitles([]);
+      openWatchlistDialog('Removed from watchlist', `${normalizedWatchSymbol} was removed from your watchlist.`);
+      await refreshWatchlistMembership();
+    } catch (error: any) {
+      openWatchlistDialog('Watchlist', error?.message || 'Unable to remove stock from watchlist.');
+    } finally {
+      setWatchlistBusy(false);
+    }
+  }, [authFetch, normalizedWatchSymbol, openWatchlistDialog, refreshWatchlistMembership, watchlistBusy, watchlistMemberships]);
+
+  const handleOpenAlertsTab = useCallback(() => {
+    if (!token) {
+      openWatchlistDialog('Sign in required', 'Sign in to create alerts for this stock.');
+      return;
+    }
+    setVisitedTabs((prev) => ({ ...prev, alerts: true }));
+    setActiveTab('alerts');
+    setIsTabSwitching(false);
+  }, [openWatchlistDialog, token]);
+
   const handleAddToWatchlist = useCallback(async () => {
     if (!token) {
       openWatchlistDialog('Sign in required', 'Sign in to save stocks to your watchlist.');
@@ -2014,8 +2637,7 @@ const StockDetailScreen = ({ route }: any) => {
     }
 
     if (watchlistAdded) {
-      const labels = watchlistMembershipTitles.length ? watchlistMembershipTitles.join(', ') : 'your watchlist';
-      openWatchlistDialog('Already added', `${normalizedWatchSymbol} is already stored in ${labels}.`);
+      await handleRemoveFromWatchlist();
       return;
     }
 
@@ -2033,6 +2655,7 @@ const StockDetailScreen = ({ route }: any) => {
 
         await addSymbolToWatchlist(authFetch, created.id, normalizedWatchSymbol);
         setWatchlistAdded(true);
+        setWatchlistMemberships([{ id: String(created.id), title: String(created.title || 'Custom Watchlist') }]);
         setWatchlistMembershipTitles([String(created.title || 'Custom Watchlist')]);
         openWatchlistDialog('Added to watchlist', `${normalizedWatchSymbol} was added to "${created.title || 'Custom Watchlist'}".`);
         await refreshWatchlistMembership();
@@ -2042,6 +2665,7 @@ const StockDetailScreen = ({ route }: any) => {
       if (lists.length === 1) {
         await addSymbolToWatchlist(authFetch, lists[0].id, normalizedWatchSymbol);
         setWatchlistAdded(true);
+        setWatchlistMemberships([{ id: String(lists[0].id), title: String(lists[0].title || 'Watchlist') }]);
         setWatchlistMembershipTitles([String(lists[0].title || 'Watchlist')]);
         openWatchlistDialog('Added to watchlist', `${normalizedWatchSymbol} was added to "${lists[0].title || 'Watchlist'}".`);
         await refreshWatchlistMembership();
@@ -2062,10 +2686,10 @@ const StockDetailScreen = ({ route }: any) => {
     normalizedWatchSymbol,
     openWatchlistDialog,
     refreshWatchlistMembership,
+    handleRemoveFromWatchlist,
     token,
     watchlistAdded,
     watchlistBusy,
-    watchlistMembershipTitles,
   ]);
 
   const handleSaveSelectedWatchlist = useCallback(() => {
@@ -2110,7 +2734,18 @@ const StockDetailScreen = ({ route }: any) => {
         >
           {visibleTabs.map((tab) => {
             const active = activeTab === tab;
-            const Icon = tab === 'chart' ? ChartNoAxesCombined : tab === 'news' ? Newspaper : tab === 'alerts' ? Bell : null;
+            const Icon =
+              tab === 'overview'
+                ? Info
+                : tab === 'chart'
+                  ? ChartNoAxesCombined
+                  : tab === 'fundamentals'
+                    ? Briefcase
+                    : tab === 'news'
+                      ? Newspaper
+                      : tab === 'alerts'
+                        ? Bell
+                        : null;
             return (
               <Pressable key={tab} onPress={() => handleTabChange(tab)} style={styles.tabButton}>
                 <View style={styles.tabButtonInner}>
@@ -2144,9 +2779,11 @@ const StockDetailScreen = ({ route }: any) => {
                 symbol={symbol}
                 token={token}
                 themeColors={themeColors}
+                onAlertPress={handleOpenAlertsTab}
                 onWatchPress={handleAddToWatchlist}
                 watchlistAdded={watchlistAdded}
                 watchlistBusy={watchlistLoading || watchlistBusy}
+                authFetch={authFetch}
               />
             </View>
           </ScrollView>
@@ -2176,12 +2813,6 @@ const StockDetailScreen = ({ route }: any) => {
           message={watchlistDialog.message}
           onRequestClose={closeWatchlistDialog}
           icon={Bookmark}
-          actions={[
-            {
-              label: 'OK',
-              onPress: closeWatchlistDialog,
-            },
-          ]}
         />
       </GradientBackground>
     </View>
@@ -2435,6 +3066,8 @@ const createStyles = (colors: Record<string, string>) =>
       paddingVertical: 8,
       borderRadius: 999,
       backgroundColor: colors.surfaceAlt,
+      borderWidth: 1,
+      borderColor: 'transparent',
     },
     actionChipDisabled: {
       opacity: 0.72,
@@ -2442,7 +3075,7 @@ const createStyles = (colors: Record<string, string>) =>
     actionChipAdded: {
       backgroundColor: colors.surfaceGlass,
       borderWidth: 1,
-      borderColor: 'rgba(73, 209, 141, 0.28)',
+      borderColor: 'rgba(207, 63, 88, 0.24)',
     },
     actionChipText: {
       color: colors.textPrimary,
@@ -2450,7 +3083,8 @@ const createStyles = (colors: Record<string, string>) =>
       fontFamily: FONT.medium,
     },
     actionChipTextAdded: {
-      color: colors.positive,
+      color: colors.negative,
+      fontSize: 13,
       fontFamily: FONT.semiBold,
     },
     watchlistModalOverlay: {
@@ -2878,6 +3512,189 @@ const createStyles = (colors: Record<string, string>) =>
       justifyContent: 'space-between',
       gap: 6,
       paddingTop: 4,
+    },
+    chartTransitCaption: {
+      marginTop: 4,
+      color: colors.textMuted,
+      fontSize: 12,
+      lineHeight: 18,
+      fontFamily: FONT.regular,
+    },
+    chartTransitModeRow: {
+      flexDirection: 'row',
+      gap: 8,
+      marginTop: 4,
+      marginBottom: 2,
+    },
+    chartTransitModeChip: {
+      flex: 1,
+      paddingVertical: 11,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceAlt,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    chartTransitModeChipActive: {
+      backgroundColor: colors.textPrimary,
+      borderColor: colors.textPrimary,
+    },
+    chartTransitModeText: {
+      color: colors.textMuted,
+      fontSize: 13,
+      fontFamily: FONT.medium,
+    },
+    chartTransitModeTextActive: {
+      color: colors.background,
+      fontFamily: FONT.semiBold,
+    },
+    chartTransitState: {
+      paddingVertical: 18,
+      gap: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    transitFeaturedCard: {
+      marginTop: 4,
+      borderRadius: 22,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceGlass,
+      padding: 16,
+      gap: 12,
+    },
+    transitFeaturedHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'flex-start',
+      gap: 12,
+    },
+    transitFeaturedTitleBlock: {
+      flex: 1,
+      gap: 4,
+    },
+    transitFeaturedValueBlock: {
+      alignItems: 'flex-end',
+      gap: 4,
+    },
+    transitFeaturedEyebrow: {
+      color: colors.textMuted,
+      fontSize: 11,
+      textTransform: 'uppercase',
+      letterSpacing: 0.4,
+      fontFamily: FONT.medium,
+    },
+    transitFeaturedTitle: {
+      color: colors.textPrimary,
+      fontSize: 18,
+      lineHeight: 24,
+      fontFamily: FONT.semiBold,
+    },
+    transitFeaturedSub: {
+      color: colors.textMuted,
+      fontSize: 12,
+      lineHeight: 18,
+      fontFamily: FONT.regular,
+    },
+    transitFeaturedPct: {
+      fontSize: 18,
+      lineHeight: 24,
+      fontFamily: FONT.extraBold,
+    },
+    transitFeaturedValue: {
+      color: colors.textPrimary,
+      fontSize: 12,
+      fontFamily: FONT.medium,
+    },
+    transitFeaturedRange: {
+      color: colors.textMuted,
+      fontSize: 12,
+      lineHeight: 18,
+      fontFamily: FONT.regular,
+    },
+    transitMetricRow: {
+      flexDirection: 'row',
+      gap: 10,
+    },
+    transitMetricCard: {
+      flex: 1,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceAlt,
+      paddingHorizontal: 12,
+      paddingVertical: 11,
+      gap: 4,
+    },
+    transitMetricLabel: {
+      color: colors.textMuted,
+      fontSize: 11,
+      fontFamily: FONT.medium,
+      textTransform: 'uppercase',
+      letterSpacing: 0.4,
+    },
+    transitMetricValue: {
+      color: colors.textPrimary,
+      fontSize: 13,
+      fontFamily: FONT.semiBold,
+    },
+    transitList: {
+      marginTop: 8,
+      gap: 10,
+    },
+    transitListCard: {
+      borderRadius: 18,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceAlt,
+      padding: 14,
+      gap: 8,
+    },
+    transitListHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'flex-start',
+      gap: 10,
+    },
+    transitListTitleBlock: {
+      flex: 1,
+      gap: 3,
+    },
+    transitListTitle: {
+      color: colors.textPrimary,
+      fontSize: 14,
+      lineHeight: 20,
+      fontFamily: FONT.semiBold,
+    },
+    transitListSub: {
+      color: colors.textMuted,
+      fontSize: 11,
+      lineHeight: 16,
+      fontFamily: FONT.regular,
+    },
+    transitListPct: {
+      fontSize: 14,
+      lineHeight: 20,
+      fontFamily: FONT.semiBold,
+    },
+    transitListRange: {
+      color: colors.textMuted,
+      fontSize: 11,
+      lineHeight: 16,
+      fontFamily: FONT.regular,
+    },
+    transitListFooter: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      gap: 10,
+    },
+    transitListValue: {
+      color: colors.textPrimary,
+      fontSize: 12,
+      lineHeight: 18,
+      fontFamily: FONT.medium,
     },
     chartTfChip: {
       minWidth: 0,

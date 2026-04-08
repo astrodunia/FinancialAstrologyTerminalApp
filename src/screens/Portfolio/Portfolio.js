@@ -17,6 +17,7 @@ import {
   Plus,
   Search,
   Target,
+  TrendingDown,
   Trash2,
   TrendingUp,
 } from 'lucide-react-native';

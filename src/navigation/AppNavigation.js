@@ -141,11 +141,11 @@ const AppNavigation = () => {
            activeRouteNameRef.current = entryRoute || (token ? 'Home' : 'Login');
            setIsRouteLoading(false);
          }}
-         onStateChange={handleNavigationStateChange}
-       >
+        onStateChange={handleNavigationStateChange}
+      >
           <Stack.Navigator
             key={token ? 'app-stack' : 'auth-stack'}
-            initialRouteName={token ? appInitialRoute : 'Login'}
+            initialRouteName={token ? (entryRoute === 'Plans' ? 'Plans' : 'Home') : 'Login'}
             screenOptions={{ headerShown: false, animation: 'none' }}
             screenListeners={stackScreenListeners}
           >
