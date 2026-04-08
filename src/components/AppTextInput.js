@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { forwardRef } from 'react';
 import { Platform, StyleSheet, TextInput } from 'react-native';
 import { useUser } from '../store/UserContext';
 
@@ -9,10 +9,10 @@ const FONT = {
   extraBold: 'NotoSans-ExtraBold',
 };
 
-function AppTextInput({ style, ...props }) {
+const AppTextInput = forwardRef(function AppTextInput({ style, ...props }, ref) {
   const { themeColors } = useUser();
-  return <TextInput {...props} style={[styles.base, { color: themeColors.textPrimary }, style]} />;
-}
+  return <TextInput ref={ref} {...props} style={[styles.base, { color: themeColors.textPrimary }, style]} />;
+});
 
 const styles = StyleSheet.create({
   base: {

@@ -45,9 +45,6 @@ const createPalette = (themeColors: any, theme: string) => ({
   socialBg: theme === 'dark' ? 'rgba(20, 24, 34, 0.88)' : 'rgba(250, 252, 255, 0.98)',
   socialBorder: theme === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(13, 27, 42, 0.10)',
   socialDisabledBg: theme === 'dark' ? 'rgba(255,255,255,0.04)' : 'rgba(13, 27, 42, 0.04)',
-  googleBg: theme === 'dark' ? 'rgba(255,255,255,0.98)' : '#FFFFFF',
-  googleBorder: theme === 'dark' ? 'rgba(255,255,255,0.10)' : 'rgba(13, 27, 42, 0.10)',
-  googleText: '#101828',
   progressBg: theme === 'dark' ? 'rgba(201, 168, 255, 0.10)' : 'rgba(110, 89, 207, 0.08)',
   progressBorder: theme === 'dark' ? 'rgba(201, 168, 255, 0.22)' : 'rgba(110, 89, 207, 0.14)',
   primaryBg: themeColors.accent,
@@ -219,7 +216,7 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
           <View style={styles.copyBlock}>
             <AppText style={styles.brandTitle}>Sign in</AppText>
             <AppText style={styles.brandSubtitle}>
-              Access your account with email or a provider. All sign-ins use the same backend session.
+              Continue to your Financial Astrology Terminal
             </AppText>
           </View>
 
@@ -281,33 +278,30 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
               <AppText style={styles.primaryText}>{isPasswordSubmitting ? 'Signing in...' : 'Sign in'}</AppText>
             </Pressable>
 
-            <AppText style={styles.socialSubheading}>
-              Continue with a provider for faster sign-in on this device.
-            </AppText>
+            <View style={styles.dividerRow}>
+              <View style={styles.divider} />
+              <AppText style={styles.dividerText}>or continue with</AppText>
+              <View style={styles.divider} />
+            </View>
 
             <Pressable
               style={[
-                styles.googleButton,
-                socialLoadingProvider === 'google' && styles.googleButtonActive,
+                styles.socialButton,
+                socialLoadingProvider === 'google' && styles.socialButtonActive,
               ]}
               onPress={() => handleSocialLogin('google')}
               disabled={isAnySocialLoading}
             >
-              <View style={styles.googleIconWrap}>
+              <View style={styles.socialIconCircle}>
                 {socialLoadingProvider === 'google' ? (
-                  <ActivityIndicator size="small" color={colors.googleText} />
+                  <ActivityIndicator size="small" color={colors.textPrimary} />
                 ) : (
-                  <Chrome size={18} color={colors.googleText} />
+                  <Chrome size={14} color={colors.textPrimary} />
                 )}
               </View>
-              <View style={styles.googleCopy}>
-                <AppText style={styles.googleTitle}>Continue with Google</AppText>
-                <AppText style={styles.googleSubtitle}>
-                  {socialLoadingProvider === 'google'
-                    ? 'Authenticating with Google and our server...'
-                    : 'Secure native Google sign-in'}
-                </AppText>
-              </View>
+              <AppText style={styles.socialText}>
+                {socialLoadingProvider === 'google' ? 'Connecting to Google...' : 'Continue with Google'}
+              </AppText>
             </Pressable>
 
             <Pressable
@@ -323,19 +317,16 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
                 {socialLoadingProvider === 'apple' ? (
                   <ActivityIndicator size="small" color={colors.textPrimary} />
                 ) : (
-                  <Apple size={16} color={isAppleDisabled ? colors.textMuted : colors.textPrimary} />
+                  <Apple size={14} color={isAppleDisabled ? colors.textMuted : colors.textPrimary} />
                 )}
               </View>
-              <View style={styles.socialCopy}>
-                <AppText style={[styles.socialText, isAppleDisabled && styles.socialTextMuted]}>Continue with Apple</AppText>
-                <AppText style={styles.socialMeta}>
-                  {isAppleDisabled
-                    ? 'Available only on Apple devices'
-                    : socialLoadingProvider === 'apple'
-                    ? 'Authenticating with Apple and server...'
-                    : 'Native Apple sign-in'}
-                </AppText>
-              </View>
+              <AppText style={[styles.socialText, isAppleDisabled && styles.socialTextMuted]}>
+                {isAppleDisabled
+                  ? 'Apple sign-in unavailable'
+                  : socialLoadingProvider === 'apple'
+                  ? 'Connecting to Apple...'
+                  : 'Continue with Apple'}
+              </AppText>
             </Pressable>
 
             {socialProgressMessage ? (
@@ -529,64 +520,32 @@ const createStyles = (colors: any, theme: string) =>
       fontFamily: FONT.semiBold,
       fontSize: 15,
     },
-    socialSubheading: {
+    dividerRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+    },
+    divider: {
+      flex: 1,
+      height: 1,
+      backgroundColor: colors.border,
+    },
+    dividerText: {
       color: colors.textMuted,
       fontSize: 12,
-      lineHeight: 18,
       fontFamily: FONT.regular,
-    },
-    googleButton: {
-      minHeight: 64,
-      borderRadius: 16,
-      paddingHorizontal: 14,
-      borderWidth: 1,
-      borderColor: colors.googleBorder,
-      backgroundColor: colors.googleBg,
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 12,
-      shadowColor: '#000',
-      shadowOpacity: 0.08,
-      shadowOffset: { width: 0, height: 8 },
-      shadowRadius: 14,
-      elevation: 3,
-    },
-    googleButtonActive: {
-      opacity: 0.88,
-    },
-    googleIconWrap: {
-      width: 40,
-      height: 40,
-      borderRadius: 12,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: 'rgba(15, 23, 42, 0.04)',
-    },
-    googleCopy: {
-      flex: 1,
-      gap: 2,
-    },
-    googleTitle: {
-      color: colors.googleText,
-      fontFamily: FONT.semiBold,
-      fontSize: 14,
-    },
-    googleSubtitle: {
-      color: '#667085',
-      fontFamily: FONT.regular,
-      fontSize: 11,
-      lineHeight: 16,
     },
     socialButton: {
-      minHeight: 60,
-      borderRadius: 16,
-      paddingHorizontal: 14,
       borderWidth: 1,
       borderColor: colors.socialBorder,
+      borderRadius: 12,
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
       backgroundColor: colors.socialBg,
       flexDirection: 'row',
-      alignItems: 'center',
-      gap: 12,
+      gap: 8,
     },
     socialButtonActive: {
       borderColor: colors.brandAccent,
@@ -597,30 +556,22 @@ const createStyles = (colors: any, theme: string) =>
       opacity: 0.72,
     },
     socialIconCircle: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
+      width: 26,
+      height: 26,
+      borderRadius: 13,
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: theme === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(13, 27, 42, 0.05)',
-    },
-    socialCopy: {
-      flex: 1,
-      gap: 2,
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
     },
     socialText: {
       color: colors.textPrimary,
       fontFamily: FONT.semiBold,
-      fontSize: 14,
+      fontSize: 13,
     },
     socialTextMuted: {
       color: colors.textMuted,
-    },
-    socialMeta: {
-      color: colors.textMuted,
-      fontFamily: FONT.regular,
-      fontSize: 11,
-      lineHeight: 16,
     },
     progressPanel: {
       flexDirection: 'row',

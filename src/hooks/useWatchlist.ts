@@ -59,6 +59,80 @@ const compareRows = (a: AnyRow, b: AnyRow, key: string, dir: 'asc' | 'desc') => 
   return String(a?.[key] || '').localeCompare(String(b?.[key] || '')) * sign;
 };
 
+const normalizeSymbols = (symbols: any[] = []) =>
+  [...new Set((Array.isArray(symbols) ? symbols : []).map((item: any) => normalizeSymbol(String(item || ''))).filter(Boolean))];
+
+const hasExplicitSymbolPayload = (list: any) =>
+  Boolean(
+    Array.isArray(list?.symbols) ||
+    Array.isArray(list?.symbolsList) ||
+    Array.isArray(list?.stocks) ||
+    Array.isArray(list?.watchlistSymbols) ||
+    Array.isArray(list?.tickers) ||
+    Array.isArray(list?.items) ||
+    Array.isArray(list?.data?.symbols) ||
+    Array.isArray(list?.data?.stocks) ||
+    Array.isArray(list?.data?.tickers),
+  );
+
+const normalizeListMeta = (list: any, fallback: any = {}) => {
+  const fallbackSymbols = normalizeSymbols(fallback?.symbols ?? []);
+  const incomingSymbolsRaw = hasExplicitSymbolPayload(list)
+    ? normalizeSymbols(
+        list?.symbols ||
+        list?.symbolsList ||
+        list?.stocks ||
+        list?.watchlistSymbols ||
+        list?.tickers ||
+        list?.items ||
+        list?.data?.symbols ||
+        list?.data?.stocks ||
+        list?.data?.tickers ||
+        [],
+      )
+    : null;
+  const incomingCount = Number(list?.count);
+  const hasUsableIncomingSymbols = Array.isArray(incomingSymbolsRaw) && (incomingSymbolsRaw.length > 0 || fallbackSymbols.length === 0);
+  const symbols = hasUsableIncomingSymbols ? incomingSymbolsRaw || [] : fallbackSymbols;
+
+  const rawTitle = String(list?.title || '').trim();
+  const fallbackTitle = String(fallback?.title || '').trim();
+  const title =
+    rawTitle && rawTitle !== 'Untitled'
+      ? rawTitle
+      : fallbackTitle || rawTitle || 'Untitled';
+  const countRaw = Number(list?.count);
+  const count =
+    Number.isFinite(countRaw) && (hasUsableIncomingSymbols || fallbackSymbols.length === 0)
+      ? countRaw
+      : symbols.length;
+
+  return {
+    ...fallback,
+    ...list,
+    id: String(list?.id || fallback?.id || ''),
+    title,
+    symbols,
+    count,
+  };
+};
+
+const buildPlaceholderRows = (symbols: string[], nameMap: Record<string, string>, existingRows: AnyRow[] = []) => {
+  const rowMap = new Map(existingRows.map((row: AnyRow) => [normalizeSymbol(row?.symbol || ''), row]));
+  return symbols.map((symbol: string) => {
+    const normalized = normalizeSymbol(symbol);
+    const existing = rowMap.get(normalized);
+    return existing || {
+      symbol: normalized,
+      name: nameMap[normalized] || normalized,
+      price: null,
+      pct: null,
+      change: null,
+      volume: null,
+    };
+  });
+};
+
 export const useWatchlist = () => {
   const { authFetch } = useUser() as any;
 
@@ -83,10 +157,21 @@ export const useWatchlist = () => {
   const detailAbortRef = useRef<AbortController | null>(null);
   const quoteAbortRef = useRef<AbortController | null>(null);
   const activeSymbolsRef = useRef<string[]>([]);
+  const quoteRequestRef = useRef(0);
+  const activeRef = useRef<any>(null);
+  const symInputRef = useRef('');
 
   useEffect(() => {
     activeSymbolsRef.current = active?.symbols || [];
   }, [active?.symbols]);
+
+  useEffect(() => {
+    activeRef.current = active;
+  }, [active]);
+
+  useEffect(() => {
+    symInputRef.current = symInput;
+  }, [symInput]);
 
   const sortedRows = useMemo(
     () => [...rows].sort((a, b) => compareRows(a, b, sortKey, sortDir)),
@@ -117,6 +202,8 @@ export const useWatchlist = () => {
       quoteAbortRef.current?.abort();
       const ac = new AbortController();
       quoteAbortRef.current = ac;
+      const requestId = quoteRequestRef.current + 1;
+      quoteRequestRef.current = requestId;
 
       const normalized = symbols.map((item: string) => normalizeSymbol(item)).filter(Boolean);
       if (!normalized.length) {
@@ -126,14 +213,40 @@ export const useWatchlist = () => {
 
       try {
         const nameMap = Object.fromEntries(TICKER_INDEX.map((item: any) => [item.symbol, item.name]));
+        setRows((prev: AnyRow[]) => buildPlaceholderRows(normalized, nameMap, prev));
         const nextRows = await fetchTagxQuotes(normalized, { signal: ac.signal, nameMap });
-        setRows(nextRows);
+        if (quoteRequestRef.current !== requestId) return;
+        const nextRowMap = new Map((Array.isArray(nextRows) ? nextRows : []).map((row: AnyRow) => [normalizeSymbol(row?.symbol || ''), row]));
+        setRows((prev: AnyRow[]) =>
+          buildPlaceholderRows(normalized, nameMap, prev).map((row: AnyRow) => nextRowMap.get(normalizeSymbol(row?.symbol || '')) || row),
+        );
       } catch (error: any) {
         if (String(error?.message || '').toLowerCase().includes('abort')) return;
       }
     },
     [],
   );
+
+  const applyListUpdate = useCallback((nextList: any, options: { updateRows?: boolean } = {}) => {
+    const normalized = normalizeListMeta(nextList, activeRef.current);
+    if (!normalized?.id) return normalized;
+
+    setActive(normalized);
+    setEditTitle(normalized.title || '');
+    setLists((prevLists: any[]) => {
+      const exists = prevLists.some((list: any) => list.id === normalized.id);
+      if (!exists) return [normalized, ...prevLists];
+      return prevLists.map((list: any) => (list.id === normalized.id ? { ...list, ...normalized } : list));
+    });
+    syncSuggestions(symInputRef.current, normalized.symbols);
+
+    if (options.updateRows !== false) {
+      const nameMap = Object.fromEntries(TICKER_INDEX.map((item: any) => [item.symbol, item.name]));
+      setRows((prev: AnyRow[]) => buildPlaceholderRows(normalized.symbols || [], nameMap, prev));
+    }
+
+    return normalized;
+  }, [syncSuggestions]);
 
   const loadLists = useCallback(async () => {
     listAbortRef.current?.abort();
@@ -148,10 +261,12 @@ export const useWatchlist = () => {
         if (prev && next.some((row: any) => row.id === prev)) return prev;
         return next[0]?.id || '';
       });
+      return next;
     } catch (error: any) {
       if (!String(error?.message || '').toLowerCase().includes('abort')) {
         Alert.alert('Watchlists', error?.message || 'Unable to load watchlists.');
       }
+      return [];
     } finally {
       setLoadingList(false);
     }
@@ -173,10 +288,15 @@ export const useWatchlist = () => {
     setLoadingList(true);
     try {
       const detail = await getListById(authFetch, id, ac.signal);
-      setActive(detail);
-      setEditTitle(detail?.title || '');
-      await refreshQuotes(detail?.symbols || []);
-      syncSuggestions(symInput, detail?.symbols || []);
+      const currentActive = activeRef.current;
+      const merged = applyListUpdate({
+        ...detail,
+        title:
+          detail?.title && detail.title !== 'Untitled'
+            ? detail.title
+            : (currentActive?.id === id && currentActive?.title ? currentActive.title : detail?.title || ''),
+      });
+      await refreshQuotes(merged?.symbols || detail?.symbols || []);
     } catch (error: any) {
       if (!String(error?.message || '').toLowerCase().includes('abort')) {
         Alert.alert('Watchlist', error?.message || 'Unable to load watchlist details.');
@@ -184,7 +304,25 @@ export const useWatchlist = () => {
     } finally {
       setLoadingList(false);
     }
-  }, [authFetch, refreshQuotes, symInput, syncSuggestions]);
+  }, [applyListUpdate, authFetch, refreshQuotes]);
+
+  const reconcileList = useCallback(async (id: string, fallback?: any) => {
+    if (!id) return fallback || null;
+
+    try {
+      const detail = await getListById(authFetch, id);
+      const merged = applyListUpdate(detail);
+      await refreshQuotes(merged?.symbols || detail?.symbols || []);
+      return merged;
+    } catch {
+      if (fallback?.id) {
+        const merged = applyListUpdate(fallback);
+        await refreshQuotes(merged?.symbols || fallback?.symbols || []);
+        return merged;
+      }
+      return null;
+    }
+  }, [applyListUpdate, authFetch, refreshQuotes]);
 
   const onCreate = useCallback(async () => {
     const title = String(newTitle || '').trim();
@@ -196,14 +334,23 @@ export const useWatchlist = () => {
     setCreatingList(true);
     try {
       const created = await createList(authFetch, title);
+      const optimisticCreated = {
+        ...created,
+        id: String(created?.id || ''),
+        title: String(created?.title || title),
+        symbols: Array.isArray(created?.symbols) ? created.symbols : [],
+        count: Number.isFinite(created?.count) ? created.count : Array.isArray(created?.symbols) ? created.symbols.length : 0,
+      };
       setNewTitle('');
 
-      if (created?.id) {
-        setLists((prev: any[]) => (prev.some((row: any) => row.id === created.id) ? prev : [created, ...prev]));
-        setActiveId(created.id);
+      if (optimisticCreated?.id) {
+        applyListUpdate(optimisticCreated);
+        setRows([]);
+        setActiveId(optimisticCreated.id);
+        await loadDetail(optimisticCreated.id);
       }
 
-      loadLists().catch(() => {});
+      await loadLists();
     } catch (error: any) {
       const message = String(error?.message || 'Unable to create watchlist.');
       const detail = error?.path ? `${message}\n(${String(error.path)})` : message;
@@ -223,7 +370,7 @@ export const useWatchlist = () => {
     } finally {
       setCreatingList(false);
     }
-  }, [authFetch, loadLists, newTitle]);
+  }, [applyListUpdate, authFetch, loadDetail, loadLists, newTitle]);
 
   const onRename = useCallback(async () => {
     if (!activeId) return;
@@ -231,21 +378,28 @@ export const useWatchlist = () => {
     if (!title) return;
 
     try {
-      await renameList(authFetch, activeId, title);
+      const updated = await renameList(authFetch, activeId, title);
       setIsEditingTitle(false);
+      applyListUpdate({ ...activeRef.current, ...updated, title });
       await loadLists();
-      await loadDetail(activeId);
+      await reconcileList(activeId, { ...activeRef.current, ...updated, title });
     } catch (error: any) {
       Alert.alert('Rename failed', error?.message || 'Unable to rename watchlist.');
     }
-  }, [activeId, authFetch, editTitle, loadDetail, loadLists]);
+  }, [activeId, applyListUpdate, authFetch, editTitle, loadLists, reconcileList]);
 
   const onDeleteList = useCallback(async () => {
     if (!activeId) return;
 
     try {
       await deleteList(authFetch, activeId);
-      await loadLists();
+      const next = await loadLists();
+      const nextId = next.find((row: any) => row.id !== activeId)?.id || next[0]?.id || '';
+      setActiveId(nextId);
+      if (!nextId) {
+        setActive(null);
+        setRows([]);
+      }
     } catch (error: any) {
       Alert.alert('Delete failed', error?.message || 'Unable to delete watchlist.');
     }
@@ -269,25 +423,25 @@ export const useWatchlist = () => {
     }
 
     const prev = active;
-    const optimistic = { ...active, symbols: [...active.symbols, symbol], count: active.symbols.length + 1 };
-    setActive(optimistic);
+    const optimistic = normalizeListMeta({ ...active, symbols: [...active.symbols, symbol], count: active.symbols.length + 1 }, active);
+    applyListUpdate(optimistic);
     setSymInput('');
     setSuggestions([]);
     refreshQuotes(optimistic.symbols);
 
     try {
       const updated = await addSymbol(authFetch, activeId, symbol);
-      setActive(updated);
-      await loadLists();
-      await refreshQuotes(updated.symbols || []);
+      const merged = normalizeListMeta(updated, optimistic);
+      applyListUpdate(merged);
+      await reconcileList(activeId, merged);
       return true;
     } catch (error: any) {
-      setActive(prev);
+      applyListUpdate(prev);
       await refreshQuotes(prev.symbols || []);
       Alert.alert('Add failed', error?.message || 'Unable to add symbol.');
       return false;
     }
-  }, [active, activeId, authFetch, loadLists, refreshQuotes, symInput]);
+  }, [active, activeId, applyListUpdate, authFetch, reconcileList, refreshQuotes, symInput]);
 
   const onRemoveTicker = useCallback(async (symbol: string) => {
     if (!activeId || !active) return;
@@ -295,22 +449,21 @@ export const useWatchlist = () => {
     const target = normalizeSymbol(symbol);
     const prev = active;
     const optimisticSymbols = active.symbols.filter((item: string) => item !== target);
-    const optimistic = { ...active, symbols: optimisticSymbols, count: optimisticSymbols.length };
-
-    setActive(optimistic);
+    const optimistic = normalizeListMeta({ ...active, symbols: optimisticSymbols, count: optimisticSymbols.length }, active);
+    applyListUpdate(optimistic);
     refreshQuotes(optimisticSymbols);
 
     try {
       const updated = await removeSymbol(authFetch, activeId, target);
-      setActive(updated);
-      await loadLists();
-      await refreshQuotes(updated.symbols || []);
+      const merged = normalizeListMeta(updated, optimistic);
+      applyListUpdate(merged);
+      await reconcileList(activeId, merged);
     } catch (error: any) {
-      setActive(prev);
+      applyListUpdate(prev);
       await refreshQuotes(prev.symbols || []);
       Alert.alert('Remove failed', error?.message || 'Unable to remove symbol.');
     }
-  }, [active, activeId, authFetch, loadLists, refreshQuotes]);
+  }, [active, activeId, applyListUpdate, authFetch, reconcileList, refreshQuotes]);
 
   useEffect(() => {
     loadLists();
@@ -323,7 +476,7 @@ export const useWatchlist = () => {
 
   useEffect(() => {
     loadDetail(activeId);
-  }, [activeId, loadDetail]);
+  }, [activeId]);
 
   useEffect(() => {
     syncSuggestions(symInput);
@@ -369,5 +522,3 @@ export const useWatchlist = () => {
     refreshQuotes,
   };
 };
-
-

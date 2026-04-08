@@ -47,34 +47,36 @@ export default function AppDialog({
             </View>
           )}
 
-          <View style={styles.actionsRow}>
-            {actions.map((action, index) => {
-              const variant = action.variant || (index === actions.length - 1 ? 'primary' : 'ghost');
-              const buttonStyle =
-                variant === 'primary'
-                  ? [styles.actionButton, styles.actionButtonPrimary, { backgroundColor: accentColor }]
-                  : variant === 'danger'
-                  ? [styles.actionButton, styles.actionButtonDanger]
-                  : [styles.actionButton, styles.actionButtonGhost];
+          {actions.length ? (
+            <View style={styles.actionsRow}>
+              {actions.map((action, index) => {
+                const variant = action.variant || (index === actions.length - 1 ? 'primary' : 'ghost');
+                const buttonStyle =
+                  variant === 'primary'
+                    ? [styles.actionButton, styles.actionButtonPrimary, { backgroundColor: accentColor }]
+                    : variant === 'danger'
+                    ? [styles.actionButton, styles.actionButtonDanger]
+                    : [styles.actionButton, styles.actionButtonGhost];
 
-              const textStyle =
-                variant === 'primary'
-                  ? [styles.actionButtonText, { color: primaryTextColor }]
-                  : variant === 'danger'
-                  ? [styles.actionButtonText, { color: themeColors.negative }]
-                  : [styles.actionButtonText, { color: themeColors.textPrimary }];
+                const textStyle =
+                  variant === 'primary'
+                    ? [styles.actionButtonText, { color: primaryTextColor }]
+                    : variant === 'danger'
+                    ? [styles.actionButtonText, { color: themeColors.negative }]
+                    : [styles.actionButtonText, { color: themeColors.textPrimary }];
 
-              return (
-                <Pressable
-                  key={`${action.label}-${index}`}
-                  style={({ pressed }) => [buttonStyle, pressed && styles.actionButtonPressed]}
-                  onPress={action.onPress}
-                >
-                  <Text style={textStyle}>{action.label}</Text>
-                </Pressable>
-              );
-            })}
-          </View>
+                return (
+                  <Pressable
+                    key={`${action.label}-${index}`}
+                    style={({ pressed }) => [buttonStyle, pressed && styles.actionButtonPressed]}
+                    onPress={action.onPress}
+                  >
+                    <Text style={textStyle}>{action.label}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          ) : null}
         </View>
       </View>
     </Modal>

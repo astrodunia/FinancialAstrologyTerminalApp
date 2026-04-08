@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import { Globe, Search, Sparkles } from 'lucide-react-native';
+import { Globe, Search } from 'lucide-react-native';
 import AppText from './AppText';
 import AppTextInput from './AppTextInput';
 import ProfileAvatarButton from './ProfileAvatarButton';
@@ -18,7 +18,7 @@ const createStyles = (colors) =>
       marginTop: 0,
       marginHorizontal: 0,
       paddingHorizontal: 18,
-      paddingTop: 16,
+      paddingTop: 22,
       paddingBottom: 16,
       borderTopLeftRadius: 0,
       borderTopRightRadius: 0,
@@ -69,33 +69,6 @@ const createStyles = (colors) =>
       flex: 1,
       minWidth: 0,
       gap: 6,
-    },
-
-    topLine: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
-    },
-
-    badge: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 5,
-      paddingHorizontal: 9,
-      paddingVertical: 4,
-      borderRadius: 999,
-      backgroundColor: colors.surface,
-      borderWidth: 1,
-      borderColor: colors.border,
-      alignSelf: 'flex-start',
-    },
-
-    badgeText: {
-      fontSize: 9,
-      textTransform: 'uppercase',
-      letterSpacing: 0.6,
-      color: colors.textMuted,
-      fontFamily: FONT.medium,
     },
 
     name: {
@@ -284,12 +257,6 @@ export default function HomeHeader({
 
       <View style={styles.topRow}>
         <View style={styles.leftBlock}>
-          <View style={styles.topLine}>
-            <View style={styles.badge}>
-              <Sparkles size={11} color={themeColors.accent} />
-            </View>
-          </View>
-
           <AppText numberOfLines={1} style={styles.name}>{`Hi, ${displayName}`}</AppText>
 
           <AppText numberOfLines={1} style={styles.meta}>Live market overview</AppText>

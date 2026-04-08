@@ -19,13 +19,10 @@ import {
   Plus,
   Search,
   Target,
+  TrendingDown,
   Trash2,
   TrendingUp,
 } from 'lucide-react-native';
-  TrendingDown,
-  TrendingUp,
-} from 'lucide-react-native';
-import Svg, { Circle, Line, Polygon, Polyline, Rect, Text as SvgText } from 'react-native-svg';
 import AppText from '../../components/AppText';
 import AppTextInput from '../../components/AppTextInput';
 import BottomTabs from '../../components/BottomTabs';
