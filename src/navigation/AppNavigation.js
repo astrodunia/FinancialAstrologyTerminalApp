@@ -20,6 +20,7 @@ import Support from '../screens/Support/Support';
 import ForgotPassword from '../screens/ForgotPassword/ForgotPassword';
 import Calculators from '../screens/Calculators/Calculators';
 import CalculatorTool from '../screens/Calculators/CalculatorTool';
+import CalculatorCategoryList from '../screens/Calculators/CalculatorCategoryList';
 import StockDetailScreen from '../screens/StockDetail/StockDetailScreen';
 import IndexDetailScreen from '../screens/IndexDetail/IndexDetailScreen';
 import AppText from '../components/AppText';
@@ -158,6 +159,7 @@ const AppNavigation = () => {
                 <Stack.Screen name="Overview" component={Overview} />
                 <Stack.Screen name="Calculators" component={Calculators} />
                 <Stack.Screen name="CalculatorTool" component={CalculatorTool} />
+                <Stack.Screen name="CalculatorCategoryList" component={CalculatorCategoryList} />
                 <Stack.Screen name="GlobalIndices" component={GlobalIndices} />
                 <Stack.Screen name="Profile" component={Profile} />
                 <Stack.Screen name="Products" component={Products} />
@@ -235,3 +237,5 @@ const createStyles = (colors) =>
   });
 
 export default AppNavigation;
+
+

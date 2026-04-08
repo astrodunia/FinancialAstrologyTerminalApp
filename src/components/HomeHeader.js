@@ -262,6 +262,7 @@ export default function HomeHeader({
   onPressSearchResult,
   onSubmitSearch,
   searchPlaceholder = 'Search stocks or companies',
+  headerMetaText = 'Live market overview',
 }) {
   const styles = useMemo(() => createStyles(themeColors), [themeColors]);
   const displayName = profileName || 'Trader';
@@ -293,7 +294,7 @@ export default function HomeHeader({
 
           <AppText numberOfLines={1} style={styles.name}>{`Hi, ${displayName}`}</AppText>
 
-          <AppText numberOfLines={1} style={styles.meta}>Live market overview</AppText>
+          <AppText numberOfLines={1} style={styles.meta}>{headerMetaText}</AppText>
         </View>
 
         <ProfileAvatarButton onPress={onPressProfile} size={38} variant="accent" style={styles.profileButton} />
@@ -388,3 +389,4 @@ export default function HomeHeader({
     </View>
   );
 }
+
