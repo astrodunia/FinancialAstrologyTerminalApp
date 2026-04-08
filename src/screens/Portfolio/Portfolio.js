@@ -3,10 +3,8 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
-  Platform,
   Pressable,
   ScrollView,
-  StatusBar,
   StyleSheet,
   View,
   useWindowDimensions,
@@ -27,9 +25,10 @@ import AppText from '../../components/AppText';
 import AppTextInput from '../../components/AppTextInput';
 import BottomTabs from '../../components/BottomTabs';
 import GradientBackground from '../../components/GradientBackground';
-import ProfileAvatarButton from '../../components/ProfileAvatarButton';
+import HomeHeader from '../../components/HomeHeader';
 import { useUser } from '../../store/UserContext';
-import { navigateToStockDetail } from '../../features/stocks/navigation';
+import { navigateToStockDetail, normalizeStockSymbol } from '../../features/stocks/navigation';
+import { useTickerSearch } from '../../features/stocks/useTickerSearch';
 import { usePortfolio } from '../../hooks/usePortfolio';
 import { MAIN_TAB_ROUTES, useHorizontalSwipe } from '../../navigation/useHorizontalSwipe';
 
@@ -39,11 +38,12 @@ const fmtPct = (value) => `${Number(value || 0) >= 0 ? '+' : ''}${Number(value |
 const PIE_COLORS = ['#2563eb', '#16a34a', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
 
 const Portfolio = ({ navigation }) => {
-  const { themeColors, user } = useUser();
+  const { theme, themeColors, user } = useUser();
   const { width } = useWindowDimensions();
   const isCompact = width < 380;
   const isTablet = width >= 820;
-  const styles = useMemo(() => createStyles(themeColors, isCompact, isTablet), [themeColors, isCompact, isTablet]);
+  const isLight = theme === 'light';
+  const styles = useMemo(() => createStyles(themeColors, isCompact, isTablet, isLight), [themeColors, isCompact, isTablet, isLight]);
 
   const swipeHandlers = useHorizontalSwipe(MAIN_TAB_ROUTES, 'Portfolio', (route) => navigation.navigate(route));
 
@@ -83,7 +83,27 @@ const Portfolio = ({ navigation }) => {
   } = usePortfolio();
 
   const [analyticsTab, setAnalyticsTab] = useState('allocation');
+  const [headerSearchQuery, setHeaderSearchQuery] = useState('');
   const profileName = user?.displayName || user?.name || 'Trader';
+  const { results, loading, error: searchError } = useTickerSearch(headerSearchQuery);
+
+  const submitTickerSearch = () => {
+    const normalized = normalizeStockSymbol(headerSearchQuery);
+    if (/^[A-Z][A-Z0-9.-]{0,9}$/.test(normalized)) {
+      navigateToStockDetail(navigation, normalized);
+      return;
+    }
+
+    if (results[0]?.symbol) {
+      navigateToStockDetail(navigation, results[0].symbol);
+    }
+  };
+
+  const selectTickerSearchResult = (item) => {
+    if (!item?.symbol) return;
+    setHeaderSearchQuery(item.symbol);
+    navigateToStockDetail(navigation, item.symbol);
+  };
   const maxDayPct = Math.max(1, ...rows.map((item) => Math.abs(Number(item.dayPct || 0))));
   const allocationChartData = allocation.filter((item) => Number(item.sharePct || 0) > 0).slice(0, 6);
   const perfRows = rows.slice(0, 6);
@@ -106,6 +126,7 @@ const Portfolio = ({ navigation }) => {
       sub: `${fmtMoney(summary.dayChange)} today`,
       positive: summary.dayChange >= 0,
       Icon: CircleDollarSign,
+      tone: 'value',
     },
     {
       key: 'gain',
@@ -114,6 +135,7 @@ const Portfolio = ({ navigation }) => {
       sub: fmtPct(summary.totalGainPercent),
       positive: summary.totalGain >= 0,
       Icon: TrendingUp,
+      tone: 'gain',
     },
     {
       key: 'cost',
@@ -122,25 +144,38 @@ const Portfolio = ({ navigation }) => {
       sub: `${rows.length} open positions`,
       positive: true,
       Icon: Target,
+      tone: 'cost',
     },
   ];
 
   return (
     <View style={styles.safeArea} {...swipeHandlers}>
       <GradientBackground>
-        <View style={styles.header}>
-          <AppText style={styles.title}>Portfolio</AppText>
-          <ProfileAvatarButton style={styles.iconButton} onPress={() => navigation.navigate('Profile')} size={36} />
-        </View>
+        <HomeHeader
+          themeColors={themeColors}
+          profileName={profileName}
+          searchQuery={headerSearchQuery}
+          onChangeSearchQuery={setHeaderSearchQuery}
+          searchResults={results}
+          searchLoading={loading}
+          searchError={searchError}
+          showSearchResults={Boolean(headerSearchQuery.trim())}
+          onPressSearchResult={selectTickerSearchResult}
+          onSubmitSearch={submitTickerSearch}
+          onPressProfile={() => navigation.navigate('Profile')}
+          onPressGlobalIndices={() => navigation.navigate('GlobalIndices')}
+        />
 
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           <View style={styles.summaryGrid}>
             {summaryCards.map((item) => {
               const AccentIcon = item.Icon;
               return (
-                <View key={item.key} style={styles.summaryCard}>
+                <View key={item.key} style={[styles.summaryCard, styles[`summaryCard_${item.tone}`]]}>
                   <View style={styles.summaryHead}>
-                    <AccentIcon size={14} color={item.positive ? '#22c55e' : '#ef4444'} />
+                    <View style={[styles.summaryIconWrap, styles[`summaryIconWrap_${item.tone}`]]}>
+                      <AccentIcon size={14} color={item.positive ? '#22c55e' : '#ef4444'} />
+                    </View>
                     <AppText style={styles.summaryLabel}>{item.title}</AppText>
                   </View>
                   <AppText style={styles.summaryValue} weight="semiBold">{item.value}</AppText>
@@ -150,7 +185,7 @@ const Portfolio = ({ navigation }) => {
             })}
           </View>
 
-          <View style={styles.card}>
+          <View style={[styles.card, styles.cardAdd]}>
             <View style={styles.sectionHead}>
               <Plus size={15} color={themeColors.textPrimary} />
               <AppText style={styles.cardTitle} weight="semiBold">Add Position</AppText>
@@ -206,7 +241,7 @@ const Portfolio = ({ navigation }) => {
             </View>
           </View>
 
-          <View style={styles.card}>
+          <View style={[styles.card, styles.cardPositions]}>
             <View style={styles.sectionHead}>
               <BarChart3 size={15} color={themeColors.textPrimary} />
               <AppText style={styles.cardTitle} weight="semiBold">Your Positions</AppText>
@@ -359,7 +394,7 @@ const Portfolio = ({ navigation }) => {
             )}
           </View>
 
-          <View style={styles.card}>
+          <View style={[styles.card, styles.cardAnalytics]}>
             <View style={styles.sectionHead}>
               <BarChart3 size={15} color={themeColors.textPrimary} />
               <AppText style={styles.cardTitle} weight="semiBold">Allocation / Performance</AppText>
@@ -541,57 +576,57 @@ const Portfolio = ({ navigation }) => {
   );
 };
 
-const createStyles = (colors, isCompact, isTablet) =>
+const createStyles = (colors, isCompact, isTablet, isLight) =>
   StyleSheet.create({
     safeArea: { flex: 1, backgroundColor: colors.background },
-    header: {
-      paddingHorizontal: 16,
-      paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 6 : 12,
-      paddingBottom: 10,
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-    },
-    title: { color: colors.textPrimary, fontSize: isCompact ? 20 : 24 },
-    subtitle: { color: colors.textMuted, fontSize: 12 },
-    iconButton: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
-      backgroundColor: colors.surfaceAlt,
-      alignItems: 'center',
-      justifyContent: 'center',
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    content: { paddingHorizontal: 12, paddingBottom: 110, gap: 12 },
+    content: { paddingHorizontal: isCompact ? 10 : 12, paddingTop: 12, paddingBottom: 110, gap: 12 },
 
-    summaryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+    summaryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
     summaryCard: {
       flexBasis: isTablet ? '32%' : isCompact ? '100%' : '48%',
       flexGrow: 1,
-      borderRadius: 14,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceAlt,
+      paddingHorizontal: 12,
+      paddingVertical: 11,
+      gap: 5,
+    },
+    summaryCard_value: { borderColor: isLight ? '#7bb2ff' : '#3f79dd', backgroundColor: isLight ? '#e8f2ff' : 'rgba(55,109,201,0.24)' },
+    summaryCard_gain: { borderColor: isLight ? '#7ed9a8' : '#2f9c69', backgroundColor: isLight ? '#e9f9ef' : 'rgba(40,142,96,0.24)' },
+    summaryCard_cost: { borderColor: isLight ? '#f1c27c' : '#aa7a33', backgroundColor: isLight ? '#fff4e3' : 'rgba(169,118,46,0.26)' },
+    summaryHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    summaryIconWrap: {
+      width: 24,
+      height: 24,
+      borderRadius: 12,
       borderWidth: 1,
       borderColor: colors.border,
       backgroundColor: colors.surfaceGlass,
-      padding: 10,
-      gap: 4,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
-    summaryHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-    summaryLabel: { color: colors.textMuted, fontSize: 11 },
-    summaryValue: { color: colors.textPrimary, fontSize: isCompact ? 18 : 20 },
+    summaryIconWrap_value: { borderColor: isLight ? '#8dbdff' : '#4d85ea' },
+    summaryIconWrap_gain: { borderColor: isLight ? '#8fe1b4' : '#39a876' },
+    summaryIconWrap_cost: { borderColor: isLight ? '#efc98d' : '#b6843d' },
+    summaryLabel: { color: colors.textMuted, fontSize: 11, fontFamily: 'NotoSans-Medium' },
+    summaryValue: { color: colors.textPrimary, fontSize: isCompact ? 24 : 26, lineHeight: isCompact ? 28 : 30 },
     summarySub: { fontSize: 11 },
 
     card: {
-      borderRadius: 14,
+      borderRadius: 16,
       borderWidth: 1,
       borderColor: colors.border,
       backgroundColor: colors.surfaceGlass,
-      padding: 10,
-      gap: 9,
+      padding: isCompact ? 10 : 12,
+      gap: 10,
     },
+    cardAdd: { borderColor: isLight ? '#85b5ff' : '#4b7fdf' },
+    cardPositions: { borderColor: isLight ? '#85d4aa' : '#368f65' },
+    cardAnalytics: { borderColor: isLight ? '#e2b88c' : '#9b6e39' },
     sectionHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-    cardTitle: { color: colors.textPrimary, fontSize: 15 },
+    cardTitle: { color: colors.textPrimary, fontSize: isCompact ? 15 : 16 },
 
     inputShell: {
       minHeight: 40,
@@ -656,9 +691,9 @@ const createStyles = (colors, isCompact, isTablet) =>
       borderRadius: 10,
       borderWidth: 1,
       borderColor: colors.border,
-      backgroundColor: colors.surfaceAlt,
+      backgroundColor: colors.surfaceGlass,
       overflow: 'hidden',
-      marginTop: -2,
+      marginTop: 1,
     },
     suggestionRow: {
       minHeight: 34,
@@ -687,33 +722,34 @@ const createStyles = (colors, isCompact, isTablet) =>
     sortChipActive: { borderColor: '#1d4ed8', backgroundColor: 'rgba(29,78,216,0.12)' },
     sortText: { color: colors.textPrimary, fontSize: 11 },
 
-    rowGap: { gap: 8 },
+    rowGap: { gap: 10 },
     positionCard: {
       borderWidth: 1,
       borderColor: colors.border,
-      borderRadius: 12,
-      padding: 10,
+      borderRadius: 14,
+      padding: isCompact ? 10 : 12,
       backgroundColor: colors.surfaceAlt,
-      gap: 8,
+      gap: 10,
     },
     positionHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
     headLeft: { flex: 1 },
     headActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
     actionIcon: {
-      width: 26,
-      height: 26,
-      borderRadius: 8,
+      width: 30,
+      height: 30,
+      borderRadius: 10,
       borderWidth: 1,
       borderColor: colors.border,
       backgroundColor: colors.surfaceGlass,
       alignItems: 'center',
       justifyContent: 'center',
     },
-    symbol: { color: colors.textPrimary, fontSize: 15 },
-    name: { color: colors.textMuted, fontSize: 12, maxWidth: isTablet ? 340 : 190 },
+    symbol: { color: colors.textPrimary, fontSize: isCompact ? 15 : 16 },
+    name: { color: colors.textMuted, fontSize: 12, maxWidth: isTablet ? 340 : 170 },
 
-    metricGrid: { gap: 6 },
+    metricGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
     metricRow: {
+      width: isCompact ? '100%' : isTablet ? '32%' : '48%',
       flexDirection: 'row',
       justifyContent: 'space-between',
       alignItems: 'center',
@@ -724,8 +760,8 @@ const createStyles = (colors, isCompact, isTablet) =>
       paddingHorizontal: 10,
       paddingVertical: 6,
     },
-    metricLabel: { color: colors.textMuted, fontSize: 12 },
-    metricValue: { color: colors.textPrimary, fontSize: 12 },
+    metricLabel: { color: colors.textMuted, fontSize: 11 },
+    metricValue: { color: colors.textPrimary, fontSize: 12, fontFamily: 'NotoSans-Medium' },
     metric: {
       color: colors.textPrimary,
       fontSize: 12,
@@ -741,7 +777,7 @@ const createStyles = (colors, isCompact, isTablet) =>
     inputLabel: { color: colors.textMuted, fontSize: 11, marginBottom: 5 },
     inputHalf: { flex: 1 },
 
-    analyticsTabs: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+    analyticsTabs: { flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginBottom: 2 },
     tabBtn: {
       borderRadius: 999,
       borderWidth: 1,
@@ -765,9 +801,9 @@ const createStyles = (colors, isCompact, isTablet) =>
     analyticsPanel: {
       borderWidth: 1,
       borderColor: colors.border,
-      borderRadius: 12,
+      borderRadius: 14,
       backgroundColor: colors.surfaceAlt,
-      padding: 10,
+      padding: isCompact ? 9 : 10,
       gap: 10,
     },
     analyticsTitle: { color: colors.textPrimary, fontSize: 14 },
@@ -807,3 +843,16 @@ const createStyles = (colors, isCompact, isTablet) =>
   });
 
 export default Portfolio;
+
+
+
+
+
+
+
+
+
+
+
+
+

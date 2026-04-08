@@ -283,6 +283,32 @@ const getTopicLandingConfig = (productId) => {
   };
 };
 
+const BUTTON_TEXT_OVERRIDES = {
+  'Explore futures market': 'Explore futures',
+  'Explore commodities signals': 'Explore commodities',
+  'View commodity timing': 'Commodity timing',
+  'Access institutional timing': 'Institutional timing',
+  'View institutional framework': 'Institutional view',
+  'Subscribe daily newsletter': 'Daily newsletter',
+  'Explore U.S. bond market': 'Explore U.S. bonds',
+  'Get two stocks pick': 'Two stocks pick',
+};
+
+const shortenLabel = (value, max = 24) => {
+  const text = String(value || '').trim();
+  if (BUTTON_TEXT_OVERRIDES[text]) {
+    return BUTTON_TEXT_OVERRIDES[text];
+  }
+
+  if (text.length <= max) {
+    return text;
+  }
+
+  const cut = text.slice(0, Math.max(0, max - 1)).trimEnd();
+  const safeCut = cut.includes(' ') ? cut.slice(0, cut.lastIndexOf(' ')).trimEnd() : cut;
+  return `${safeCut || cut}…`;
+};
+
 const ProductDetail = ({ navigation, route }) => {
   const product = getProductById(route?.params?.productId);
   const accent = PRODUCT_ACCENTS[product?.id] || PRODUCT_ACCENTS['annual-letter'];
@@ -293,6 +319,9 @@ const ProductDetail = ({ navigation, route }) => {
   const heroImage = PRODUCT_HERO_IMAGES[product?.id];
   const landing = getTopicLandingConfig(product?.id);
   const topicCtaUrl = PRODUCT_CTA_URLS[product?.id];
+  const primaryCtaLabel = shortenLabel(landing.primaryCta, 24);
+  const secondaryCtaLabel = shortenLabel(landing.secondaryCta, 24);
+  const finalCtaLabel = shortenLabel(landing.finalCtaButton, 24);
 
   const reveal = useRef(new Animated.Value(0)).current;
   const floatAnim = useRef(new Animated.Value(0)).current;
@@ -415,16 +444,16 @@ const ProductDetail = ({ navigation, route }) => {
               style={({ pressed }) => [styles.primaryButton, pressed && styles.buttonPressed]}
               onPress={openTopicCta}
             >
-              <AppText numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={styles.primaryButtonText}>
-                {landing.primaryCta}
+              <AppText numberOfLines={1} ellipsizeMode="tail" style={styles.primaryButtonText}>
+                {primaryCtaLabel}
               </AppText>
             </Pressable>
             <Pressable
               style={({ pressed }) => [styles.secondaryButton, pressed && styles.buttonPressed]}
               onPress={() => navigation.navigate('Overview')}
             >
-              <AppText numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={styles.secondaryButtonText}>
-                {landing.secondaryCta}
+              <AppText numberOfLines={1} ellipsizeMode="tail" style={styles.secondaryButtonText}>
+                {secondaryCtaLabel}
               </AppText>
             </Pressable>
           </View>
@@ -550,7 +579,7 @@ const ProductDetail = ({ navigation, route }) => {
             style={({ pressed }) => [styles.finalCtaButton, pressed && styles.buttonPressed]}
             onPress={openTopicCta}
           >
-            <AppText style={styles.finalCtaButtonText}>{landing.finalCtaButton}</AppText>
+            <AppText numberOfLines={1} ellipsizeMode="tail" style={styles.finalCtaButtonText}>{finalCtaLabel}</AppText>
           </Pressable>
         </Animated.View>
       </Animated.ScrollView>
@@ -795,16 +824,16 @@ const createStyles = (isCompact, accent) =>
     },
     primaryButtonText: {
       color: '#FFFFFF',
-      fontSize: isCompact ? 14 : 15,
-      lineHeight: isCompact ? 19 : 20,
+      fontSize: 14,
+      lineHeight: 20,
       fontFamily: 'NotoSans-SemiBold',
       textAlign: 'center',
       width: '100%',
     },
     secondaryButtonText: {
       color: '#21314D',
-      fontSize: isCompact ? 14 : 15,
-      lineHeight: isCompact ? 19 : 20,
+      fontSize: 14,
+      lineHeight: 20,
       fontFamily: 'NotoSans-SemiBold',
       textAlign: 'center',
       width: '100%',

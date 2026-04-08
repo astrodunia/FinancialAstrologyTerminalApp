@@ -14,6 +14,8 @@ import AppText from '../../components/AppText';
 import BottomTabs from '../../components/BottomTabs';
 import GradientBackground from '../../components/GradientBackground';
 import HomeHeader from '../../components/HomeHeader';
+import { navigateToStockDetail, normalizeStockSymbol } from '../../features/stocks/navigation';
+import { useTickerSearch } from '../../features/stocks/useTickerSearch';
 import { useUser } from '../../store/UserContext';
 import { PRODUCT_CATALOG } from './productCatalog';
 
@@ -35,6 +37,25 @@ const Products = ({ navigation }) => {
   const isCompact = width < 380;
   const styles = useMemo(() => createStyles(themeColors, isCompact), [themeColors, isCompact]);
   const profileName = user?.displayName || user?.name || 'Trader';
+  const { results, loading, error: searchError } = useTickerSearch(searchQuery);
+
+  const submitTickerSearch = () => {
+    const normalized = normalizeStockSymbol(searchQuery);
+    if (/^[A-Z][A-Z0-9.-]{0,9}$/.test(normalized)) {
+      navigateToStockDetail(navigation, normalized);
+      return;
+    }
+
+    if (results[0]?.symbol) {
+      navigateToStockDetail(navigation, results[0].symbol);
+    }
+  };
+
+  const selectTickerSearchResult = (item) => {
+    if (!item?.symbol) return;
+    setSearchQuery(item.symbol);
+    navigateToStockDetail(navigation, item.symbol);
+  };
 
   return (
     <View style={styles.safeArea}>
@@ -44,12 +65,12 @@ const Products = ({ navigation }) => {
           profileName={profileName}
           searchQuery={searchQuery}
           onChangeSearchQuery={setSearchQuery}
-          searchResults={[]}
-          searchLoading={false}
-          searchError=""
-          showSearchResults={false}
-          onPressSearchResult={() => {}}
-          onSubmitSearch={() => {}}
+          searchResults={results}
+          searchLoading={loading}
+          searchError={searchError}
+          showSearchResults={Boolean(searchQuery.trim())}
+          onPressSearchResult={selectTickerSearchResult}
+          onSubmitSearch={submitTickerSearch}
           onPressProfile={() => navigation.navigate('Profile')}
           onPressGlobalIndices={() => navigation.navigate('GlobalIndices')}
         />
