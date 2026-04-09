@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Dimensions, Pressable, ScrollView, View } from 'react-native';
+import { Dimensions, Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
 import Svg, { Circle, Line, Polyline, Rect, Text as SvgText } from 'react-native-svg';
 import AppText from '../../components/AppText';
 import AppTextInput from '../../components/AppTextInput';
@@ -21,10 +21,17 @@ const shortMoney = (v) => {
   return `${Math.round(v)}`;
 };
 
+const responsiveChartWidth = (padding = 72, max = 360, min = 236) => {
+  const sw = Dimensions.get('window').width;
+  return Math.max(min, Math.min(max, sw - padding));
+};
+
 const chartBox = () => {
-  const w = Math.min(Dimensions.get('window').width - 72, 360);
+  const sw = Dimensions.get('window').width;
+  const compact = sw < 380;
+  const w = responsiveChartWidth(compact ? 56 : 72, 360, 236);
   const h = 196;
-  return { w, h, l: 58, r: 12, t: 10, b: 44 };
+  return { w, h, l: compact ? 46 : 58, r: 12, t: 10, b: 44 };
 };
 const TAX_LIMITS = {
   '2025': { base: 23500, catch50: 7500, catch60to63: 11250 },
@@ -858,8 +865,9 @@ export function SimpleInterestTool({ navigation, calculator, styles, themeColors
 
         <View style={styles.card}>
           <AppText style={styles.sectionTitle}>Simple Interest Formula</AppText>
-          <AppText style={styles.tipText}>A = P * (1 + r * t)</AppText>
-          <AppText style={styles.tipText}>SI = P * r * t</AppText>
+          <AppText style={styles.tipText}>SI = (P * R * T) / 100</AppText>
+          <AppText style={styles.tipText}>A = P + SI = P * (1 + (R * T) / 100)</AppText>
+          <AppText style={styles.tipText}>P = principal, R = annual rate (%), T = time in years, A = maturity amount.</AppText>
         </View>
 
         <FooterCTAContact styles={styles} openSite={openSite} />
@@ -1062,7 +1070,9 @@ export function SpendingTool({ navigation, calculator, styles, themeColors, Page
     }));
   };
 
-  const compW = Math.min(Dimensions.get('window').width - 84, 330);
+  const sw = Dimensions.get('window').width;
+  const compactSpend = sw < 380;
+  const compW = responsiveChartWidth(compactSpend ? 64 : 84, 330, 220);
   const barH = 26;
   const compTotal = Math.max(calc.planned, 1);
   const seg = [
@@ -1073,7 +1083,7 @@ export function SpendingTool({ navigation, calculator, styles, themeColors, Page
   ];
   let cursor = 0;
 
-  const actW = Math.min(Dimensions.get('window').width - 84, 330);
+  const actW = responsiveChartWidth(compactSpend ? 64 : 84, 330, 220);
   const actH = 208;
   const l = 44; const rr = 10; const t = 10; const b = 54;
   const pw = actW - l - rr; const ph = actH - t - b;
@@ -1766,12 +1776,15 @@ export function FinancialFreedomTool({ navigation, calculator, styles, themeColo
     return { overall, gp };
   }, [vals]);
 
-  const barW = Math.min(Dimensions.get('window').width - 84, 330);
+  const { width } = useWindowDimensions();
+  const compact = width < 380;
+  const barW = Math.min(width - (compact ? 42 : 84), compact ? 300 : 330);
   const barH = 190;
   const l = 72; const rr = 10; const t = 10; const b = 18;
   const pw = barW - l - rr; const ph = barH - t - b;
   const rowH = ph / FIRE_STEPS.length;
   const X = (v) => l + (Math.max(0, Math.min(10, v)) / 10) * pw;
+  const groupColors = { Essentials: '#22a6f2', Growth: '#8b5cf6', Discipline: '#21c084' };
 
   return (
     <>
@@ -1790,15 +1803,26 @@ export function FinancialFreedomTool({ navigation, calculator, styles, themeColo
         <View style={styles.twoColRow}>
           <View style={[styles.card, styles.colCard]}>
             {FIRE_STEPS.map((s) => (
-              <View key={`fire-${s.key}`} style={styles.subCard}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                  <AppText style={styles.label}>{s.label}</AppText>
-                  <AppText style={styles.tipText}>{`${Math.max(0, Math.min(10, N(vals[s.key])))}/10`}</AppText>
+              <View key={`fire-${s.key}`} style={styles.fireStepCard}>
+                <View style={styles.fireStepHeader}>
+                  <AppText style={styles.fireStepTitle}>{s.label}</AppText>
+                  <View style={[styles.fireGroupPill, { borderColor: `${groupColors[s.group]}66` }]}>
+                    <AppText style={[styles.fireGroupPillText, { color: groupColors[s.group] }]}>{s.group}</AppText>
+                  </View>
                 </View>
-                <View style={styles.resultRow}>
-                  <Pressable style={styles.ghostBtn} onPress={() => setVals((p) => ({ ...p, [s.key]: Math.max(0, Math.min(10, N(p[s.key]) - 1)) }))}><AppText style={styles.ghostBtnText}>-</AppText></Pressable>
-                  <View style={[styles.levelBox, styles.levelPivot, { flex: 1 }]}><AppTextInput value={String(vals[s.key])} onChangeText={(v) => setVals((p) => ({ ...p, [s.key]: Math.max(0, Math.min(10, N(v))) }))} keyboardType="numeric" style={styles.input} /></View>
-                  <Pressable style={styles.ghostBtn} onPress={() => setVals((p) => ({ ...p, [s.key]: Math.max(0, Math.min(10, N(p[s.key]) + 1)) }))}><AppText style={styles.ghostBtnText}>+</AppText></Pressable>
+                <View style={styles.fireAdjustRow}>
+                  <Pressable style={styles.fireAdjustBtn} onPress={() => setVals((p) => ({ ...p, [s.key]: Math.max(0, Math.min(10, N(p[s.key]) - 1)) }))}>
+                    <AppText style={styles.fireAdjustBtnText}>-</AppText>
+                  </Pressable>
+                  <View style={styles.fireMeterWrap}>
+                    <View style={styles.fireMeterTrack}>
+                      <View style={[styles.fireMeterFill, { width: `${Math.max(0, Math.min(100, N(vals[s.key]) * 10))}%`, backgroundColor: groupColors[s.group] }]} />
+                    </View>
+                    <AppText style={styles.fireMeterValue}>{`${Math.max(0, Math.min(10, N(vals[s.key])))}/10`}</AppText>
+                  </View>
+                  <Pressable style={styles.fireAdjustBtn} onPress={() => setVals((p) => ({ ...p, [s.key]: Math.max(0, Math.min(10, N(p[s.key]) + 1)) }))}>
+                    <AppText style={styles.fireAdjustBtnText}>+</AppText>
+                  </Pressable>
                 </View>
               </View>
             ))}
@@ -1812,10 +1836,10 @@ export function FinancialFreedomTool({ navigation, calculator, styles, themeColo
             <View style={styles.subCard}>
               <AppText style={styles.label}>Progress distribution</AppText>
               {['Essentials', 'Growth', 'Discipline'].map((g) => (
-                <View key={`grp-${g}`} style={{ marginBottom: 6 }}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}><AppText style={styles.tipText}>{g}</AppText><AppText style={styles.tipText}>{`${F(score.gp[g], 0)}%`}</AppText></View>
-                  <View style={{ height: 8, borderRadius: 999, backgroundColor: themeColors.surfaceGlass, overflow: 'hidden' }}>
-                    <View style={{ width: `${Math.max(2, score.gp[g])}%`, height: '100%', backgroundColor: '#22a6f2' }} />
+                <View key={`grp-${g}`} style={styles.fireGroupRow}>
+                  <View style={styles.fireGroupHead}><AppText style={styles.tipText}>{g}</AppText><AppText style={styles.tipText}>{`${F(score.gp[g], 0)}%`}</AppText></View>
+                  <View style={styles.fireGroupTrack}>
+                    <View style={[styles.fireGroupFill, { width: `${Math.max(2, score.gp[g])}%`, backgroundColor: groupColors[g] }]} />
                   </View>
                 </View>
               ))}
