@@ -69,7 +69,6 @@
       "BX",
       "KKR",
       "CB",
-      "MMC",
       "ICE",
       "AON"
     ],
@@ -89,11 +88,9 @@
       "FOXA",
       "FOX",
       "OMC",
-      "IPG",
       "WBD",
       "LYV",
-      "ROKU",
-      "DISH"
+      "ROKU"
     ],
     "Consumer Discretionary": [
       "AMZN",
@@ -157,7 +154,6 @@
       "BKR",
       "DVN",
       "FANG",
-      "HES",
       "HAL",
       "CTRA"
     ],
@@ -312,7 +308,6 @@
       "KKR",
       "PGR",
       "CB",
-      "MMC",
       "ICE",
       "ADI",
       "PANW"

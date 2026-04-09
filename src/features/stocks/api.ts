@@ -17,6 +17,11 @@ const BASE_URL = API_BASE_URL.replace(/\/+$/, '');
 
 const getApiPath = (path: string) => `${BASE_URL}${path}`;
 
+const appendNoCache = (path: string) => {
+  const divider = path.includes('?') ? '&' : '?';
+  return `${path}${divider}_ts=${Date.now()}`;
+};
+
 const toNumber = (value: unknown): number | null => {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value === 'string') {
@@ -489,7 +494,10 @@ export const fetchTickerSearch = async (
 };
 
 export const fetchStockInfo = (fetcher: Fetcher, symbol: string, signal?: AbortSignal) =>
-  requestJson(fetcher, `/api/tagx/stocks/${encodeURIComponent(normalizeStockSymbol(symbol))}/info`, { signal });
+  requestJson(fetcher, appendNoCache(`/api/tagx/stocks/${encodeURIComponent(normalizeStockSymbol(symbol))}/info`), {
+    signal,
+    headers: { 'Cache-Control': 'no-store', Pragma: 'no-cache' },
+  });
 
 export const fetchStockHistory = (
   fetcher: Fetcher,
@@ -513,10 +521,12 @@ export const fetchStockHistory = (
 
         const payload = await requestJson(
           fetcher,
-          `/api/tagx/stocks/${encodeURIComponent(normalizeStockSymbol(symbol))}/history?period=${encodeURIComponent(
-            period,
-          )}&interval=${encodeURIComponent(interval)}`,
-          { signal },
+          appendNoCache(
+            `/api/tagx/stocks/${encodeURIComponent(normalizeStockSymbol(symbol))}/history?period=${encodeURIComponent(
+              period,
+            )}&interval=${encodeURIComponent(interval)}`,
+          ),
+          { signal, headers: { 'Cache-Control': 'no-store', Pragma: 'no-cache' } },
         );
 
         const aggs = buildAggsFromTagx((payload as any)?.data || payload);
@@ -528,10 +538,12 @@ export const fetchStockHistory = (
 
     return requestJson(
       fetcher,
-      `/api/tagx/stocks/${encodeURIComponent(normalizeStockSymbol(symbol))}/history?period=${encodeURIComponent(
-        periodCandidates[0],
-      )}&interval=${encodeURIComponent(config.interval)}`,
-      { signal },
+      appendNoCache(
+        `/api/tagx/stocks/${encodeURIComponent(normalizeStockSymbol(symbol))}/history?period=${encodeURIComponent(
+          periodCandidates[0],
+        )}&interval=${encodeURIComponent(config.interval)}`,
+      ),
+      { signal, headers: { 'Cache-Control': 'no-store', Pragma: 'no-cache' } },
     );
   };
 
@@ -539,7 +551,10 @@ export const fetchStockHistory = (
 };
 
 export const fetchCompanyProfile = (fetcher: Fetcher, symbol: string, signal?: AbortSignal) =>
-  requestJson(fetcher, `/api/market/company?ticker=${encodeURIComponent(normalizeStockSymbol(symbol))}`, { signal });
+  requestJson(fetcher, appendNoCache(`/api/market/company?ticker=${encodeURIComponent(normalizeStockSymbol(symbol))}`), {
+    signal,
+    headers: { 'Cache-Control': 'no-store', Pragma: 'no-cache' },
+  });
 
 export const fetchStockNews = (fetcher: Fetcher, symbol: string, signal?: AbortSignal) =>
   requestJson(fetcher, `/api/tagx/stocks/${encodeURIComponent(normalizeStockSymbol(symbol))}/news`, { signal });

@@ -15,15 +15,14 @@
   ],
   "Financials": [
     "JPM","BAC","WFC","C","GS","MS","BLK","SCHW","AXP","BK",
-    "STT","TFC","USB","PNC","COF","CME","ICE","MCO","SPGI","AON",
-    "MMC","CB","TRV","AFL","MET","PRU","ALL","PGR","AJG","WRB",
+    "STT","TFC","USB","PNC","COF","CME","ICE","MCO","SPGI","AON","CB","TRV","AFL","MET","PRU","ALL","PGR","AJG","WRB",
     "CINF","HIG","L","RF","FITB","HBAN","KEY","CFG","CMA","ZION",
     "MTB","NTRS","FHN","BKU","BEN","TROW","IVZ","AMP","RJF"
   ],
   "Communication Services": [
     "GOOGL","META","NFLX","T","VZ","TMUS","DIS","CMCSA","CHTR","WBD",
     "FOXA","FOX","PARA","NWSA","NWS","EA","TTWO","PINS","ROKU","MTCH",
-    "LYV","SNAP","IAC","SIRI","TGNA","SBGI","NXST","GTN","OMC","IPG",
+    "LYV","SNAP","IAC","SIRI","TGNA","SBGI","NXST","GTN","OMC",
     "LBRDA","LBRDK","LBTYA","LBTYK","FWONA","FWONK","BATRA","BATRK",
     "SPOT","RBLX","ZG","Z","TRIP","ANGI","YELP","DV","IAS","TTD"
   ],
@@ -53,7 +52,7 @@
     "NSC","CSX","UPS","FDX","ETN","EMR","PH","CMI","ITW","ROP",
     "ROK","GWW","JCI","IR","OTIS","CARR","XYL","DOV","MAS","TT",
     "TDG","WAB","ALLE","FAST","URI","CTAS","EXPD","CHRW","JBHT","LII",
-    "HWM","HII","LDOS","RHI","MAN","KEX","AOS","AAON","BLDR","PCAR"
+    "HWM","HII","LDOS","RHI","MAN","KEX","AOS","AAON","BLDR"
   ],
   "Materials": [
     "LIN","APD","ECL","SHW","NEM","FCX","NUE","AA","CMC",
@@ -86,12 +85,12 @@
   "Large Cap": [
     "TXN","IBM","AMAT","NOW","INTU","PANW","ADI","LRCX","KLAC","MSI","SNPS","CDNS","NXPI","MCHP","WDC","HPQ","FTNT","GPN","PAYC","DDOG","ZS","NET","MDB","CRWD","OKTA","TEAM","AKAM","HPE","DELL","CTSH","NTAP","STX","TEL","APH","ANET","MPWR","ON",
     "PFE","AMGN","GILD","MDT","ISRG","SYK","BSX","CVS","HUM","CI","ELV","CNC","MCK","CAH","IQV","ZBH","EW","RMD","BDX","BAX","HCA","UHS","DGX","LH","ALGN","REGN","VRTX","BIIB","ILMN","WST","MTD","BIO","STE","WAT","HOLX","TECH","QGEN","CRL","RGEN","XRAY",
-    "BAC","WFC","C","GS","MS","BLK","SCHW","AXP","BK","STT","TFC","USB","PNC","COF","CME","ICE","MCO","SPGI","AON","MMC","CB","TRV","AFL","MET","PRU","ALL","PGR","AJG","WRB","CINF","HIG","L","RF","FITB","HBAN","KEY","CFG","CMA","ZION","MTB","NTRS","FHN","BKU","BEN","TROW","IVZ","AMP","RJF",
-    "T","VZ","TMUS","DIS","CMCSA","CHTR","WBD","FOXA","FOX","PARA","NWSA","NWS","EA","TTWO","PINS","ROKU","MTCH","LYV","SNAP","IAC","SIRI","NXST","OMC","IPG","LBRDA","LBRDK","LBTYA","LBTYK","FWONA","FWONK","BATRA","BATRK","SPOT","RBLX","ZG","Z","TRIP","YELP","DV","IAS","TTD",
+    "BAC","WFC","C","GS","MS","BLK","SCHW","AXP","BK","STT","TFC","USB","PNC","COF","CME","ICE","MCO","SPGI","AON","CB","TRV","AFL","MET","PRU","ALL","PGR","AJG","WRB","CINF","HIG","L","RF","FITB","HBAN","KEY","CFG","CMA","ZION","MTB","NTRS","FHN","BKU","BEN","TROW","IVZ","AMP","RJF",
+    "T","VZ","TMUS","DIS","CMCSA","CHTR","WBD","FOXA","FOX","PARA","NWSA","NWS","EA","TTWO","PINS","ROKU","MTCH","LYV","SNAP","IAC","SIRI","NXST","OMC","LBRDA","LBRDK","LBTYA","LBTYK","FWONA","FWONK","BATRA","BATRK","SPOT","RBLX","ZG","Z","TRIP","YELP","DV","IAS","TTD",
     "NKE","SBUX","LOW","TJX","TGT","GM","F","ROST","MAR","HLT","BKNG","CCL","RCL","NCLH","ULTA","ORLY","AZO","AAP","KMX","EBAY","ETSY","YUM","DPZ","PZZA","BBY","TSCO","PLNT","LVS","WYNN","MGM","CZR","PENN","MTN","LULU","TPR","RL","PVH","VFC","ANF","AEO","KSS","HOG","DHI","LEN","PHM",
     "MO","PM","MDLZ","CL","KMB","KR","SYY","GIS","KHC","HSY","CAG","CPB","ADM","TAP","STZ","BF.B","CHD","CLX","MKC","TSN","K","KDP","BG","HRL","LW","POST","FLO","CELH","MNST","EL","DG","DLTR","ACI","PRGO","SAM","KVUE","GO","HAIN","COTY","SPB",
-    "COP","SLB","HAL","BKR","OXY","DVN","EOG","APA","HES","FANG","EQT","CTRA","AR","RRC","SWN","LNG","KMI","WMB","TRGP","OKE","EPD","PAA","MPLX","PSX","MPC","VLO","DINO","PBF","NOV","FTI","RIG","NE","VAL","HP","PTEN","LBRT","SM","MTDR","PR","TALO","CRK",
-    "GE","RTX","BA","CAT","DE","LMT","NOC","GD","UNP","NSC","CSX","UPS","FDX","ETN","EMR","PH","CMI","ITW","ROP","ROK","GWW","JCI","IR","OTIS","CARR","XYL","DOV","MAS","TT","TDG","WAB","ALLE","FAST","URI","CTAS","EXPD","CHRW","JBHT","LII","HWM","HII","LDOS","RHI","MAN","KEX","AOS","BLDR","PCAR","AAON",
+    "COP","SLB","HAL","BKR","OXY","DVN","EOG","APA","FANG","EQT","CTRA","AR","RRC","SWN","LNG","KMI","WMB","TRGP","OKE","EPD","PAA","MPLX","PSX","MPC","VLO","DINO","PBF","NOV","FTI","RIG","NE","VAL","HP","PTEN","LBRT","SM","MTDR","PR","TALO","CRK",
+    "GE","RTX","BA","CAT","DE","LMT","NOC","GD","UNP","NSC","CSX","UPS","FDX","ETN","EMR","PH","CMI","ITW","ROP","ROK","GWW","JCI","IR","OTIS","CARR","XYL","DOV","MAS","TT","TDG","WAB","ALLE","FAST","URI","CTAS","EXPD","CHRW","JBHT","LII","HWM","HII","LDOS","RHI","MAN","KEX","AOS","BLDR","AAON",
     "APD","ECL","SHW","NEM","FCX","NUE","AA","CMC","VMC","MLM","DD","EMN","ALB","LYB","CF","MOS","FMC","IFF","AVY","BALL","PKG","IP","CLF","OLN","RPM","ASH","AXTA","CTVA","CE","GPK","SEE","AMCR","WLK","MT","VALE","GFI","KGC","AU","EXP","OC","MLI","MATV","PKX",
     "PLD","AMT","CCI","EQIX","PSA","SPG","O","DLR","WELL","VTR","AVB","EQR","ESS","UDR","MAA","CPT","HST","BXP","VNO","ARE","KIM","REG","FRT","NNN","OHI","WPC","VICI","GLPI","WY","REXR","EXR","CUBE","NSA",
     "NEE","DUK","SO","AEP","EXC","SRE","XEL","PEG","ED","D","PNW","EIX","PCG","FE","AEE","CMS","ES","ETR","PPL","DTE","WEC","LNT","NI","VST","NRG","AES","CNP","OGE","UGI","EVRG","AWK","WTRG"

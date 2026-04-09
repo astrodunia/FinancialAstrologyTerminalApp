@@ -2,14 +2,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import {
   AlertTriangle,
-  ArrowDownRight,
-  ArrowUpRight,
   Globe,
   RefreshCcw,
   Shield,
-  Sparkles,
-  TrendingDown,
-  TrendingUp,
 } from 'lucide-react-native';
 import AppText from '../../components/AppText';
 import BottomTabs from '../../components/BottomTabs';
@@ -45,7 +40,6 @@ const REGION_MAP = {
   NZ50: 'Asia-Pacific',
   STI: 'Asia-Pacific',
   JKSE: 'Asia-Pacific',
-  CASE30: 'Africa',
 };
 
 const GLOBAL_INDICES_URL = `${API_BASE_URL}/api/tagx/global-indices`;
@@ -71,23 +65,11 @@ const fmtNumber = (value, digits = 2) => {
   });
 };
 
-const fmtInteger = (value) => {
-  if (value == null || Number.isNaN(value)) return '--';
-  return Number(value).toLocaleString('en-US', { maximumFractionDigits: 0 });
-};
-
 const pctFromChange = (price, change) => {
   if (price == null || change == null) return null;
   const prev = price - change;
   if (!Number.isFinite(prev) || prev === 0) return null;
   return (change / prev) * 100;
-};
-
-const changeTone = (change) => {
-  if (change == null || Number.isNaN(change)) return 'flat';
-  if (change > 0.01) return 'up';
-  if (change < -0.01) return 'down';
-  return 'flat';
 };
 
 const fmtUpdatedAt = (iso) => {
@@ -134,33 +116,6 @@ const extractIndices = (payload) => {
     .filter((item) => !HIDDEN_TICKERS.has(String(item.ticker || '').toUpperCase()));
 };
 
-const getToneStyle = (tone, colors) => {
-  if (tone === 'up') return { color: colors.positive };
-  if (tone === 'down') return { color: colors.negative };
-  return { color: colors.textMuted };
-};
-
-const getPillStyle = (tone, colors) => {
-  if (tone === 'up') {
-    return {
-      borderColor: 'rgba(73, 209, 141, 0.45)',
-      backgroundColor: 'rgba(73, 209, 141, 0.14)',
-      color: colors.positive,
-    };
-  }
-  if (tone === 'down') {
-    return {
-      borderColor: 'rgba(240, 140, 140, 0.45)',
-      backgroundColor: 'rgba(240, 140, 140, 0.14)',
-      color: colors.negative,
-    };
-  }
-  return {
-    borderColor: colors.border,
-    backgroundColor: colors.surfaceAlt,
-    color: colors.textMuted,
-  };
-};
 
 const LoadingShell = ({ styles, themeColors }) => (
   <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -297,55 +252,11 @@ const GlobalIndices = ({ navigation }) => {
     return { valid, advancers, decliners, avgPct, movers, score, regime };
   }, [filteredData]);
 
-  const grouped = useMemo(() => {
-    const groups = {};
-
-    filteredData.forEach((item) => {
-      const region = REGION_MAP[item.ticker] || 'Other';
-      if (!groups[region]) groups[region] = [];
-      groups[region].push(item);
-    });
-
-    const order = ['Americas', 'Europe', 'Asia-Pacific', 'Africa', 'Other'];
-    return order.filter((region) => groups[region]?.length).map((region) => [region, groups[region]]);
-  }, [filteredData]);
-
-  const regionStats = useMemo(() => {
-    const out = {};
-
-    grouped.forEach(([region, items]) => {
-      const pctValues = items
-        .map((item) => pctFromChange(item.price, item.priceChange))
-        .filter((value) => value != null);
-
-      const avg = pctValues.length ? pctValues.reduce((sum, value) => sum + value, 0) / pctValues.length : null;
-      const valid = items.filter((item) => item.priceChange != null);
-      const adv = valid.filter((item) => item.priceChange > 0).length;
-      const dec = valid.filter((item) => item.priceChange < 0).length;
-
-      let tone = 'flat';
-      if (avg != null && avg > 0.05) tone = 'up';
-      if (avg != null && avg < -0.05) tone = 'down';
-
-      out[region] = { avg, adv, dec, total: valid.length, tone };
-    });
-
-    return out;
-  }, [grouped]);
-
   const livePulseLabel = useMemo(() => {
     if (loading) return 'Syncing';
     if (error) return 'Degraded';
     return 'Live';
   }, [error, loading]);
-
-  const openIndexDetail = useCallback(
-    (symbol) => {
-      if (!symbol) return;
-      navigation.navigate('IndexDetail', { symbol: String(symbol).toUpperCase(), tf: '1M' });
-    },
-    [navigation],
-  );
 
   const submitTickerSearch = useCallback(() => {
     const normalized = normalizeStockSymbol(searchQuery);
@@ -454,297 +365,6 @@ const GlobalIndices = ({ navigation }) => {
               <AppText style={styles.errorText}>{error}</AppText>
             </View>
           )}
-
-          <View style={styles.sectionCard}>
-            <View style={styles.sectionTitleRow}>
-              <View>
-                <AppText weight="medium" style={styles.sectionOverline}>RISK PULSE</AppText>
-                <AppText weight="semiBold" style={styles.sectionTitle}>Breadth and Tone</AppText>
-              </View>
-              <View style={styles.scoreBox}>
-                <Shield size={14} color={themeColors.textMuted} />
-                <AppText weight="semiBold" style={styles.scoreText}>{derived.score}</AppText>
-              </View>
-            </View>
-
-            <View style={styles.breadthHeroCard}>
-              <View style={styles.breadthHeroTopRow}>
-                <View>
-                  <AppText weight="medium" style={styles.breadthHeroLabel}>Market regime</AppText>
-                  <AppText weight="semiBold" style={styles.breadthHeroValue}>{derived.regime}</AppText>
-                </View>
-                <View style={styles.breadthScoreRing}>
-                  <AppText weight="semiBold" style={styles.breadthScoreValue}>{derived.score}</AppText>
-                  <AppText weight="medium" style={styles.breadthScoreLabel}>Score</AppText>
-                </View>
-              </View>
-              <AppText weight="medium" style={styles.breadthHeroMeta}>
-                {derived.avgPct == null ? 'Average move unavailable' : `Average move ${derived.avgPct.toFixed(2)}%`}
-              </AppText>
-            </View>
-
-            <View style={styles.progressTrack}>
-              <View style={[styles.progressFill, { width: `${derived.score}%` }]} />
-            </View>
-
-            <View style={styles.breadthList}>
-              <View style={styles.breadthRow}>
-                <View style={styles.breadthRowLeft}>
-                  <View style={[styles.breadthIconWrap, styles.breadthIconWrapUp]}>
-                    <TrendingUp size={13} color={themeColors.positive} />
-                  </View>
-                  <AppText weight="medium" style={styles.breadthRowLabel}>Advancers</AppText>
-                </View>
-                <View style={[styles.breadthValuePill, styles.breadthValuePillUp]}>
-                  <AppText weight="semiBold" style={[styles.breadthValueText, { color: themeColors.positive }]}>{derived.advancers.length}</AppText>
-                </View>
-              </View>
-
-              <View style={styles.breadthRow}>
-                <View style={styles.breadthRowLeft}>
-                  <View style={[styles.breadthIconWrap, styles.breadthIconWrapDown]}>
-                    <TrendingDown size={13} color={themeColors.negative} />
-                  </View>
-                  <AppText weight="medium" style={styles.breadthRowLabel}>Decliners</AppText>
-                </View>
-                <View style={[styles.breadthValuePill, styles.breadthValuePillDown]}>
-                  <AppText weight="semiBold" style={[styles.breadthValueText, { color: themeColors.negative }]}>{derived.decliners.length}</AppText>
-                </View>
-              </View>
-
-              <View style={styles.breadthRow}>
-                <View style={styles.breadthRowLeft}>
-                  <View style={[styles.breadthIconWrap, styles.breadthIconWrapNeutral]}>
-                    <Sparkles size={13} color={themeColors.accent} />
-                  </View>
-                  <AppText weight="medium" style={styles.breadthRowLabel}>Average move</AppText>
-                </View>
-                <View style={styles.breadthValuePill}>
-                  <AppText weight="semiBold" style={styles.breadthValueText}>
-                    {derived.avgPct == null ? '--' : `${derived.avgPct.toFixed(2)}%`}
-                  </AppText>
-                </View>
-              </View>
-
-              <View style={styles.breadthRow}>
-                <View style={styles.breadthRowLeft}>
-                  <View style={[styles.breadthIconWrap, styles.breadthIconWrapNeutral]}>
-                    <Globe size={13} color={themeColors.textMuted} />
-                  </View>
-                  <AppText weight="medium" style={styles.breadthRowLabel}>Indices tracked</AppText>
-                </View>
-                <View style={styles.breadthValuePill}>
-                  <AppText weight="semiBold" style={styles.breadthValueText}>{derived.valid.length}</AppText>
-                </View>
-              </View>
-            </View>
-          </View>
-
-          <View style={styles.sectionCard}>
-            <View style={styles.sectionTitleRow}>
-              <View>
-                <AppText weight="medium" style={styles.sectionOverline}>MOVERS RADAR</AppText>
-                <AppText weight="semiBold" style={styles.sectionTitle}>Largest Swings</AppText>
-              </View>
-              <AppText style={styles.metaPill}>Top 4</AppText>
-            </View>
-
-            <View style={styles.moversGrid}>
-              {derived.movers.map((item) => {
-                const pct = pctFromChange(item.price, item.priceChange);
-                const tone = changeTone(item.priceChange);
-                const toneStyle = getToneStyle(tone, themeColors);
-                const pill = getPillStyle(tone, themeColors);
-                const moverToneStyle =
-                  tone === 'up'
-                    ? styles.moverCardUp
-                    : tone === 'down'
-                      ? styles.moverCardDown
-                      : styles.moverCardFlat;
-
-                return (
-                  <Pressable
-                    key={item.ticker}
-                    style={({ pressed }) => [styles.moverCard, moverToneStyle, pressed && styles.moverCardPressed]}
-                    onPress={() => openIndexDetail(item.ticker)}
-                  >
-                    <View style={styles.moverGlow} />
-                    <View style={styles.moverHeaderRow}>
-                      <View style={styles.moverIdentityWrap}>
-                        <View
-                          style={[
-                            styles.moverDot,
-                            tone === 'up'
-                              ? styles.moverDotUp
-                              : tone === 'down'
-                                ? styles.moverDotDown
-                                : styles.moverDotFlat,
-                          ]}
-                        />
-                        <View style={styles.moverTitleWrap}>
-                          <AppText weight="semiBold" numberOfLines={1} style={styles.moverTicker}>{(item.ticker || '').toUpperCase()}</AppText>
-                          <AppText weight="medium" numberOfLines={1} style={styles.moverRegion}>{item.name}</AppText>
-                        </View>
-                      </View>
-                    </View>
-
-                    <View style={styles.moverMiddleRow}>
-                      <View style={styles.moverPriceBlock}>
-                        <AppText weight="semiBold" style={styles.moverValue}>{fmtNumber(item.price)}</AppText>
-                        <AppText weight="medium" style={styles.moverValueLabel}>Last traded</AppText>
-                      </View>
-
-                      <View style={styles.moverDeltaBlock}>
-                        <View style={styles.moverChangeMain}>
-                          {tone === 'up' ? (
-                            <ArrowUpRight size={18} color={toneStyle.color} />
-                          ) : tone === 'down' ? (
-                            <ArrowDownRight size={18} color={toneStyle.color} />
-                          ) : null}
-                          <AppText weight="semiBold" style={[styles.moverChangeValue, { color: toneStyle.color }]}>
-                            {pct == null ? '--' : `${pct > 0 ? '+' : ''}${pct.toFixed(2)}%`}
-                          </AppText>
-                        </View>
-                        <AppText weight="medium" style={styles.moverPctText}>
-                          {item.priceChange == null
-                            ? '--'
-                            : `${item.priceChange > 0 ? '+' : ''}${fmtNumber(item.priceChange)} pts`}
-                        </AppText>
-                      </View>
-                    </View>
-
-                    <View style={styles.moverFooterRow}>
-                      <View style={[styles.tonePill, styles.moverTonePill, { borderColor: pill.borderColor, backgroundColor: pill.backgroundColor }]}>
-                        <AppText weight="medium" style={[styles.tonePillText, { color: pill.color }]}>
-                          {tone === 'up' ? 'Upswing' : tone === 'down' ? 'Downswing' : 'Flat'}
-                        </AppText>
-                      </View>
-                      <View style={styles.moverMetaChip}>
-                        <AppText weight="medium" style={styles.moverMetaChipText}>{REGION_MAP[item.ticker] || 'Other'}</AppText>
-                      </View>
-                    </View>
-                  </Pressable>
-                );
-              })}
-            </View>
-          </View>
-
-          <View style={styles.sectionCard}>
-            <View style={styles.sectionTitleRow}>
-              <View>
-                <AppText weight="medium" style={styles.sectionOverline}>REGIONAL PULSE</AppText>
-                <AppText weight="semiBold" style={styles.sectionTitle}>Where Momentum Is Building</AppText>
-              </View>
-            </View>
-
-            <View style={styles.regionList}>
-              {grouped.map(([region]) => {
-                const stats = regionStats[region];
-                const pill = getPillStyle(stats?.tone || 'flat', themeColors);
-                const ratio = stats?.total ? Math.round((stats.adv / stats.total) * 100) : 50;
-
-                return (
-                  <View key={region} style={styles.regionCard}>
-                    <View style={styles.regionTopRow}>
-                      <View style={styles.regionTitleRow}>
-                        <View style={styles.regionDot} />
-                        <AppText style={styles.regionName}>{region}</AppText>
-                        <View style={[styles.tonePill, { borderColor: pill.borderColor, backgroundColor: pill.backgroundColor }]}>
-                          <AppText style={[styles.tonePillText, { color: pill.color }]}>
-                            {stats?.avg == null ? '--' : `${stats.avg.toFixed(2)}%`}
-                          </AppText>
-                        </View>
-                      </View>
-                      <AppText style={styles.regionStat}>{`${stats?.adv || 0}/${stats?.total || 0} up`}</AppText>
-                    </View>
-
-                    <View style={styles.regionTrack}>
-                      <View style={[styles.regionFill, { width: `${Math.max(8, ratio)}%` }]} />
-                    </View>
-                  </View>
-                );
-              })}
-            </View>
-          </View>
-
-          <View style={styles.sectionCard}>
-            <View style={styles.sectionTitleRow}>
-              <View>
-                <AppText weight="medium" style={styles.sectionOverline}>WORLD INDICES</AppText>
-                <AppText weight="semiBold" style={styles.sectionTitle}>Regional Breakdown</AppText>
-              </View>
-            </View>
-
-            {grouped.map(([region, items]) => {
-              const stats = regionStats[region];
-              const pill = getPillStyle(stats?.tone || 'flat', themeColors);
-
-              return (
-                <View key={region} style={styles.regionSectionBlock}>
-                  <View style={styles.sectionTitleRow}>
-                    <View style={styles.regionTitleRow}>
-                      <View style={styles.regionDot} />
-                      <AppText style={styles.regionSectionTitle}>{region}</AppText>
-                      <AppText style={styles.sectionCount}>{`${items.length} indices`}</AppText>
-                    </View>
-                    <View style={[styles.tonePill, { borderColor: pill.borderColor, backgroundColor: pill.backgroundColor }]}>
-                      <AppText style={[styles.tonePillText, { color: pill.color }]}>
-                        {stats?.avg == null ? '--' : `${stats.avg.toFixed(2)}% avg`}
-                      </AppText>
-                    </View>
-                  </View>
-
-                  <View style={styles.grid2}>
-                    {items.map((item) => {
-                      const pct = pctFromChange(item.price, item.priceChange);
-                      const tone = changeTone(item.priceChange);
-                      const toneStyle = getToneStyle(tone, themeColors);
-                      const localPill = getPillStyle(tone, themeColors);
-
-                      return (
-                        <Pressable
-                          key={`${region}-${item.ticker}`}
-                          style={({ pressed }) => [styles.miniCard, pressed && styles.miniCardPressed]}
-                          onPress={() => openIndexDetail(item.ticker)}
-                        >
-                          <View style={styles.miniTopRow}>
-                            <View style={styles.flex1}>
-                              <AppText weight="semiBold" style={styles.miniTitle}>{(item.ticker || '').toUpperCase()}</AppText>
-                              <AppText weight="medium" style={styles.miniSubtitle}>{item.name}</AppText>
-                            </View>
-                            <View style={[styles.tonePill, { borderColor: localPill.borderColor, backgroundColor: localPill.backgroundColor }]}>
-                              <AppText weight="medium" style={[styles.tonePillText, { color: localPill.color }]}>
-                                {tone === 'up' ? 'Up' : tone === 'down' ? 'Down' : 'Flat'}
-                              </AppText>
-                            </View>
-                          </View>
-
-                          <View style={styles.miniValueRow}>
-                            <View>
-                              <AppText weight="semiBold" style={styles.miniValue}>{fmtInteger(item.price)}</AppText>
-                              <AppText weight="medium" style={styles.changePctText}>{pct == null ? '--' : `${pct.toFixed(2)}%`}</AppText>
-                            </View>
-                            <View style={styles.changeRow}>
-                              {tone === 'up' ? (
-                                <ArrowUpRight size={14} color={toneStyle.color} />
-                              ) : tone === 'down' ? (
-                                <ArrowDownRight size={14} color={toneStyle.color} />
-                              ) : null}
-                              <AppText weight="medium" style={[styles.changeText, { color: toneStyle.color }]}>
-                                {item.priceChange == null
-                                  ? '--'
-                                  : `${item.priceChange > 0 ? '+' : ''}${fmtNumber(item.priceChange)}`}
-                              </AppText>
-                            </View>
-                          </View>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                </View>
-              );
-            })}
-          </View>
         </ScrollView>
       )}
 

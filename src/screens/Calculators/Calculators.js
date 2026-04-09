@@ -125,13 +125,14 @@ const Calculators = ({ navigation }) => {
                     <ChevronRight size={14} color={meta.accent} />
                   </View>
 
-                  <View style={styles.categoryBody}>
-                    <View style={styles.categoryMain}>
-                      <AppText style={styles.categoryTitle}>{section.title}</AppText>
-                      <AppText style={styles.categorySubtitle}>{section.subtitle}</AppText>                      <View style={styles.countRow}>
-                        <View style={[styles.countPill, { borderColor: meta.accent }]}>
-                          <Calculator size={11} color={meta.accent} />
-                          <AppText style={[styles.countText, { color: meta.accent }]}>{`${section.items.length} tools`}</AppText>
+                    <View style={styles.categoryBody}>
+                      <View style={styles.categoryMain}>
+                        <AppText style={styles.categoryTitle}>{section.title}</AppText>
+                        <AppText style={styles.categorySubtitle}>{section.subtitle}</AppText>
+                        <View style={styles.countRow}>
+                          <View style={[styles.countPill, { borderColor: meta.accent }]}>
+                            <Calculator size={11} color={meta.accent} />
+                            <AppText style={[styles.countText, { color: meta.accent }]}>{`${section.items.length} tools`}</AppText>
                         </View>
                         <View style={[styles.countPillGhost, { borderColor: meta.accent }]}>
                           <AppText style={[styles.countGhostText, { color: meta.accent }]}>Ready</AppText>
@@ -306,7 +307,6 @@ const createStyles = (colors, compact, isLight) =>
   });
 
 export default Calculators;
-
 
 
 

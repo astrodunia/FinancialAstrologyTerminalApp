@@ -39,7 +39,7 @@ const resolveApiHost = () => {
   if (metroHost) {
     if (Platform.OS === 'android' && isLocalhost(metroHost)) {
       return {
-        host: '192.168.1.6',
+        host: '192.168.29.213',
         source: 'android_emulator_loopback',
       };
     }
@@ -52,7 +52,7 @@ const resolveApiHost = () => {
 
   if (__DEV__ && Platform.OS === 'android') {
     return {
-      host: '192.168.1.6',
+      host: '192.168.29.213',
       source: 'android_dev_fallback',
     };
   }

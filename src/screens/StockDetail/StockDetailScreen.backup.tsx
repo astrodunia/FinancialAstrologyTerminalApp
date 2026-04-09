@@ -137,26 +137,6 @@ const formatDateTime = (value: string | number) => {
   }).format(dt);
 };
 
-const formatChartAxisTime = (value: string | number, showTime: boolean) => {
-  if (!value) return '--';
-  const dt = new Date(value);
-  if (Number.isNaN(dt.getTime())) return '--';
-  return new Intl.DateTimeFormat(
-    'en-US',
-    showTime
-      ? {
-          month: 'short',
-          day: 'numeric',
-          hour: 'numeric',
-          minute: '2-digit',
-        }
-      : {
-          month: 'short',
-          day: 'numeric',
-        },
-  ).format(dt);
-};
-
 const chartPath = (points: StockHistoryPoint[], width: number, height: number) => {
   if (!points.length) return '';
   const values = points.map((item) => item.value);
@@ -204,71 +184,6 @@ const downsampleHistoryForChart = (points: StockHistoryPoint[] | null, timeframe
   }
 
   return sampled;
-};
-
-const getUsMarketParts = (timestamp: number) => {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    weekday: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).formatToParts(new Date(timestamp));
-
-  const read = (type: string) => parts.find((part) => part.type === type)?.value || '';
-  return {
-    year: read('year'),
-    month: read('month'),
-    day: read('day'),
-    weekday: read('weekday'),
-    hour: Number(read('hour') || '0'),
-    minute: Number(read('minute') || '0'),
-  };
-};
-
-const getUsSessionKey = (timestamp: number) => {
-  const parts = getUsMarketParts(timestamp);
-  return `${parts.year}-${parts.month}-${parts.day}`;
-};
-
-const isUsRegularSessionPoint = (timestamp: number) => {
-  const parts = getUsMarketParts(timestamp);
-  if (['Sat', 'Sun'].includes(parts.weekday)) return false;
-  const totalMinutes = parts.hour * 60 + parts.minute;
-  return totalMinutes >= 9 * 60 + 30 && totalMinutes <= 16 * 60;
-};
-
-const filterHistoryToRegularUsSession = (points: StockHistoryPoint[] | null, timeframe: string) => {
-  const cleaned = sanitizeHistoryForChart(points);
-  if (!cleaned.length) return [];
-
-  const minGap = cleaned.slice(1).reduce((smallest, point, index) => {
-    const gap = point.timestamp - cleaned[index].timestamp;
-    return gap > 0 ? Math.min(smallest, gap) : smallest;
-  }, Number.POSITIVE_INFINITY);
-
-  const looksIntraday = Number.isFinite(minGap) && minGap < 1000 * 60 * 60 * 12;
-  if (!looksIntraday) return cleaned;
-
-  const regular = cleaned.filter((point) => isUsRegularSessionPoint(point.timestamp));
-  if (!regular.length) return cleaned;
-
-  const normalizedTimeframe = normalizeChartTimeframe(timeframe);
-  if (normalizedTimeframe === '1D') {
-    const latestSession = getUsSessionKey(regular[regular.length - 1].timestamp);
-    return regular.filter((point) => getUsSessionKey(point.timestamp) === latestSession);
-  }
-
-  if (normalizedTimeframe === '5D') {
-    const sessionKeys = Array.from(new Set(regular.map((point) => getUsSessionKey(point.timestamp))));
-    const keep = new Set(sessionKeys.slice(-5));
-    return regular.filter((point) => keep.has(getUsSessionKey(point.timestamp)));
-  }
-
-  return regular;
 };
 
 const ratioBetween = (a: number, b: number) => {
@@ -685,9 +600,6 @@ const OverviewTab = ({
   const change = info?.regularMarketChange;
   const isUp = (change ?? 0) >= 0;
   const chartColor = isUp ? themeColors.positive : themeColors.negative;
-  const latestSparkClose = sparkline?.length
-    ? (sparkline[sparkline.length - 1]?.close ?? sparkline[sparkline.length - 1]?.value ?? null)
-    : null;
   const updatedAt = sparkline?.[sparkline.length - 1]?.timestamp
     ? new Date(sparkline[sparkline.length - 1].timestamp).toLocaleTimeString()
     : '';
@@ -752,7 +664,7 @@ const OverviewTab = ({
             <Activity size={16} color={themeColors.textPrimary} />
             <AppText style={styles.cardTitle}>Price Snapshot</AppText>
           </View>
-          <AppText style={styles.metricValue}>{formatCurrency(latestSparkClose ?? info?.regularMarketClose ?? info?.regularMarketPrice ?? null, info?.currency)}</AppText>
+          <AppText style={styles.metricValue}>{formatCurrency(info?.regularMarketPrice ?? null, info?.currency)}</AppText>
         </View>
         <AppText style={styles.snapshotMetaText}>
           {formatCurrency(info?.regularMarketPreviousClose ?? null, info?.currency)} prev close
@@ -1061,61 +973,33 @@ const ChartTab = ({
   authFetch: any;
 }) => {
   const styles = useMemo(() => createStyles(themeColors), [themeColors]);
-  const normalizedTimeframe = normalizeChartTimeframe(timeframe);
-  const regularSessionHistory = useMemo(() => filterHistoryToRegularUsSession(history, timeframe), [history, timeframe]);
-  const displayHistory = useMemo(() => downsampleHistoryForChart(regularSessionHistory, timeframe), [regularSessionHistory, timeframe]);
+  const displayHistory = useMemo(() => downsampleHistoryForChart(history, timeframe), [history, timeframe]);
   const [transitMode, setTransitMode] = useState<TransitMode>('planetary');
   const [selectedTransitPlanet, setSelectedTransitPlanet] = useState('All');
-  const { loading: transitLoading, error: transitError, planetaryResults, nakshatraResults } = useTransitPerformance(regularSessionHistory, authFetch);
+  const { loading: transitLoading, error: transitError, planetaryResults, nakshatraResults } = useTransitPerformance(history, authFetch);
   const trend = useMemo(() => {
     if (!displayHistory?.length) {
       return {
-        referenceOpen: info?.regularMarketPreviousClose ?? info?.regularMarketClose ?? info?.regularMarketPrice ?? null,
-        latestClose: info?.regularMarketClose ?? info?.regularMarketPrice ?? null,
+        referenceOpen: info?.regularMarketOpen ?? null,
+        latestClose: info?.regularMarketPrice ?? null,
       };
     }
 
     const first = displayHistory[0];
     const last = displayHistory[displayHistory.length - 1];
-    const baseline =
-      normalizedTimeframe === '1D'
-        ? (info?.regularMarketPreviousClose ?? first?.open ?? first?.close ?? first?.value ?? null)
-        : (first?.close ?? first?.value ?? info?.regularMarketPreviousClose ?? info?.regularMarketClose ?? info?.regularMarketPrice ?? null);
     return {
-      referenceOpen: baseline,
-      latestClose: last?.close ?? last?.value ?? info?.regularMarketClose ?? info?.regularMarketPrice ?? null,
+      referenceOpen: first?.open ?? first?.close ?? first?.value ?? info?.regularMarketOpen ?? null,
+      latestClose: last?.close ?? last?.value ?? info?.regularMarketPrice ?? null,
     };
-  }, [
-    displayHistory,
-    info?.regularMarketClose,
-    info?.regularMarketOpen,
-    info?.regularMarketPreviousClose,
-    info?.regularMarketPrice,
-    normalizedTimeframe,
-  ]);
-
-  const chartDerivedChange = useMemo(
-    () =>
-      trend.referenceOpen != null && trend.latestClose != null
-        ? trend.latestClose - trend.referenceOpen
-        : null,
-    [trend.latestClose, trend.referenceOpen],
-  );
-  const chartDerivedChangePct = useMemo(
-    () =>
-      trend.referenceOpen != null && trend.latestClose != null && trend.referenceOpen !== 0
-        ? ((trend.latestClose - trend.referenceOpen) / trend.referenceOpen) * 100
-        : null,
-    [trend.latestClose, trend.referenceOpen],
-  );
+  }, [displayHistory, info?.regularMarketOpen, info?.regularMarketPrice]);
 
   const isUp =
     trend.referenceOpen != null && trend.latestClose != null
       ? trend.latestClose >= trend.referenceOpen
       : (info?.regularMarketChange ?? 0) >= 0;
-  const price = trend.latestClose ?? info?.regularMarketClose ?? info?.regularMarketPrice ?? null;
-  const change = chartDerivedChange ?? info?.regularMarketChange ?? null;
-  const changePct = chartDerivedChangePct ?? info?.regularMarketChangePercent ?? null;
+  const price = info?.regularMarketPrice ?? null;
+  const change = info?.regularMarketChange ?? null;
+  const changePct = info?.regularMarketChangePercent ?? null;
   const chartColor =
     trend.referenceOpen != null && trend.latestClose != null
       ? isUp
@@ -1125,7 +1009,7 @@ const ChartTab = ({
         ? themeColors.negative
         : themeColors.positive;
   const transitResults = transitMode === 'planetary' ? planetaryResults : nakshatraResults;
-  const latestHistoryTimestamp = regularSessionHistory.length ? regularSessionHistory[regularSessionHistory.length - 1].timestamp : null;
+  const latestHistoryTimestamp = history?.length ? history[history.length - 1].timestamp : null;
   const transitPlanets = useMemo(() => {
     const set = new Set<string>();
     transitResults.forEach((item) => {
@@ -1428,7 +1312,7 @@ const renderEstimateCards = (
   currency?: string,
 ) =>
   rows.slice(0, 4).map((row, index) => {
-    const title = formatDisplayPeriodLabel(row, `Estimate ${index + 1}`);
+    const title = String(row.period || row.date || row.year || `Estimate ${index + 1}`);
     const details = [
       { label: 'Average', value: formatCurrency(parseFundamentalNumber(row.avg), currency) },
       { label: 'High', value: formatCurrency(parseFundamentalNumber(row.high), currency) },
@@ -1458,7 +1342,6 @@ const renderEarningsHistoryCards = (
   styles: ReturnType<typeof createStyles>,
 ) =>
   rows.slice(0, 6).map((row, index) => {
-    const title = formatDisplayPeriodLabel(row, getEarningsHistoryLabel(row, index));
     const estimate = getRowValue(row, ['epsEstimate', 'estimate', 'estimated', 'consensus']);
     const actual = getRowValue(row, ['epsActual', 'actual', 'reportedEPS', 'reportedEps']);
     const surprise = getRowValue(row, ['epsDifference', 'surprise', 'difference']);
@@ -1471,9 +1354,9 @@ const renderEarningsHistoryCards = (
     ];
 
     return (
-      <View key={`${title}-${index}`} style={styles.fundDataCard}>
+      <View key={`${getEarningsHistoryLabel(row, index)}-${index}`} style={styles.fundDataCard}>
         <View style={styles.fundDataHeader}>
-          <AppText style={styles.fundDataTitle}>{title}</AppText>
+          <AppText style={styles.fundDataTitle}>{getEarningsHistoryLabel(row, index)}</AppText>
         </View>
         {renderDetailRows(details, styles)}
       </View>
@@ -1557,62 +1440,14 @@ const formatFundamentalValue = (key: string, value: unknown, _currency?: string)
   return String(value);
 };
 
-const extractPeriodValue = (row: Record<string, unknown> | null | undefined) => {
-  if (!row) return null;
-  const candidates = [
-    row.period,
-    row.date,
-    row.year,
-    row.asOfDate,
-    row.fiscalDateEnding,
-    row.endDate,
-    row.reportDate,
-    row.reportedDate,
-    row.calendarDate,
-    row.formattedDate,
-  ];
-
-  for (const candidate of candidates) {
-    if (candidate == null) continue;
-    if (typeof candidate === 'string' || typeof candidate === 'number') return String(candidate);
-    if (typeof candidate === 'object') {
-      const nested = candidate as Record<string, unknown>;
-      const nestedValue = nested.fmt || nested.formatted || nested.display || nested.raw || nested.value;
-      if (nestedValue != null) return String(nestedValue);
-    }
-  }
-
-  const fallbackKey = Object.keys(row).find((key) => /date|period|year/i.test(key) && row[key] != null);
-  if (fallbackKey) {
-    const fallbackValue = row[fallbackKey];
-    if (typeof fallbackValue === 'string' || typeof fallbackValue === 'number') return String(fallbackValue);
-    if (typeof fallbackValue === 'object' && fallbackValue) {
-      const nested = fallbackValue as Record<string, unknown>;
-      const nestedValue = nested.fmt || nested.formatted || nested.display || nested.raw || nested.value;
-      if (nestedValue != null) return String(nestedValue);
-    }
-  }
-
-  return null;
-};
-
-const formatDisplayPeriodLabel = (row: Record<string, unknown>, fallback: string) => {
-  const text = extractPeriodValue(row) || fallback;
-  const parsed = new Date(text).getTime();
-  if (Number.isFinite(parsed) && !text.match(/^P\d+$/)) {
-    return new Intl.DateTimeFormat('en-US', { month: 'short', day: '2-digit', year: 'numeric' }).format(parsed);
-  }
-  return text;
-};
-
 const getPeriodLabel = (row: Record<string, unknown>, fallback: string) =>
-  extractPeriodValue(row) || fallback;
+  String(row.period || row.date || row.year || row.asOfDate || row.fiscalDateEnding || fallback);
 
 const pickLatestRow = (rows: Record<string, unknown>[]) => {
   if (!rows.length) return null;
   const sorted = [...rows].sort((left, right) => {
-    const leftValue = new Date(String(extractPeriodValue(left) || 0)).getTime();
-    const rightValue = new Date(String(extractPeriodValue(right) || 0)).getTime();
+    const leftValue = new Date(String(left.period || left.date || left.year || left.asOfDate || left.fiscalDateEnding || 0)).getTime();
+    const rightValue = new Date(String(right.period || right.date || right.year || right.asOfDate || right.fiscalDateEnding || 0)).getTime();
     return rightValue - leftValue;
   });
   return sorted[0] || rows[0];
@@ -1689,24 +1524,6 @@ const buildEstimateBarData = (
     })
     .filter(Boolean) as { value: number; label: string; frontColor: string }[];
 
-const buildEarningsHistoryChartData = (
-  rows: Record<string, unknown>[],
-  keyCandidates: string[],
-  color: string,
-) =>
-  rows
-    .slice(0, 6)
-    .map((row, index) => {
-      const value = getNumericFundamentalValue(row, keyCandidates);
-      if (value == null || !Number.isFinite(value)) return null;
-      return {
-        value,
-        label: getCompactPeriodLabel(row, index),
-        frontColor: color,
-      };
-    })
-    .filter(Boolean) as { value: number; label: string; frontColor: string }[];
-
 const buildMarginBarData = (info: StockInfo | null, themeColors: Record<string, string>) =>
   [
     { label: 'Gross', raw: normalizePercentNumber(info?.grossMargins ?? null), color: '#16A34A' },
@@ -1760,58 +1577,6 @@ const buildCapitalMixData = (row: Record<string, unknown> | null) =>
       label: item.label,
     }));
 
-const buildBalanceStructureData = (row: Record<string, unknown> | null) =>
-  [
-    { label: 'Cash', value: getNumericFundamentalValue(row, ['CashCashEquivalentsAndShortTermInvestments', 'CashAndCashEquivalents']), color: '#14B8A6' },
-    { label: 'Receivables', value: getNumericFundamentalValue(row, ['Receivables']), color: '#3B82F6' },
-    { label: 'Inventory', value: getNumericFundamentalValue(row, ['Inventory']), color: '#F59E0B' },
-    { label: 'Debt', value: getNumericFundamentalValue(row, ['TotalDebt', 'LongTermDebt']), color: '#F97316' },
-    { label: 'Equity', value: getNumericFundamentalValue(row, ['StockholdersEquity']), color: '#8B5CF6' },
-  ]
-    .filter((item) => item.value != null && Number.isFinite(item.value) && (item.value as number) > 0)
-    .map((item) => ({
-      value: item.value as number,
-      color: item.color,
-      text: item.label,
-      label: item.label,
-    }));
-
-const formatChartValue = (value: number, mode: 'percent' | 'price' | 'compact' = 'compact') => {
-  if (!Number.isFinite(value)) return '--';
-  if (mode === 'percent') return `${value.toFixed(1)}%`;
-  if (mode === 'price') return formatCurrency(value);
-  return formatAbbrevNumber(value);
-};
-
-const buildAreaChartData = (
-  items: { value: number; label: string; frontColor?: string }[],
-  mode: 'percent' | 'price' | 'compact' = 'compact',
-) =>
-  items.map((item) => ({
-    value: item.value,
-    label: item.label,
-    dataPointText: formatChartValue(item.value, mode),
-    textColor: item.frontColor || '#0F172A',
-  }));
-
-const buildChartSummaryItems = (
-  items: { value: number; label: string }[],
-  mode: 'percent' | 'price' | 'compact' = 'compact',
-) => {
-  if (!items.length) return [];
-  const sorted = [...items].sort((a, b) => a.value - b.value);
-  const first = items[0];
-  const last = items[items.length - 1];
-  const min = sorted[0];
-  const max = sorted[sorted.length - 1];
-  return [
-    { label: 'Start', value: `${first.label} ${formatChartValue(first.value, mode)}` },
-    { label: 'High', value: `${max.label} ${formatChartValue(max.value, mode)}` },
-    { label: 'Low', value: `${min.label} ${formatChartValue(min.value, mode)}` },
-    { label: 'Latest', value: `${last.label} ${formatChartValue(last.value, mode)}` },
-  ];
-};
-
 const statementKeyOrder = {
   income: [
     'Total Revenue',
@@ -1851,13 +1616,13 @@ const statementKeyOrder = {
 const getStatementPeriods = (rows: Record<string, unknown>[]) =>
   [...rows]
     .sort((left, right) => {
-      const leftValue = new Date(String(extractPeriodValue(left) || 0)).getTime();
-      const rightValue = new Date(String(extractPeriodValue(right) || 0)).getTime();
+      const leftValue = new Date(String(left.period || left.date || left.year || left.asOfDate || left.fiscalDateEnding || 0)).getTime();
+      const rightValue = new Date(String(right.period || right.date || right.year || right.asOfDate || right.fiscalDateEnding || 0)).getTime();
       return leftValue - rightValue;
     })
     .map((row, index) => ({
-      key: `${String(extractPeriodValue(row) || 'period')}-${index}`,
-      label: formatDisplayPeriodLabel(row, '--'),
+      key: `${String(row.period || row.date || row.year || row.asOfDate || row.fiscalDateEnding || 'period')}-${index}`,
+      label: getPeriodLabel(row, '--'),
       row,
     }));
 
@@ -2018,7 +1783,7 @@ const FundamentalsTab = ({
   const info = bundle?.info || null;
   const latestIncomeRow = pickLatestRow(bundle?.incomeStatement || []);
   const latestBalanceRow = pickLatestRow(bundle?.balanceSheet || []);
-  const chartWidth = Math.max(width - 72, 260);
+  const chartWidth = Math.max(width - 56, 280);
   const metricCards = [
     { label: 'Market Cap', value: formatCompact(info?.marketCap ?? null) },
     { label: 'P/E Ratio', value: info?.trailingPE != null ? info.trailingPE.toFixed(2) : '--' },
@@ -2074,45 +1839,6 @@ const FundamentalsTab = ({
   const marginChartData = useMemo(() => buildMarginBarData(info, themeColors), [info, themeColors]);
   const targetRangeChartData = useMemo(() => buildTargetRangeBarData(info, themeColors), [info, themeColors]);
   const capitalMixData = useMemo(() => buildCapitalMixData(latestBalanceRow), [latestBalanceRow]);
-  const balanceStructureData = useMemo(() => buildBalanceStructureData(latestBalanceRow), [latestBalanceRow]);
-  const earningsHistoryActualChartData = useMemo(
-    () => buildEarningsHistoryChartData(bundle?.earningsHistory || [], ['epsActual', 'actual', 'reportedEPS', 'reportedEps'], '#F97316'),
-    [bundle?.earningsHistory],
-  );
-  const incomeStatementRevenueChartData = useMemo(
-    () => buildStatementBarData(bundle?.incomeStatement || [], ['TotalRevenue', 'OperatingRevenue', 'totalRevenue', 'revenue'], '#2563EB'),
-    [bundle?.incomeStatement],
-  );
-  const profitabilityAreaData = useMemo(() => buildAreaChartData(marginChartData, 'percent'), [marginChartData]);
-  const targetAreaData = useMemo(() => buildAreaChartData(targetRangeChartData, 'price'), [targetRangeChartData]);
-  const earningsAreaData = useMemo(() => buildAreaChartData(earningsEstimateChartData, 'price'), [earningsEstimateChartData]);
-  const revenueAreaData = useMemo(() => buildAreaChartData(revenueEstimateChartData, 'compact'), [revenueEstimateChartData]);
-  const earningsHistoryAreaData = useMemo(
-    () => buildAreaChartData(earningsHistoryActualChartData, 'price'),
-    [earningsHistoryActualChartData],
-  );
-  const incomeStatementRevenueAreaData = useMemo(
-    () => buildAreaChartData(incomeStatementRevenueChartData, 'compact'),
-    [incomeStatementRevenueChartData],
-  );
-  const profitabilitySummary = useMemo(() => buildChartSummaryItems(profitabilityAreaData, 'percent'), [profitabilityAreaData]);
-  const targetSummary = useMemo(() => buildChartSummaryItems(targetAreaData, 'price'), [targetAreaData]);
-  const earningsSummary = useMemo(() => buildChartSummaryItems(earningsAreaData, 'price'), [earningsAreaData]);
-  const revenueSummary = useMemo(() => buildChartSummaryItems(revenueAreaData, 'compact'), [revenueAreaData]);
-  const earningsHistorySummary = useMemo(
-    () => buildChartSummaryItems(earningsHistoryAreaData, 'price'),
-    [earningsHistoryAreaData],
-  );
-  const incomeStatementSummary = useMemo(
-    () => buildChartSummaryItems(incomeStatementRevenueAreaData, 'compact'),
-    [incomeStatementRevenueAreaData],
-  );
-  const getFundLineSpacing = useCallback(
-    (pointCount: number, minimum: number) => (
-      pointCount > 1 ? Math.max((chartWidth - 48) / (pointCount - 1), minimum) : chartWidth / 2
-    ),
-    [chartWidth],
-  );
   const fundPieCenterLabel = useCallback(
     () => (
       <View style={styles.fundPieCenter}>
@@ -2123,103 +1849,6 @@ const FundamentalsTab = ({
     ),
     [capitalMixData.length, styles],
   );
-  const renderProfitPointerLabel = useCallback(
-    (items: any[]) => (
-      <View style={styles.fundPointerBubble}>
-        <AppText style={styles.fundPointerTitle}>{items?.[0]?.label || ''}</AppText>
-        <AppText style={styles.fundPointerValue}>{formatChartValue(items?.[0]?.value, 'percent')}</AppText>
-      </View>
-    ),
-    [styles],
-  );
-  const renderTargetPointerLabel = useCallback(
-    (items: any[]) => (
-      <View style={styles.fundPointerBubble}>
-        <AppText style={styles.fundPointerTitle}>{items?.[0]?.label || ''}</AppText>
-        <AppText style={styles.fundPointerValue}>{formatChartValue(items?.[0]?.value, 'price')}</AppText>
-      </View>
-    ),
-    [styles],
-  );
-  const renderCompactPointerLabel = useCallback(
-    (items: any[]) => (
-      <View style={styles.fundPointerBubble}>
-        <AppText style={styles.fundPointerTitle}>{items?.[0]?.label || ''}</AppText>
-        <AppText style={styles.fundPointerValue}>{formatChartValue(items?.[0]?.value, 'compact')}</AppText>
-      </View>
-    ),
-    [styles],
-  );
-  const profitPointerConfig = useMemo(
-    () => ({
-      pointerStripUptoDataPoint: true,
-      pointerStripColor: 'rgba(37, 99, 235, 0.22)',
-      pointerStripWidth: 2,
-      pointerColor: '#2563EB',
-      radius: 5,
-      activatePointersOnLongPress: true,
-      pointerLabelWidth: 120,
-      pointerLabelHeight: 76,
-      pointerLabelComponent: renderProfitPointerLabel,
-    }),
-    [renderProfitPointerLabel],
-  );
-  const targetPointerConfig = useMemo(
-    () => ({
-      pointerStripUptoDataPoint: true,
-      pointerStripColor: 'rgba(15, 23, 42, 0.18)',
-      pointerStripWidth: 2,
-      pointerColor: '#0F172A',
-      radius: 5,
-      activatePointersOnLongPress: true,
-      pointerLabelWidth: 132,
-      pointerLabelHeight: 76,
-      pointerLabelComponent: renderTargetPointerLabel,
-    }),
-    [renderTargetPointerLabel],
-  );
-  const earningsPointerConfig = useMemo(
-    () => ({
-      pointerStripUptoDataPoint: true,
-      pointerStripColor: 'rgba(124, 58, 237, 0.18)',
-      pointerStripWidth: 2,
-      pointerColor: '#7C3AED',
-      radius: 5,
-      activatePointersOnLongPress: true,
-      pointerLabelWidth: 132,
-      pointerLabelHeight: 76,
-      pointerLabelComponent: renderTargetPointerLabel,
-    }),
-    [renderTargetPointerLabel],
-  );
-  const revenuePointerConfig = useMemo(
-    () => ({
-      pointerStripUptoDataPoint: true,
-      pointerStripColor: 'rgba(15, 118, 110, 0.18)',
-      pointerStripWidth: 2,
-      pointerColor: '#0F766E',
-      radius: 5,
-      activatePointersOnLongPress: true,
-      pointerLabelWidth: 132,
-      pointerLabelHeight: 76,
-      pointerLabelComponent: renderCompactPointerLabel,
-    }),
-    [renderCompactPointerLabel],
-  );
-  const earningsHistoryPointerConfig = useMemo(
-    () => ({
-      pointerStripUptoDataPoint: true,
-      pointerStripColor: 'rgba(249, 115, 22, 0.18)',
-      pointerStripWidth: 2,
-      pointerColor: '#F97316',
-      radius: 5,
-      activatePointersOnLongPress: true,
-      pointerLabelWidth: 132,
-      pointerLabelHeight: 76,
-      pointerLabelComponent: renderTargetPointerLabel,
-    }),
-    [renderTargetPointerLabel],
-  );
 
   if (loading && !bundle) {
     return <FundamentalsLoadingState styles={styles} themeColors={themeColors} />;
@@ -2228,8 +1857,8 @@ const FundamentalsTab = ({
   return (
     <View style={styles.tabContent}>
       <View style={[styles.card, styles.sectionHeroCard, styles.fundamentalsHeroCard]}>
-        <AppText style={[styles.cardTitle, styles.fundSectionTitle]}>Fundamentals</AppText>
-        <AppText style={[styles.sectionHeroText, styles.fundSectionText]}>
+        <AppText style={styles.cardTitle}>Fundamentals</AppText>
+        <AppText style={styles.sectionHeroText}>
           Statements, estimates, recommendations, and company-level financial context from the existing stock APIs.
         </AppText>
         <View style={styles.fundamentalsHeroMeta}>
@@ -2255,66 +1884,94 @@ const FundamentalsTab = ({
       </View>
 
       <View style={[styles.card, styles.fundamentalsSectionCard]}>
-        <View style={styles.fundSectionHeader}>
-          <AppText style={[styles.cardTitle, styles.fundSectionTitle]}>Margins and returns</AppText>
-          <AppText style={[styles.sectionHeroText, styles.fundSectionText]}>
-            Curved line view of margin and return quality across core profitability metrics.
-          </AppText>
-        </View>
-        {profitabilityAreaData.length ? (
-          <View style={styles.fundChartStage}>
-            <View style={styles.fundChartHalo}>
-            <LineChart
-              areaChart
-              curved
-              data={profitabilityAreaData}
+        <AppText style={styles.cardTitle}>Financial momentum</AppText>
+        <AppText style={styles.sectionHeroText}>
+          Revenue and net income visualized across the most recent reported periods.
+        </AppText>
+        {revenueTrendData.length ? (
+          <View style={styles.fundChartWrap}>
+            <BarChart
+              data={revenueTrendData}
               width={chartWidth}
-              height={218}
-              spacing={getFundLineSpacing(profitabilityAreaData.length, 52)}
-              initialSpacing={24}
-              endSpacing={24}
-              thickness={2.5}
+              height={220}
+              barWidth={22}
+              spacing={18}
+              initialSpacing={12}
+              endSpacing={12}
+              barBorderRadius={7}
               isAnimated
-              animationDuration={1100}
-              startFillColor="rgba(96, 165, 250, 0.28)"
-              endFillColor="rgba(29, 78, 216, 0.04)"
-              startOpacity={0.95}
-              endOpacity={0.12}
-              hideDataPoints={false}
-              dataPointsRadius={2}
-              color="#2563EB"
-              lineGradient
-              lineGradientStartColor="#60A5FA"
-              lineGradientEndColor="#1D4ED8"
               noOfSections={4}
               hideRules
-              showYAxisIndices
-              yAxisIndicesColor="rgba(148,163,184,0.14)"
               xAxisThickness={0}
               yAxisThickness={0}
               yAxisLabelWidth={0}
               hideYAxisText
-              showVerticalLines
-              verticalLinesColor="rgba(148,163,184,0.12)"
-              verticalLinesThickness={1}
-              dataPointsColor="#2563EB"
-              focusedDataPointColor="#1D4ED8"
-              focusedDataPointRadius={7}
-              showDataPointLabelOnFocus
-              pointerConfig={profitPointerConfig}
-              xAxisLabelTextStyle={styles.fundChartAxisText}
-              focusEnabled
               disableScroll
+              labelTextStyle={styles.fundChartAxisText}
             />
-            </View>
-            <View style={styles.fundChartMetaRow}>
-              {profitabilitySummary.map((item, index) => (
-                <View key={`${item.label}-${index}`} style={styles.fundChartMetaPill}>
-                  <AppText style={styles.fundChartMetaLabel}>{item.label}</AppText>
-                  <AppText style={styles.fundChartMetaValue}>{item.value}</AppText>
-                </View>
-              ))}
-            </View>
+          </View>
+        ) : (
+          <AppText style={styles.emptyText}>No revenue trend data available.</AppText>
+        )}
+        {incomeTrendData.length ? (
+          <View style={styles.fundMiniTrendBlock}>
+            <AppText style={styles.fundMiniTrendTitle}>Net income trend</AppText>
+            <LineChart
+              data={incomeTrendData}
+              width={chartWidth}
+              height={180}
+              spacing={56}
+              initialSpacing={18}
+              endSpacing={18}
+              thickness={3}
+              curved
+              areaChart
+              isAnimated
+              color="#16A34A"
+              startFillColor="rgba(22, 163, 74, 0.25)"
+              endFillColor="rgba(22, 163, 74, 0.02)"
+              noOfSections={4}
+              hideRules
+              xAxisThickness={0}
+              yAxisThickness={0}
+              yAxisLabelWidth={0}
+              hideYAxisText
+              disableScroll
+              dataPointsColor="#16A34A"
+              labelTextStyle={styles.fundChartAxisText}
+            />
+          </View>
+        ) : null}
+      </View>
+
+      <View style={[styles.card, styles.fundamentalsSectionCard]}>
+        <AppText style={styles.cardTitle}>Profitability profile</AppText>
+        <AppText style={styles.sectionHeroText}>
+          Margin and return metrics converted into a compact visual scorecard.
+        </AppText>
+        {marginChartData.length ? (
+          <View style={styles.fundChartWrap}>
+            <BarChart
+              data={marginChartData}
+              width={chartWidth}
+              height={220}
+              barWidth={26}
+              spacing={16}
+              initialSpacing={8}
+              endSpacing={8}
+              barBorderRadius={7}
+              isAnimated
+              noOfSections={4}
+              hideRules
+              xAxisThickness={0}
+              yAxisThickness={0}
+              yAxisLabelWidth={0}
+              hideYAxisText
+              disableScroll
+              showValuesAsTopLabel
+              topLabelTextStyle={styles.fundChartTopLabel}
+              labelTextStyle={styles.fundChartAxisText}
+            />
           </View>
         ) : (
           <AppText style={styles.emptyText}>No profitability metrics available.</AppText>
@@ -2322,66 +1979,33 @@ const FundamentalsTab = ({
       </View>
 
       <View style={[styles.card, styles.fundamentalsSectionCard]}>
-        <View style={styles.fundSectionHeader}>
-          <AppText style={[styles.cardTitle, styles.fundSectionTitle]}>Analyst target range</AppText>
-          <AppText style={[styles.sectionHeroText, styles.fundSectionText]}>
-            Curved line view of low, current, mean, and high analyst expectations.
-          </AppText>
-        </View>
-        {targetAreaData.length ? (
-          <View style={styles.fundChartStage}>
-            <View style={styles.fundChartHalo}>
-            <LineChart
-              areaChart
-              curved
-              data={targetAreaData}
+        <AppText style={styles.cardTitle}>Analyst target range</AppText>
+        <AppText style={styles.sectionHeroText}>
+          The current price is shown alongside analyst low, mean, and high targets.
+        </AppText>
+        {targetRangeChartData.length ? (
+          <View style={styles.fundChartWrap}>
+            <BarChart
+              data={targetRangeChartData}
               width={chartWidth}
-              height={218}
-              spacing={getFundLineSpacing(targetAreaData.length, 58)}
-              initialSpacing={24}
-              endSpacing={24}
-              thickness={2.5}
+              height={220}
+              barWidth={28}
+              spacing={18}
+              initialSpacing={8}
+              endSpacing={8}
+              barBorderRadius={7}
               isAnimated
-              animationDuration={1100}
-              startFillColor="rgba(14, 165, 233, 0.22)"
-              endFillColor="rgba(8, 145, 178, 0.03)"
-              startOpacity={0.9}
-              endOpacity={0.1}
-              hideDataPoints={false}
-              dataPointsRadius={5.5}
-              color="#0891B2"
-              lineGradient
-              lineGradientStartColor="#22D3EE"
-              lineGradientEndColor="#0E7490"
               noOfSections={4}
               hideRules
-              showYAxisIndices
-              yAxisIndicesColor="rgba(148,163,184,0.14)"
               xAxisThickness={0}
               yAxisThickness={0}
               yAxisLabelWidth={0}
               hideYAxisText
-              showVerticalLines
-              verticalLinesColor="rgba(148,163,184,0.12)"
-              verticalLinesThickness={1}
-              dataPointsColor="#0891B2"
-              focusedDataPointColor="#0E7490"
-              focusedDataPointRadius={7}
-              showDataPointLabelOnFocus
-              pointerConfig={targetPointerConfig}
-              xAxisLabelTextStyle={styles.fundChartAxisText}
-              focusEnabled
               disableScroll
+              showValuesAsTopLabel
+              topLabelTextStyle={styles.fundChartTopLabel}
+              labelTextStyle={styles.fundChartAxisText}
             />
-            </View>
-            <View style={styles.fundChartMetaRow}>
-              {targetSummary.map((item, index) => (
-                <View key={`${item.label}-${index}`} style={styles.fundChartMetaPill}>
-                  <AppText style={styles.fundChartMetaLabel}>{item.label}</AppText>
-                  <AppText style={styles.fundChartMetaValue}>{item.value}</AppText>
-                </View>
-              ))}
-            </View>
           </View>
         ) : (
           <AppText style={styles.emptyText}>No analyst target data available.</AppText>
@@ -2389,12 +2013,10 @@ const FundamentalsTab = ({
       </View>
 
       <View style={[styles.card, styles.fundamentalsSectionCard]}>
-        <View style={styles.fundSectionHeader}>
-          <AppText style={[styles.cardTitle, styles.fundSectionTitle]}>Balance sheet mix</AppText>
-          <AppText style={[styles.sectionHeroText, styles.fundSectionText]}>
-            Latest balance sheet composition using the biggest reported asset buckets.
-          </AppText>
-        </View>
+        <AppText style={styles.cardTitle}>Balance sheet mix</AppText>
+        <AppText style={styles.sectionHeroText}>
+          Latest balance sheet composition using the biggest reported asset buckets.
+        </AppText>
         {capitalMixData.length ? (
           <View style={styles.fundPieSection}>
             <PieChart
@@ -2425,9 +2047,7 @@ const FundamentalsTab = ({
       </View>
 
       <View style={[styles.card, styles.fundamentalsSectionCard]}>
-        <View style={styles.fundSectionHeader}>
-          <AppText style={[styles.cardTitle, styles.fundSectionTitle]}>Company context</AppText>
-        </View>
+        <AppText style={styles.cardTitle}>Company context</AppText>
         <View style={styles.snapshotTileGrid}>
           {companyInfoCards.map((item, index) => (
             <View key={`${item.label}-${index}`} style={styles.snapshotTile}>
@@ -2439,9 +2059,7 @@ const FundamentalsTab = ({
       </View>
 
       <View style={[styles.card, styles.fundamentalsSectionCard]}>
-        <View style={styles.fundSectionHeader}>
-          <AppText style={[styles.cardTitle, styles.fundSectionTitle]}>All company info</AppText>
-        </View>
+        <AppText style={styles.cardTitle}>All company info</AppText>
         {renderInfoFields(info, styles)}
       </View>
 
@@ -2454,123 +2072,66 @@ const FundamentalsTab = ({
       {bundle ? (
         <>
           <View style={[styles.card, styles.fundamentalsSectionCard]}>
-            <View style={styles.fundSectionHeader}>
-              <AppText style={[styles.cardTitle, styles.fundSectionTitle]}>Earnings estimate trend</AppText>
-              <AppText style={[styles.sectionHeroText, styles.fundSectionText]}>
-                Animated line charts for forward earnings and revenue expectations.
-              </AppText>
-            </View>
-            {earningsAreaData.length ? (
-              <View style={styles.fundChartStage}>
-                <View style={styles.fundChartHalo}>
+            <AppText style={styles.cardTitle}>Forward estimates</AppText>
+            <AppText style={styles.sectionHeroText}>
+              Consensus earnings and revenue estimates rendered as forecast charts.
+            </AppText>
+            {earningsEstimateChartData.length ? (
+              <View style={styles.fundMiniTrendBlock}>
+                <AppText style={styles.fundMiniTrendTitle}>Earnings estimate trend</AppText>
                 <LineChart
-                  areaChart
-                  data={earningsAreaData}
+                  data={earningsEstimateChartData}
                   width={chartWidth}
-                  height={218}
-                  spacing={getFundLineSpacing(earningsAreaData.length, 52)}
-                  initialSpacing={24}
-                  endSpacing={24}
-                  thickness={2.5}
+                  height={180}
+                  spacing={56}
+                  initialSpacing={18}
+                  endSpacing={18}
+                  thickness={3}
                   curved
+                  areaChart
                   isAnimated
-                  animationDuration={1200}
                   color="#7C3AED"
-                  lineGradient
-                  lineGradientStartColor="#A78BFA"
-                  lineGradientEndColor="#6D28D9"
-                  startFillColor="rgba(167, 139, 250, 0.28)"
-                  endFillColor="rgba(109, 40, 217, 0.04)"
-                  startOpacity={0.94}
-                  endOpacity={0.12}
+                  startFillColor="rgba(124, 58, 237, 0.22)"
+                  endFillColor="rgba(124, 58, 237, 0.02)"
                   noOfSections={4}
                   hideRules
-                  showYAxisIndices
-                  yAxisIndicesColor="rgba(148,163,184,0.14)"
                   xAxisThickness={0}
                   yAxisThickness={0}
                   yAxisLabelWidth={0}
                   hideYAxisText
-                  hideDataPoints={false}
-                  dataPointsRadius={5.5}
-                  showVerticalLines
-                  verticalLinesColor="rgba(148,163,184,0.16)"
-                  verticalLinesThickness={1}
-                  dataPointsColor="#7C3AED"
-                  focusedDataPointColor="#6D28D9"
-                  focusedDataPointRadius={7}
-                  showDataPointLabelOnFocus
-                  pointerConfig={earningsPointerConfig}
-                  xAxisLabelTextStyle={styles.fundChartAxisText}
-                  focusEnabled
                   disableScroll
+                  dataPointsColor="#7C3AED"
+                  showValuesAsDataPointsText
+                  textColor="#7C3AED"
+                  textFontSize={10}
+                  labelTextStyle={styles.fundChartAxisText}
                 />
-                </View>
-                <View style={styles.fundChartMetaRow}>
-                  {earningsSummary.map((item, index) => (
-                    <View key={`${item.label}-${index}`} style={styles.fundChartMetaPill}>
-                      <AppText style={styles.fundChartMetaLabel}>{item.label}</AppText>
-                      <AppText style={styles.fundChartMetaValue}>{item.value}</AppText>
-                    </View>
-                  ))}
-                </View>
               </View>
             ) : null}
-            {revenueAreaData.length ? (
-              <View style={styles.fundChartStage}>
-                <AppText style={styles.fundMiniTrendTitle}></AppText>
-                <View style={styles.fundChartHalo}>
-                <LineChart
-                  areaChart
-                  data={revenueAreaData}
+            {revenueEstimateChartData.length ? (
+              <View style={styles.fundMiniTrendBlock}>
+                <AppText style={styles.fundMiniTrendTitle}>Revenue estimate trend</AppText>
+                <BarChart
+                  data={revenueEstimateChartData}
                   width={chartWidth}
-                  height={218}
-                  spacing={getFundLineSpacing(revenueAreaData.length, 52)}
-                  initialSpacing={24}
-                  endSpacing={24}
-                  thickness={2.5}
-                  curved
+                  height={200}
+                  barWidth={24}
+                  spacing={18}
+                  initialSpacing={10}
+                  endSpacing={10}
+                  barBorderRadius={7}
                   isAnimated
-                  animationDuration={1200}
-                  hideDataPoints={false}
-                  dataPointsRadius={5.5}
-                  color="#0F766E"
-                  lineGradient
-                  lineGradientStartColor="#2DD4BF"
-                  lineGradientEndColor="#0F766E"
-                  startFillColor="rgba(45, 212, 191, 0.24)"
-                  endFillColor="rgba(15, 118, 110, 0.035)"
-                  startOpacity={0.92}
-                  endOpacity={0.12}
                   noOfSections={4}
                   hideRules
-                  showYAxisIndices
-                  yAxisIndicesColor="rgba(148,163,184,0.14)"
                   xAxisThickness={0}
                   yAxisThickness={0}
                   yAxisLabelWidth={0}
                   hideYAxisText
-                  showVerticalLines
-                  verticalLinesColor="rgba(148,163,184,0.16)"
-                  verticalLinesThickness={1}
-                  dataPointsColor="#0F766E"
-                  focusedDataPointColor="#0F766E"
-                  focusedDataPointRadius={7}
-                  showDataPointLabelOnFocus
-                  pointerConfig={revenuePointerConfig}
-                  xAxisLabelTextStyle={styles.fundChartAxisText}
-                  focusEnabled
                   disableScroll
+                  showValuesAsTopLabel
+                  topLabelTextStyle={styles.fundChartTopLabel}
+                  labelTextStyle={styles.fundChartAxisText}
                 />
-                </View>
-                <View style={styles.fundChartMetaRow}>
-                  {revenueSummary.map((item, index) => (
-                    <View key={`${item.label}-${index}`} style={styles.fundChartMetaPill}>
-                      <AppText style={styles.fundChartMetaLabel}>{item.label}</AppText>
-                      <AppText style={styles.fundChartMetaValue}>{item.value}</AppText>
-                    </View>
-                  ))}
-                </View>
               </View>
             ) : null}
             {!earningsEstimateChartData.length && !revenueEstimateChartData.length ? (
@@ -2579,9 +2140,7 @@ const FundamentalsTab = ({
           </View>
 
           <View style={[styles.card, styles.fundamentalsSectionCard]}>
-            <View style={styles.fundSectionHeader}>
-              <AppText style={[styles.cardTitle, styles.fundSectionTitle]}>Analyst outlook</AppText>
-            </View>
+            <AppText style={styles.cardTitle}>Analyst outlook</AppText>
             <View style={styles.metricsGrid}>
               {analystSummary.map((item, index) => (
                 <View key={`${item.label}-${index}`} style={styles.metricCard}>
@@ -2593,12 +2152,8 @@ const FundamentalsTab = ({
           </View>
 
           <View style={[styles.card, styles.fundamentalsSectionCard]}>
-            <View style={styles.fundSectionHeader}>
-              <AppText style={[styles.cardTitle, styles.fundSectionTitle]}>Latest income snapshot</AppText>
-              <AppText style={[styles.sectionHeroText, styles.fundSectionText]}>
-                {getPeriodLabel(latestIncomeRow || {}, 'Most recent period')}
-              </AppText>
-            </View>
+            <AppText style={styles.cardTitle}>Latest income snapshot</AppText>
+            <AppText style={styles.sectionHeroText}>{getPeriodLabel(latestIncomeRow || {}, 'Most recent period')}</AppText>
             {latestIncomeRow
               ? renderDetailRows(
                   [
@@ -2622,12 +2177,8 @@ const FundamentalsTab = ({
           </View>
 
           <View style={[styles.card, styles.fundamentalsSectionCard]}>
-            <View style={styles.fundSectionHeader}>
-              <AppText style={[styles.cardTitle, styles.fundSectionTitle]}>Latest balance snapshot</AppText>
-              <AppText style={[styles.sectionHeroText, styles.fundSectionText]}>
-                {getPeriodLabel(latestBalanceRow || {}, 'Most recent period')}
-              </AppText>
-            </View>
+            <AppText style={styles.cardTitle}>Latest balance snapshot</AppText>
+            <AppText style={styles.sectionHeroText}>{getPeriodLabel(latestBalanceRow || {}, 'Most recent period')}</AppText>
             {latestBalanceRow
               ? renderDetailRows(
                   [
@@ -2651,308 +2202,45 @@ const FundamentalsTab = ({
           </View>
 
           <View style={[styles.card, styles.fundamentalsSectionCard]}>
-            <View style={styles.fundSectionHeader}>
-              <AppText style={[styles.cardTitle, styles.fundSectionTitle]}>Earnings estimates</AppText>
-            </View>
+            <AppText style={styles.cardTitle}>Earnings estimates</AppText>
             {bundle.earningsEstimate.length ? (
-              <>
-                {earningsAreaData.length ? (
-                  <View style={styles.fundChartStage}>
-                    <View style={styles.fundChartHalo}>
-                      <LineChart
-                        areaChart
-                        data={earningsAreaData}
-                        width={chartWidth}
-                        height={210}
-                        spacing={getFundLineSpacing(earningsAreaData.length, 52)}
-                        initialSpacing={24}
-                        endSpacing={24}
-                        thickness={4.5}
-                        curved
-                        isAnimated
-                        animationDuration={1200}
-                        color="#7C3AED"
-                        lineGradient
-                        lineGradientStartColor="#A78BFA"
-                        lineGradientEndColor="#6D28D9"
-                        startFillColor="rgba(167, 139, 250, 0.28)"
-                        endFillColor="rgba(109, 40, 217, 0.04)"
-                        startOpacity={0.94}
-                        endOpacity={0.12}
-                        noOfSections={4}
-                        hideRules
-                        showYAxisIndices
-                        yAxisIndicesColor="rgba(148,163,184,0.14)"
-                        xAxisThickness={0}
-                        yAxisThickness={0}
-                        yAxisLabelWidth={0}
-                        hideYAxisText
-                        hideDataPoints={false}
-                        dataPointsRadius={5.5}
-                        showVerticalLines
-                        verticalLinesColor="rgba(148,163,184,0.16)"
-                        verticalLinesThickness={1}
-                        dataPointsColor="#7C3AED"
-                        focusedDataPointColor="#6D28D9"
-                        focusedDataPointRadius={7}
-                        showDataPointLabelOnFocus
-                        pointerConfig={earningsPointerConfig}
-                        xAxisLabelTextStyle={styles.fundChartAxisText}
-                        focusEnabled
-                        disableScroll
-                      />
-                    </View>
-                  </View>
-                ) : null}
-                <View style={styles.fundDataStack}>{renderEstimateCards(bundle.earningsEstimate, styles, info?.currency)}</View>
-              </>
+              <View style={styles.fundDataStack}>{renderEstimateCards(bundle.earningsEstimate, styles, info?.currency)}</View>
             ) : (
               <AppText style={styles.emptyText}>No earnings estimate data.</AppText>
             )}
           </View>
 
           <View style={[styles.card, styles.fundamentalsSectionCard]}>
-            <View style={styles.fundSectionHeader}>
-              <AppText style={[styles.cardTitle, styles.fundSectionTitle]}>Revenue estimates</AppText>
-            </View>
+            <AppText style={styles.cardTitle}>Revenue estimates</AppText>
             {bundle.revenueEstimate.length ? (
-              <>
-                {revenueAreaData.length ? (
-                  <View style={styles.fundChartStage}>
-                    <View style={styles.fundChartHalo}>
-                      <LineChart
-                        areaChart
-                        data={revenueAreaData}
-                        width={chartWidth}
-                        height={210}
-                        spacing={getFundLineSpacing(revenueAreaData.length, 52)}
-                        initialSpacing={24}
-                        endSpacing={24}
-                        thickness={2.5}
-                        curved
-                        isAnimated
-                        animationDuration={1200}
-                        hideDataPoints={false}
-                        dataPointsRadius={5.5}
-                        color="#0F766E"
-                        lineGradient
-                        lineGradientStartColor="#2DD4BF"
-                        lineGradientEndColor="#0F766E"
-                        startFillColor="rgba(45, 212, 191, 0.24)"
-                        endFillColor="rgba(15, 118, 110, 0.035)"
-                        startOpacity={0.92}
-                        endOpacity={0.12}
-                        noOfSections={4}
-                        hideRules
-                        showYAxisIndices
-                        yAxisIndicesColor="rgba(148,163,184,0.14)"
-                        xAxisThickness={0}
-                        yAxisThickness={0}
-                        yAxisLabelWidth={0}
-                        hideYAxisText
-                        showVerticalLines
-                        verticalLinesColor="rgba(148,163,184,0.16)"
-                        verticalLinesThickness={1}
-                        dataPointsColor="#0F766E"
-                        focusedDataPointColor="#0F766E"
-                        focusedDataPointRadius={7}
-                        showDataPointLabelOnFocus
-                        pointerConfig={revenuePointerConfig}
-                        xAxisLabelTextStyle={styles.fundChartAxisText}
-                        focusEnabled
-                        disableScroll
-                      />
-                    </View>
-                  </View>
-                ) : null}
-                <View style={styles.fundDataStack}>{renderEstimateCards(bundle.revenueEstimate, styles, info?.currency)}</View>
-              </>
+              <View style={styles.fundDataStack}>{renderEstimateCards(bundle.revenueEstimate, styles, info?.currency)}</View>
             ) : (
               <AppText style={styles.emptyText}>No revenue estimate data.</AppText>
             )}
           </View>
 
           <View style={[styles.card, styles.fundamentalsSectionCard]}>
-            <View style={styles.fundSectionHeader}>
-              <AppText style={[styles.cardTitle, styles.fundSectionTitle]}>Earnings history</AppText>
-            </View>
+            <AppText style={styles.cardTitle}>Earnings history</AppText>
             {bundle.earningsHistory.length ? (
-              <>
-                {earningsHistoryAreaData.length ? (
-                  <View style={styles.fundChartStage}>
-                    <AppText style={styles.fundMiniTrendTitle}>Reported EPS trend</AppText>
-                    <View style={styles.fundChartHalo}>
-                      <LineChart
-                        areaChart
-                        data={earningsHistoryAreaData}
-                        width={chartWidth}
-                        height={210}
-                        spacing={getFundLineSpacing(earningsHistoryAreaData.length, 52)}
-                        initialSpacing={24}
-                        endSpacing={24}
-                        thickness={2.5}
-                        curved
-                        isAnimated
-                        animationDuration={1200}
-                        color="#F97316"
-                        lineGradient
-                        lineGradientStartColor="#FB923C"
-                        lineGradientEndColor="#EA580C"
-                        startFillColor="rgba(251, 146, 60, 0.24)"
-                        endFillColor="rgba(234, 88, 12, 0.035)"
-                        startOpacity={0.92}
-                        endOpacity={0.12}
-                        noOfSections={4}
-                        hideRules
-                        showYAxisIndices
-                        yAxisIndicesColor="rgba(148,163,184,0.14)"
-                        xAxisThickness={0}
-                        yAxisThickness={0}
-                        yAxisLabelWidth={0}
-                        hideYAxisText
-                        showVerticalLines
-                        verticalLinesColor="rgba(148,163,184,0.16)"
-                        verticalLinesThickness={1}
-                        hideDataPoints={false}
-                        dataPointsRadius={5.5}
-                        dataPointsColor="#F97316"
-                        focusedDataPointColor="#EA580C"
-                        focusedDataPointRadius={7}
-                        showDataPointLabelOnFocus
-                        pointerConfig={earningsHistoryPointerConfig}
-                        xAxisLabelTextStyle={styles.fundChartAxisText}
-                        focusEnabled
-                        disableScroll
-                      />
-                    </View>
-                    <View style={styles.fundChartMetaRow}>
-                      {earningsHistorySummary.map((item, index) => (
-                        <View key={`${item.label}-${index}`} style={styles.fundChartMetaPill}>
-                          <AppText style={styles.fundChartMetaLabel}>{item.label}</AppText>
-                          <AppText style={styles.fundChartMetaValue}>{item.value}</AppText>
-                        </View>
-                      ))}
-                    </View>
-                  </View>
-                ) : null}
-                <View style={styles.fundDataStack}>{renderEarningsHistoryCards(bundle.earningsHistory, styles)}</View>
-              </>
+              <View style={styles.fundDataStack}>{renderEarningsHistoryCards(bundle.earningsHistory, styles)}</View>
             ) : (
               <AppText style={styles.emptyText}>No earnings history data.</AppText>
             )}
           </View>
 
           <View style={[styles.card, styles.fundamentalsSectionCard]}>
-            <View style={styles.fundSectionHeader}>
-              <AppText style={[styles.cardTitle, styles.fundSectionTitle]}>Income statement</AppText>
-            </View>
+            <AppText style={styles.cardTitle}>Income statement</AppText>
             {bundle.incomeStatement.length ? (
-              <>
-                {incomeStatementRevenueAreaData.length ? (
-                  <View style={styles.fundChartStage}>
-                    <AppText style={styles.fundMiniTrendTitle}>Revenue trend</AppText>
-                    <View style={styles.fundChartHalo}>
-                      <LineChart
-                        areaChart
-                        data={incomeStatementRevenueAreaData}
-                        width={chartWidth}
-                        height={210}
-                        spacing={getFundLineSpacing(incomeStatementRevenueAreaData.length, 52)}
-                        initialSpacing={24}
-                        endSpacing={24}
-                        thickness={2.5}
-                        curved
-                        isAnimated
-                        animationDuration={1200}
-                        color="#2563EB"
-                        lineGradient
-                        lineGradientStartColor="#60A5FA"
-                        lineGradientEndColor="#1D4ED8"
-                        startFillColor="rgba(96, 165, 250, 0.24)"
-                        endFillColor="rgba(29, 78, 216, 0.035)"
-                        startOpacity={0.92}
-                        endOpacity={0.12}
-                        noOfSections={4}
-                        hideRules
-                        showYAxisIndices
-                        yAxisIndicesColor="rgba(148,163,184,0.14)"
-                        xAxisThickness={0}
-                        yAxisThickness={0}
-                        yAxisLabelWidth={0}
-                        hideYAxisText
-                        showVerticalLines
-                        verticalLinesColor="rgba(148,163,184,0.16)"
-                        verticalLinesThickness={1}
-                        hideDataPoints={false}
-                        dataPointsRadius={5.5}
-                        dataPointsColor="#2563EB"
-                        focusedDataPointColor="#1D4ED8"
-                        focusedDataPointRadius={7}
-                        showDataPointLabelOnFocus
-                        pointerConfig={revenuePointerConfig}
-                        xAxisLabelTextStyle={styles.fundChartAxisText}
-                        focusEnabled
-                        disableScroll
-                      />
-                    </View>
-                    <View style={styles.fundChartMetaRow}>
-                      {incomeStatementSummary.map((item, index) => (
-                        <View key={`${item.label}-${index}`} style={styles.fundChartMetaPill}>
-                          <AppText style={styles.fundChartMetaLabel}>{item.label}</AppText>
-                          <AppText style={styles.fundChartMetaValue}>{item.value}</AppText>
-                        </View>
-                      ))}
-                    </View>
-                  </View>
-                ) : null}
-                {renderStatementCards(bundle.incomeStatement, statementKeyOrder.income, styles, info?.currency)}
-              </>
+              renderStatementCards(bundle.incomeStatement, statementKeyOrder.income, styles, info?.currency)
             ) : (
               <AppText style={styles.emptyText}>No income statement data.</AppText>
             )}
           </View>
 
           <View style={[styles.card, styles.fundamentalsSectionCard]}>
-            <View style={styles.fundSectionHeader}>
-              <AppText style={[styles.cardTitle, styles.fundSectionTitle]}>Balance sheet</AppText>
-            </View>
+            <AppText style={styles.cardTitle}>Balance sheet</AppText>
             {bundle.balanceSheet.length ? (
-              <>
-                {balanceStructureData.length ? (
-                  <View style={styles.fundChartStage}>
-                    <View style={styles.fundPieSection}>
-                      <PieChart
-                        data={balanceStructureData}
-                        donut
-                        radius={88}
-                        innerRadius={54}
-                        innerCircleColor={themeColors.surface}
-                        strokeColor={themeColors.surface}
-                        strokeWidth={2}
-                        showText={false}
-                        isAnimated
-                        centerLabelComponent={() => (
-                          <View style={styles.fundPieCenter}>
-                            <AppText style={styles.fundPieCenterLabel}>Balance</AppText>
-                            <AppText style={styles.fundPieCenterValue}>{balanceStructureData.length}</AppText>
-                            <AppText style={styles.fundPieCenterSub}>slices</AppText>
-                          </View>
-                        )}
-                      />
-                      <View style={styles.fundLegendList}>
-                        {balanceStructureData.map((item, index) => (
-                          <View key={`${item.label}-${index}`} style={styles.fundLegendRow}>
-                            <View style={[styles.fundLegendDot, { backgroundColor: item.color }]} />
-                            <AppText style={styles.fundLegendText}>{item.label}</AppText>
-                            <AppText style={styles.fundLegendValue}>{formatAbbrevNumber(item.value)}</AppText>
-                          </View>
-                        ))}
-                      </View>
-                    </View>
-                  </View>
-                ) : null}
-                {renderStatementCards(bundle.balanceSheet, statementKeyOrder.balance, styles, info?.currency)}
-              </>
+              renderStatementCards(bundle.balanceSheet, statementKeyOrder.balance, styles, info?.currency)
             ) : (
               <AppText style={styles.emptyText}>No balance sheet data.</AppText>
             )}
@@ -3164,49 +2452,6 @@ const buildAreaPath = (points: StockHistoryPoint[], width: number, height: numbe
   return `${line} L ${width.toFixed(2)} ${baseY.toFixed(2)} L 0 ${baseY.toFixed(2)} Z`;
 };
 
-const buildAdaptiveXAxisMarks = (points: StockHistoryPoint[]) => {
-  if (!points.length) return [];
-  const lastIndex = points.length - 1;
-  const rangeMs = Math.abs((points[lastIndex]?.timestamp ?? 0) - (points[0]?.timestamp ?? 0));
-  const showTime = rangeMs <= 1000 * 60 * 60 * 24 * 7;
-  const candidateIndices =
-    points.length <= 2
-      ? [0, lastIndex]
-      : points.length <= 5
-        ? [0, Math.floor(lastIndex / 2), lastIndex]
-        : points.length <= 12
-          ? [0, Math.floor(lastIndex / 3), Math.floor((lastIndex * 2) / 3), lastIndex]
-          : [0, Math.floor(lastIndex / 4), Math.floor(lastIndex / 2), Math.floor((lastIndex * 3) / 4), lastIndex];
-
-  return Array.from(new Set(candidateIndices))
-    .filter((index) => index >= 0 && index <= lastIndex)
-    .map((index, markIndex, arr) => ({
-      key: `x-${index}`,
-      label: formatChartAxisTime(points[index].timestamp, showTime),
-      align:
-        markIndex === 0
-          ? ('flex-start' as const)
-          : markIndex === arr.length - 1
-            ? ('flex-end' as const)
-            : ('center' as const),
-    }));
-};
-
-const buildAdaptiveYAxisMarks = (min: number, max: number, tall: boolean) => {
-  if (!Number.isFinite(min) || !Number.isFinite(max)) return [];
-  const range = max - min;
-  const tickCount = range === 0 ? 2 : tall ? 5 : 4;
-  return Array.from({ length: tickCount }, (_, index) => {
-    const ratio = index / (tickCount - 1);
-    const value = max - range * ratio;
-    return {
-      key: `y-${index}`,
-      label: formatCurrency(value),
-      ratio,
-    };
-  });
-};
-
 const MainChart = ({
   points,
   color,
@@ -3286,73 +2531,46 @@ const MainChart = ({
     titleColor: '#FFFFFF',
     bodyColor: theme === 'light' ? 'rgba(255,255,255,0.88)' : themeColors.textMuted,
   };
-  const xAxisMarks = useMemo(() => {
-    return buildAdaptiveXAxisMarks(chartPoints);
-  }, [chartPoints]);
-  const yAxisMarks = useMemo(() => {
-    if (!hasChartPoints) return [];
-    return buildAdaptiveYAxisMarks(min, max, tall).map((item) => ({
-      key: item.key,
-      label: item.label,
-      top: Math.max(plotHeight * item.ratio - 10, 0),
-    }));
-  }, [hasChartPoints, max, min, plotHeight, tall]);
 
   return (
     <View>
       <View style={styles.chartWrap}>
         {hasChartPoints ? (
-          <View style={styles.chartFrame}>
-            <View>
-              <Svg width={chartWidth} height={chartHeight}>
-                <Defs>
-                  <LinearGradient id="chartAreaGradient" x1="0" y1="0" x2="0" y2="1">
-                    <Stop offset="0%" stopColor={softenedColor} stopOpacity="0.18" />
-                    <Stop offset="100%" stopColor={softenedColor} stopOpacity="0.015" />
-                  </LinearGradient>
-                </Defs>
-                <Line x1="0" y1={plotHeight} x2={chartWidth} y2={plotHeight} stroke="rgba(148,163,184,0.18)" strokeWidth="1" />
-                {tall ? (
-                  <>
-                    <Line x1={chartWidth * 0.38} y1={0} x2={chartWidth * 0.38} y2={plotHeight} stroke="rgba(148,163,184,0.12)" strokeWidth="1" />
-                    <Line x1={0} y1={plotHeight * 0.45} x2={chartWidth} y2={plotHeight * 0.45} stroke="rgba(148,163,184,0.12)" strokeWidth="1" strokeDasharray="4 4" />
-                  </>
-                ) : null}
-                <Path d={areaPath} fill="url(#chartAreaGradient)" />
-                <Path d={path} fill="none" stroke={softenedColor} strokeOpacity={0.92} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
-                {activePoint ? (
-                  <>
-                    <Line
-                      x1={activePoint.x}
-                      y1="0"
-                      x2={activePoint.x}
-                      y2={plotHeight}
-                      stroke={themeColors.textMuted}
-                      strokeOpacity={0.34}
-                      strokeDasharray="4 4"
-                      strokeWidth="1"
-                    />
-                    <Circle cx={activePoint.x} cy={activePoint.y} r="5" fill={softenedColor} stroke={themeColors.surface} strokeWidth="2.5" />
-                  </>
-                ) : null}
-              </Svg>
-              <View style={[StyleSheet.absoluteFill, { left: 0, right: 0 }]} {...panResponder.panHandlers} />
-              <View style={[styles.chartYAxis, { height: chartHeight }]}>
-                {yAxisMarks.map((item) => (
-                  <AppText key={item.key} style={[styles.chartAxisText, styles.chartYAxisText, { top: item.top }]}>
-                    {item.label}
-                  </AppText>
-                ))}
-              </View>
-              <View style={styles.chartXAxis}>
-                {xAxisMarks.map((item) => (
-                  <View key={item.key} style={[styles.chartXAxisSlot, { alignItems: item.align }]}>
-                    <AppText style={styles.chartAxisText}>{item.label}</AppText>
-                  </View>
-                ))}
-              </View>
-            </View>
-          </View>
+          <>
+            <Svg width={chartWidth} height={chartHeight}>
+              <Defs>
+                <LinearGradient id="chartAreaGradient" x1="0" y1="0" x2="0" y2="1">
+                  <Stop offset="0%" stopColor={softenedColor} stopOpacity="0.18" />
+                  <Stop offset="100%" stopColor={softenedColor} stopOpacity="0.015" />
+                </LinearGradient>
+              </Defs>
+              <Line x1="0" y1={plotHeight} x2={chartWidth} y2={plotHeight} stroke="rgba(148,163,184,0.18)" strokeWidth="1" />
+              {tall ? (
+                <>
+                  <Line x1={chartWidth * 0.38} y1={0} x2={chartWidth * 0.38} y2={plotHeight} stroke="rgba(148,163,184,0.12)" strokeWidth="1" />
+                  <Line x1={0} y1={plotHeight * 0.45} x2={chartWidth} y2={plotHeight * 0.45} stroke="rgba(148,163,184,0.12)" strokeWidth="1" strokeDasharray="4 4" />
+                </>
+              ) : null}
+              <Path d={areaPath} fill="url(#chartAreaGradient)" />
+              <Path d={path} fill="none" stroke={softenedColor} strokeOpacity={0.92} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+              {activePoint ? (
+                <>
+                  <Line
+                    x1={activePoint.x}
+                    y1="0"
+                    x2={activePoint.x}
+                    y2={plotHeight}
+                    stroke={themeColors.textMuted}
+                    strokeOpacity={0.34}
+                    strokeDasharray="4 4"
+                    strokeWidth="1"
+                  />
+                  <Circle cx={activePoint.x} cy={activePoint.y} r="5" fill={softenedColor} stroke={themeColors.surface} strokeWidth="2.5" />
+                </>
+              ) : null}
+            </Svg>
+            <View style={StyleSheet.absoluteFill} {...panResponder.panHandlers} />
+          </>
         ) : (
           <View style={styles.chartLoaderWrap}>
             <AppText style={styles.emptyText}>No chart data for this timeframe.</AppText>
@@ -3540,26 +2758,6 @@ const StockDetailScreen = ({ route }: any) => {
   const fundamentalsState = useStockFundamentals(symbol, visitedTabs.fundamentals || activeTab === 'fundamentals');
   const newsState = useStockNews(symbol, visitedTabs.news || activeTab === 'news');
   const alertsState = useTickerAlerts(symbol, Boolean(token) && (visitedTabs.alerts || activeTab === 'alerts'));
-
-  useEffect(() => {
-    if (activeTab === 'overview') {
-      infoState.reload();
-      overviewSparkline.reload();
-    }
-  }, [activeTab, infoState.reload, overviewSparkline.reload]);
-
-  useEffect(() => {
-    if (activeTab === 'chart') {
-      infoState.reload();
-      chartState.reload();
-    }
-  }, [activeTab, chartState.reload, infoState.reload]);
-
-  useEffect(() => {
-    if (activeTab === 'chart') {
-      chartState.reload();
-    }
-  }, [activeTab, chartState.reload, chartTimeframe]);
 
   const price = infoState.info?.regularMarketPrice;
   const change = infoState.info?.regularMarketChange;
@@ -4054,42 +3252,6 @@ const createStyles = (colors: Record<string, string>) =>
     chartWrap: {
       position: 'relative',
     },
-    chartFrame: {
-      alignItems: 'flex-start',
-    },
-    chartYAxis: {
-      position: 'absolute',
-      top: 0,
-      right: 0,
-      width: 72,
-      paddingTop: 4,
-      paddingRight: 2,
-      pointerEvents: 'none',
-    },
-    chartYAxisText: {
-      position: 'absolute',
-      right: 0,
-      textAlign: 'right',
-      backgroundColor: 'rgba(255,255,255,0.72)',
-      paddingHorizontal: 4,
-      borderRadius: 6,
-    },
-    chartXAxis: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      gap: 8,
-      marginTop: 4,
-      paddingLeft: 2,
-    },
-    chartXAxisSlot: {
-      flex: 1,
-    },
-    chartAxisText: {
-      color: colors.textMuted,
-      fontSize: 10,
-      lineHeight: 14,
-      fontFamily: FONT.medium,
-    },
     chartLegendRow: {
       flexDirection: 'row',
       justifyContent: 'space-between',
@@ -4193,20 +3355,6 @@ const createStyles = (colors: Record<string, string>) =>
       fontSize: 13,
       lineHeight: 20,
       fontFamily: FONT.regular,
-    },
-    fundSectionHeader: {
-      width: '100%',
-      alignItems: 'flex-start',
-      justifyContent: 'flex-start',
-      gap: 6,
-    },
-    fundSectionTitle: {
-      fontFamily: FONT.extraBold,
-      letterSpacing: 0.2,
-    },
-    fundSectionText: {
-      maxWidth: 520,
-      fontFamily: FONT.medium,
     },
     card: {
       width: '100%',
@@ -4401,21 +3549,7 @@ const createStyles = (colors: Record<string, string>) =>
     },
     fundChartWrap: {
       marginTop: 4,
-      marginHorizontal: 0,
-    },
-    fundChartStage: {
-      width: '100%',
-      marginTop: 10,
-      paddingHorizontal: 0,
-      paddingVertical: 4,
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: 12,
-    },
-    fundChartHalo: {
-      borderRadius: 28,
-      paddingHorizontal: 2,
-      paddingVertical: 4,
+      marginHorizontal: -2,
     },
     fundMiniTrendBlock: {
       marginTop: 4,
@@ -4423,88 +3557,18 @@ const createStyles = (colors: Record<string, string>) =>
     },
     fundMiniTrendTitle: {
       color: colors.textPrimary,
-      fontSize: 13,
-      lineHeight: 18,
-      fontFamily: FONT.extraBold,
-      textAlign: 'left',
-      letterSpacing: 0.2,
-    },
-    fundChartAxisText: {
-      color: colors.textMuted,
-      fontSize: 11,
-      fontFamily: FONT.medium,
-      textAlign: 'left',
-    },
-    fundChartMetaRow: {
-      width: '100%',
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      justifyContent: 'flex-start',
-      gap: 8,
-      marginTop: 10,
-      marginBottom: 8,
-    },
-    fundChartMetaPill: {
-      minWidth: 110,
-      paddingHorizontal: 14,
-      paddingTop: 12,
-      paddingBottom: 11,
-      borderRadius: 18,
-      borderWidth: 1,
-      borderColor: 'rgba(148,163,184,0.18)',
-      backgroundColor: colors.surfaceGlass,
-      alignItems: 'flex-start',
-      gap: 4,
-      shadowColor: '#0F172A',
-      shadowOpacity: 0.04,
-      shadowRadius: 8,
-      shadowOffset: { width: 0, height: 4 },
-      elevation: 1,
-    },
-    fundChartMetaLabel: {
-      color: colors.textMuted,
-      fontSize: 10,
-      fontFamily: FONT.medium,
-      textTransform: 'uppercase',
-      letterSpacing: 0.5,
-    },
-    fundChartMetaValue: {
-      color: colors.textPrimary,
-      fontSize: 12,
-      lineHeight: 17,
-      fontFamily: FONT.semiBold,
-      textAlign: 'left',
-      width: '100%',
-    },
-    fundPointerBubble: {
-      minWidth: 112,
-      borderRadius: 14,
-      borderWidth: 1,
-      borderColor: colors.border,
-      backgroundColor: colors.surface,
-      paddingHorizontal: 12,
-      paddingVertical: 10,
-      gap: 4,
-      shadowColor: '#0F172A',
-      shadowOpacity: 0.08,
-      shadowRadius: 10,
-      shadowOffset: { width: 0, height: 4 },
-      elevation: 2,
-    },
-    fundPointerTitle: {
-      color: colors.textMuted,
-      fontSize: 11,
-      fontFamily: FONT.medium,
-    },
-    fundPointerValue: {
-      color: colors.textPrimary,
       fontSize: 14,
       fontFamily: FONT.semiBold,
     },
+    fundChartAxisText: {
+      color: colors.textMuted,
+      fontSize: 10,
+      fontFamily: FONT.medium,
+    },
     fundChartTopLabel: {
       color: colors.textPrimary,
-      fontSize: 11,
-      fontFamily: FONT.extraBold,
+      fontSize: 10,
+      fontFamily: FONT.semiBold,
     },
     fundDataStack: {
       gap: 12,
@@ -4564,7 +3628,7 @@ const createStyles = (colors: Record<string, string>) =>
     fundPieSection: {
       flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'center',
+      justifyContent: 'space-between',
       gap: 16,
       flexWrap: 'wrap',
     },

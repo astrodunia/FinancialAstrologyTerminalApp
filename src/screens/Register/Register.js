@@ -12,6 +12,8 @@ import { Apple, Chrome, Eye, EyeOff, Lock, Mail, ShieldCheck, User } from 'lucid
 import AppText from '../../components/AppText';
 import AppTextInput from '../../components/AppTextInput';
 import GradientBackground from '../../components/GradientBackground';
+import TakeoverDialog from '../../components/TakeoverDialog';
+import { useAuth } from '../../auth/AuthProvider';
 import { API_BASE_URL, useUser } from '../../store/UserContext';
 import {
   logRequestError,
@@ -53,6 +55,7 @@ const createPalette = (themeColors, theme) => ({
 
 const Register = ({ navigation }) => {
   const { theme, themeColors } = useUser();
+  const { signInWithGoogle, signInWithApple, isAppleSupported } = useAuth();
   const colors = useMemo(() => createPalette(themeColors, theme), [theme, themeColors]);
   const styles = useMemo(() => createStyles(colors), [colors]);
 
@@ -64,8 +67,24 @@ const Register = ({ navigation }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [socialLoadingProvider, setSocialLoadingProvider] = useState('');
+  const [socialProgressMessage, setSocialProgressMessage] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
   const [statusType, setStatusType] = useState('');
+  const [takeoverVisible, setTakeoverVisible] = useState(false);
+  const [takeoverResolver, setTakeoverResolver] = useState(null);
+
+  const requestTakeoverConfirmation = async () =>
+    new Promise((resolve) => {
+      setTakeoverResolver(() => resolve);
+      setTakeoverVisible(true);
+    });
+
+  const resetTakeoverDialog = (confirmed) => {
+    setTakeoverVisible(false);
+    takeoverResolver?.(confirmed);
+    setTakeoverResolver(null);
+  };
 
   const showError = (message) => {
     setStatusType('error');
@@ -155,6 +174,39 @@ const Register = ({ navigation }) => {
       showError(loopbackHint || error?.message || 'Could not create account. Please try again.');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleSocialLogin = async (provider) => {
+    if (provider === 'apple' && !isAppleSupported) {
+      return;
+    }
+
+    setStatusMessage('');
+    setStatusType('');
+    setSocialLoadingProvider(provider);
+    setSocialProgressMessage('');
+
+    try {
+      if (provider === 'google') {
+        await signInWithGoogle(requestTakeoverConfirmation, setSocialProgressMessage);
+      } else {
+        await signInWithApple(requestTakeoverConfirmation, setSocialProgressMessage);
+      }
+
+      setStatusType('success');
+      setStatusMessage(`Signed in with ${provider === 'google' ? 'Google' : 'Apple'}.`);
+    } catch (error) {
+      const loopbackHint = networkHintForAndroidLoopback({ apiBaseUrl: API_BASE_URL, error });
+      const nextMessage =
+        error?.message === 'Sign-in cancelled.'
+          ? ''
+          : loopbackHint || error?.message || 'Sign-in failed. Please try again.';
+      setStatusType(nextMessage ? 'error' : '');
+      setStatusMessage(nextMessage);
+    } finally {
+      setSocialLoadingProvider('');
+      setSocialProgressMessage('');
     }
   };
 
@@ -295,20 +347,53 @@ const Register = ({ navigation }) => {
               <View style={styles.divider} />
             </View>
 
-            <Pressable style={styles.socialButton}>
+            {!!socialProgressMessage && (
+              <View style={[styles.statusBox, styles.socialProgressBox]}>
+                <AppText style={styles.statusText}>{socialProgressMessage}</AppText>
+              </View>
+            )}
+
+            <Pressable
+              style={[
+                styles.socialButton,
+                (Boolean(socialLoadingProvider) || isSubmitting) && styles.socialButtonDisabled,
+              ]}
+              onPress={() => handleSocialLogin('google')}
+              disabled={Boolean(socialLoadingProvider) || isSubmitting}
+            >
               <View style={styles.socialIconCircle}>
                 <Chrome size={14} color={colors.textPrimary} />
               </View>
-              <AppText style={styles.socialText}>Continue with Google</AppText>
+              <AppText style={styles.socialText}>
+                {socialLoadingProvider === 'google' ? 'Connecting to Google...' : 'Continue with Google'}
+              </AppText>
             </Pressable>
-            <Pressable style={styles.socialButton}>
+            <Pressable
+              style={[
+                styles.socialButton,
+                (Boolean(socialLoadingProvider) || !isAppleSupported || isSubmitting) && styles.socialButtonDisabled,
+              ]}
+              onPress={() => handleSocialLogin('apple')}
+              disabled={Boolean(socialLoadingProvider) || !isAppleSupported || isSubmitting}
+            >
               <View style={styles.socialIconCircle}>
                 <Apple size={14} color={colors.textPrimary} />
               </View>
-              <AppText style={styles.socialText}>Continue with Apple</AppText>
+              <AppText style={styles.socialText}>
+                {!isAppleSupported
+                  ? 'Apple sign-in unavailable'
+                  : socialLoadingProvider === 'apple'
+                    ? 'Connecting to Apple...'
+                    : 'Continue with Apple'}
+              </AppText>
             </Pressable>
           </View>
         </ScrollView>
+        <TakeoverDialog
+          visible={takeoverVisible}
+          onConfirm={() => resetTakeoverDialog(true)}
+          onCancel={() => resetTakeoverDialog(false)}
+        />
       </GradientBackground>
     </View>
   );
@@ -530,6 +615,13 @@ const createStyles = (colors) =>
       justifyContent: 'center',
       gap: 8,
       backgroundColor: colors.surfaceAlt,
+    },
+    socialButtonDisabled: {
+      opacity: 0.6,
+    },
+    socialProgressBox: {
+      backgroundColor: colors.inputBg,
+      borderColor: colors.inputBorder,
     },
     socialIconCircle: {
       width: 26,
