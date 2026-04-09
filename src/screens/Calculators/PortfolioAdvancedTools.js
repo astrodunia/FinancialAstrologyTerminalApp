@@ -17,6 +17,11 @@ const toNum = (v) => {
   return Number.isFinite(n) ? n : null;
 };
 
+const responsiveChartWidth = (padding = 72, max = 360, min = 236) => {
+  const sw = Dimensions.get('window').width;
+  return Math.max(min, Math.min(max, sw - padding));
+};
+
 
 const ASTRO_SCORE_MAP = {
   ascVitality: { weak: -8, neutral: 0, strong: 8 },
@@ -110,7 +115,7 @@ export function DividendPEToolScreen({ navigation, calculator, styles, themeColo
     });
   }, [result]);
 
-  const chartW = Math.min(Dimensions.get('window').width - 72, 360);
+  const chartW = responsiveChartWidth(72, 360, 236);
   const chartH = 120;
   const yMax = Math.max(...sensitivity.map((s) => s.y), 1);
   const polyline = sensitivity
@@ -203,7 +208,7 @@ export function EfficientFrontierToolScreen({ navigation, calculator, styles, th
     return { aR, aS, bR, bS, points, optimal };
   }, [ra, sa, rb, sb, corr]);
 
-  const w = Math.min(Dimensions.get('window').width - 72, 360);
+  const w = responsiveChartWidth(72, 360, 236);
   const h = 180;
   const xMin = Math.min(...(model?.points.map((p) => p.risk) || [0]));
   const xMax = Math.max(...(model?.points.map((p) => p.risk) || [1]));
@@ -310,7 +315,7 @@ export function CorrelationCovarianceToolScreen({ navigation, calculator, styles
     return { xs, ys, cov, varX, varY, corr, interpretation };
   }, [periods, submitted]);
 
-  const w = Math.min(Dimensions.get('window').width - 72, 360);
+  const w = responsiveChartWidth(72, 360, 236);
   const h = 180;
   const xMin = Math.min(...(stats?.xs || [0]), -0.03);
   const xMax = Math.max(...(stats?.xs || [0.09]), 0.09);
@@ -818,9 +823,20 @@ export function EmergencyFundToolScreen({ navigation, calculator, styles, themeC
             <View style={styles.fieldFull}><AppText style={styles.label}>Miscellaneous ($)</AppText><AppTextInput value={misc} onChangeText={setMisc} keyboardType="numeric" style={styles.input} /></View>
           </View>
           <View style={styles.levelBox}><AppText style={styles.levelLabel}>Total monthly essentials</AppText><AppText style={styles.levelValue}>{`$${fmt(out.monthly, 2)}`}</AppText></View>
-          <View style={styles.resultRow}>
+          <View style={styles.grid}>
             <View style={styles.field}><AppText style={styles.label}>Months of coverage</AppText><AppTextInput value={months} onChangeText={setMonths} keyboardType="numeric" style={styles.input} /></View>
-            <View style={styles.field}><AppText style={styles.label}>Current emergency savings ($)</AppText><AppTextInput value={current} onChangeText={setCurrent} keyboardType="numeric" style={styles.input} /></View>
+            <View style={styles.field}>
+              <AppText style={styles.label}>Current emergency savings</AppText>
+              <View style={[styles.input, { flexDirection: 'row', alignItems: 'center' }]}>
+                <AppText style={{ color: themeColors.textMuted, marginRight: 6 }}>$</AppText>
+                <AppTextInput
+                  value={current}
+                  onChangeText={setCurrent}
+                  keyboardType="numeric"
+                  style={{ flex: 1, borderWidth: 0, backgroundColor: 'transparent', paddingHorizontal: 0, paddingVertical: 0 }}
+                />
+              </View>
+            </View>
             <View style={styles.fieldFull}><AppText style={styles.label}>Months to build goal</AppText><AppTextInput value={buildMonths} onChangeText={setBuildMonths} keyboardType="numeric" style={styles.input} /></View>
           </View>
         </View>
@@ -835,14 +851,16 @@ export function EmergencyFundToolScreen({ navigation, calculator, styles, themeC
             <View style={[styles.levelBox, styles.levelRes]}><AppText style={styles.levelLabel}>Months covered now</AppText><AppText style={styles.levelValue}>{`${fmt(out.coveredNow, 1)} mo`}</AppText></View>
           </View>
           <View style={{ alignItems: 'center', marginVertical: 8 }}>
-            <Svg width={130} height={130}>
-              <Circle cx="65" cy="65" r={circleR} stroke={themeColors.border} strokeWidth="12" fill="none" />
-              <Circle cx="65" cy="65" r={circleR} stroke="#1dc7a0" strokeWidth="12" fill="none" strokeDasharray={`${C} ${C}`} strokeDashoffset={off} strokeLinecap="round" transform="rotate(-90 65 65)" />
-            </Svg>
-            <View style={{ position: 'absolute', alignItems: 'center', top: 48 }}>
-              <AppText style={styles.levelValue}>{`${fmt(out.progress, 1)}%`}</AppText>
-              <AppText style={styles.tipText}>Coverage progress</AppText>
+            <View style={{ width: 130, height: 130, alignItems: 'center', justifyContent: 'center' }}>
+              <Svg width={130} height={130}>
+                <Circle cx="65" cy="65" r={circleR} stroke={themeColors.border} strokeWidth="12" fill="none" />
+                <Circle cx="65" cy="65" r={circleR} stroke="#1dc7a0" strokeWidth="12" fill="none" strokeDasharray={`${C} ${C}`} strokeDashoffset={off} strokeLinecap="round" transform="rotate(-90 65 65)" />
+              </Svg>
+              <View style={{ position: 'absolute', alignItems: 'center', justifyContent: 'center' }}>
+                <AppText style={styles.levelValue}>{`${fmt(out.progress, 1)}%`}</AppText>
+              </View>
             </View>
+            <AppText style={styles.tipText}>Coverage progress</AppText>
           </View>
           <AppText style={styles.tipText}>{`Savings timeline to goal: ${out.build} months`}</AppText>
         </View>
@@ -1196,7 +1214,7 @@ export function SavingsRunwayToolScreen({ navigation, calculator, styles, themeC
     return { points, ending: bal, depletion, n };
   }, [balance, withdrawal, otherIncome, retAnnual, inflation, fee, horizon, inflAdj]);
 
-  const w = Math.min(Dimensions.get('window').width - 72, 360);
+  const w = responsiveChartWidth(72, 360, 236);
   const h = 190;
   const horizonYears = Math.max(1, toNum(horizon) || 40);
   const leftPad = 34;
@@ -1323,7 +1341,7 @@ export function SavingGrowthToolScreen({ navigation, calculator, styles, themeCo
     return { nominal: bal, real: real[real.length - 1].v, contrib, earnings: bal - (s + contrib), nom, realSeries: real };
   }, [start, monthly, years, retAnnual, inflation, stepUp, annuityDue]);
 
-  const w = Math.min(Dimensions.get('window').width - 72, 360);
+  const w = responsiveChartWidth(72, 360, 236);
   const h = 190;
   const yearsNum = Math.max(1, toNum(years) || 20);
   const leftPad = 34;
@@ -1409,7 +1427,6 @@ export function SavingGrowthToolScreen({ navigation, calculator, styles, themeCo
     </>
   );
 }
-
 
 
 

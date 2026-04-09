@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { Alert, Dimensions, Linking, Platform, Pressable, ScrollView, StatusBar, StyleSheet, View } from 'react-native';
-import { ArrowLeft, UserCircle } from 'lucide-react-native';
+import { Alert, Dimensions, Linking, Platform, Pressable, ScrollView, StatusBar, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { ArrowLeft, Trash2, UserCircle } from 'lucide-react-native';
 import Svg, { Circle, Line, Polyline, Text as SvgText } from 'react-native-svg';
 import AppText from '../../components/AppText';
 import AppTextInput from '../../components/AppTextInput';
@@ -721,9 +721,9 @@ function FibonacciTool({ navigation, styles, themeColors, openSite }) {
   const fibChart = useMemo(() => {
     if (!out) return null;
 
-    const width = 330;
+    const width = Math.max(236, Math.min(360, screenWidth - (isSmallPhone ? 34 : 44)));
     const height = 190;
-    const left = 26;
+    const left = isSmallPhone ? 22 : 26;
     const right = 10;
     const top = 10;
     const bottom = 30;
@@ -940,6 +940,8 @@ function ProfitLossTool({ navigation, styles, themeColors, openSite }) {
 function DrawdownCapitalRecoveryTool({ navigation, styles, themeColors, openSite }) {
   const [initialCapital, setInitialCapital] = useState('10000');
   const [drawdownPct, setDrawdownPct] = useState('20');
+  const screenWidth = Dimensions.get('window').width;
+  const isSmallPhone = screenWidth < 390;
 
   const out = useMemo(() => {
     const capital = toNum(initialCapital);
@@ -961,9 +963,9 @@ function DrawdownCapitalRecoveryTool({ navigation, styles, themeColors, openSite
   }, []);
 
   const chart = useMemo(() => {
-    const width = 320;
+    const width = Math.max(236, Math.min(360, screenWidth - (isSmallPhone ? 34 : 44)));
     const height = 180;
-    const left = 34;
+    const left = isSmallPhone ? 30 : 34;
     const right = 8;
     const top = 10;
     const bottom = 26;
@@ -995,7 +997,7 @@ function DrawdownCapitalRecoveryTool({ navigation, styles, themeColors, openSite
       xTicks: [10, 20, 30, 40, 50, 60, 70, 80, 90],
       yTicks: [0, 250, 500, 750, 1000],
     };
-  }, [curve, drawdownPct]);
+  }, [curve, drawdownPct, isSmallPhone, screenWidth]);
 
   return (
     <>
@@ -1223,6 +1225,10 @@ function OptionsPricingGreeksTool({ navigation, styles, themeColors, openSite })
   );
 }
 function CAGRTool({ navigation, styles, themeColors, openSite }) {
+  const { width: screenW } = useWindowDimensions();
+  const isTinyScreen = screenW < 350;
+  const isNarrowScreen = screenW < 430;
+  const isSmallScreen = screenW < 380;
   const [beginValue, setBeginValue] = useState('10000');
   const [endValue, setEndValue] = useState('12100');
   const [years, setYears] = useState('2');
@@ -1253,12 +1259,12 @@ function CAGRTool({ navigation, styles, themeColors, openSite }) {
 
   const chart = useMemo(() => {
     if (!out) return null;
-    const width = 330;
+    const width = Math.max(isTinyScreen ? 236 : 252, Math.min(360, screenW - (isTinyScreen ? 30 : 40)));
     const height = 190;
-    const left = 28;
-    const right = 8;
-    const top = 10;
-    const bottom = 24;
+    const left = isTinyScreen ? 42 : isSmallScreen ? 46 : 50;
+    const right = 12;
+    const top = 12;
+    const bottom = isSmallScreen ? 32 : 36;
     const plotW = width - left - right;
     const plotH = height - top - bottom;
     const maxY = Math.max(...out.points.map((p) => Math.max(p.nominal, p.real)));
@@ -1274,12 +1280,23 @@ function CAGRTool({ navigation, styles, themeColors, openSite }) {
       top,
       plotW,
       plotH,
+      minY,
+      maxY,
       xFor,
       yFor,
       nominalLine: out.points.map((p) => `${xFor(p.t)},${yFor(p.nominal)}`).join(' '),
       realLine: out.points.map((p) => `${xFor(p.t)},${yFor(p.real)}`).join(' '),
+      xTicks: isTinyScreen ? [0, out.y] : [0, out.y / 2, out.y],
+      yTicks: isTinyScreen ? [minY, maxY] : [minY, (minY + maxY) / 2, maxY],
     };
-  }, [out]);
+  }, [isSmallScreen, isTinyScreen, out, screenW]);
+
+  const yTickLabel = (v) => {
+    const abs = Math.abs(v);
+    if (abs >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
+    if (abs >= 1_000) return `${(v / 1_000).toFixed(1)}K`;
+    return `${Math.round(v)}`;
+  };
 
   return (
     <>
@@ -1319,10 +1336,29 @@ function CAGRTool({ navigation, styles, themeColors, openSite }) {
             {!!chart && (
               <View style={styles.chartWrap}>
                 <Svg width="100%" height={chart.height} viewBox={`0 0 ${chart.width} ${chart.height}`}>
-                  <Line x1={chart.left} x2={chart.left} y1={chart.top} y2={chart.top + chart.plotH} stroke={themeColors.textMuted} strokeWidth="1.2" />
+                  {chart.yTicks.map((v, i) => (
+                    <Line key={`cagr-gy-${i}`} x1={chart.left} x2={chart.left + chart.plotW} y1={chart.yFor(v)} y2={chart.yFor(v)} stroke={themeColors.border} strokeWidth="1" opacity={0.45} />
+                  ))}
+                  {chart.xTicks.map((t, i) => (
+                    <Line key={`cagr-gx-${i}`} x1={chart.xFor(t)} x2={chart.xFor(t)} y1={chart.top} y2={chart.top + chart.plotH} stroke={themeColors.border} strokeWidth="1" opacity={0.3} />
+                  ))}
+                  <Line x1={chart.left} x2={chart.left} y1={chart.top} y2={chart.top + chart.plotH} stroke={themeColors.textPrimary} strokeWidth="1.8" />
                   <Line x1={chart.left} x2={chart.left + chart.plotW} y1={chart.top + chart.plotH} y2={chart.top + chart.plotH} stroke={themeColors.textMuted} strokeWidth="1.2" />
                   <Polyline points={chart.nominalLine} fill="none" stroke="#f3c33c" strokeWidth="2.2" />
                   <Polyline points={chart.realLine} fill="none" stroke="#2ec5ff" strokeWidth="2" strokeDasharray="5,4" />
+                  {chart.yTicks.map((v, i) => (
+                    <SvgText key={`cagr-yl-${i}`} x={chart.left - 6} y={chart.yFor(v) + 3} fill={themeColors.textMuted} fontSize={isSmallScreen ? '8' : '9'} textAnchor="end">
+                      {yTickLabel(v)}
+                    </SvgText>
+                  ))}
+                  {chart.xTicks.map((t, i) => (
+                    <SvgText key={`cagr-xl-${i}`} x={chart.xFor(t)} y={chart.top + chart.plotH + 14} fill={themeColors.textMuted} fontSize={isSmallScreen ? '8' : '9'} textAnchor="middle">
+                      {isNarrowScreen ? `${Math.round(t)}` : fmt(t, 1)}
+                    </SvgText>
+                  ))}
+                  <SvgText x={(chart.left + chart.left + chart.plotW) / 2} y={chart.height - 4} fill={themeColors.textMuted} fontSize={isSmallScreen ? '9' : '10'} textAnchor="middle">
+                    {isSmallScreen ? 'Years' : 'Years (X-axis)'}
+                  </SvgText>
                 </Svg>
               </View>
             )}
@@ -1337,6 +1373,10 @@ function CAGRTool({ navigation, styles, themeColors, openSite }) {
 }
 
 function RetirementCorpusTool({ navigation, styles, themeColors, openSite }) {
+  const { width: screenW } = useWindowDimensions();
+  const isTinyScreen = screenW < 350;
+  const isNarrowScreen = screenW < 430;
+  const isSmallScreen = screenW < 380;
   const [currentAge, setCurrentAge] = useState('35');
   const [retAge, setRetAge] = useState('60');
   const [currentPortfolio, setCurrentPortfolio] = useState('80000');
@@ -1387,12 +1427,12 @@ function RetirementCorpusTool({ navigation, styles, themeColors, openSite }) {
 
   const chart = useMemo(() => {
     if (!out) return null;
-    const width = 330;
+    const width = Math.max(isTinyScreen ? 236 : 252, Math.min(360, screenW - (isTinyScreen ? 30 : 40)));
     const height = 170;
-    const left = 22;
-    const right = 8;
-    const top = 10;
-    const bottom = 24;
+    const left = isTinyScreen ? 34 : isSmallScreen ? 38 : 44;
+    const right = 10;
+    const top = 12;
+    const bottom = isSmallScreen ? 30 : 34;
     const plotW = width - left - right;
     const plotH = height - top - bottom;
     const maxY = Math.max(...out.path.map((p) => Math.max(p.val, p.req)), 1);
@@ -1406,10 +1446,21 @@ function RetirementCorpusTool({ navigation, styles, themeColors, openSite }) {
       top,
       plotW,
       plotH,
+      maxY,
+      xFor,
+      yFor,
+      xTicks: isTinyScreen ? [0, out.years] : [0, out.years / 2, out.years],
+      yTicks: isTinyScreen ? [0, maxY] : [0, maxY / 2, maxY],
       valLine: out.path.map((p) => `${xFor(p.x)},${yFor(p.val)}`).join(' '),
       reqLine: out.path.map((p) => `${xFor(p.x)},${yFor(p.req)}`).join(' '),
     };
-  }, [out]);
+  }, [isSmallScreen, isTinyScreen, out, screenW]);
+
+  const yTickLabel = (v) => {
+    if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
+    if (v >= 1_000) return `${(v / 1_000).toFixed(0)}K`;
+    return `${Math.round(v)}`;
+  };
 
   const ring = useMemo(() => {
     const ratio = out ? Math.max(0, Math.min(100, out.fundedRatio)) : 0;
@@ -1474,10 +1525,34 @@ function RetirementCorpusTool({ navigation, styles, themeColors, openSite }) {
             {!!chart && (
               <View style={styles.chartWrap}>
                 <Svg width="100%" height={chart.height} viewBox={`0 0 ${chart.width} ${chart.height}`}>
+                  {chart.yTicks.map((v, i) => (
+                    <Line key={`ret-gy-${i}`} x1={chart.left} x2={chart.left + chart.plotW} y1={chart.yFor(v)} y2={chart.yFor(v)} stroke={themeColors.border} strokeWidth="1" opacity={0.45} />
+                  ))}
+                  {chart.xTicks.map((x, i) => (
+                    <Line key={`ret-gx-${i}`} x1={chart.xFor(x)} x2={chart.xFor(x)} y1={chart.top} y2={chart.top + chart.plotH} stroke={themeColors.border} strokeWidth="1" opacity={0.3} />
+                  ))}
                   <Line x1={chart.left} x2={chart.left} y1={chart.top} y2={chart.top + chart.plotH} stroke={themeColors.textMuted} strokeWidth="1" />
                   <Line x1={chart.left} x2={chart.left + chart.plotW} y1={chart.top + chart.plotH} y2={chart.top + chart.plotH} stroke={themeColors.textMuted} strokeWidth="1" />
                   <Polyline points={chart.valLine} fill="none" stroke="#40c4ff" strokeWidth="2.4" />
                   <Polyline points={chart.reqLine} fill="none" stroke="#a78bfa" strokeWidth="2.4" strokeDasharray="5,4" />
+                  {chart.yTicks.map((v, i) => (
+                    <SvgText key={`ret-yl-${i}`} x={chart.left - 5} y={chart.yFor(v) + 3} fill={themeColors.textMuted} fontSize={isSmallScreen ? '8' : '9'} textAnchor="end">
+                      {yTickLabel(v)}
+                    </SvgText>
+                  ))}
+                  {chart.xTicks.map((x, i) => (
+                    <SvgText key={`ret-xl-${i}`} x={chart.xFor(x)} y={chart.top + chart.plotH + 14} fill={themeColors.textMuted} fontSize={isSmallScreen ? '8' : '9'} textAnchor="middle">
+                      {isNarrowScreen ? `${Math.round(x)}` : fmt(x, 1)}
+                    </SvgText>
+                  ))}
+                  <SvgText x={(chart.left + chart.left + chart.plotW) / 2} y={chart.height - 4} fill={themeColors.textMuted} fontSize={isSmallScreen ? '9' : '10'} textAnchor="middle">
+                    {isSmallScreen ? 'Years' : 'Years (X-axis)'}
+                  </SvgText>
+                  {!isNarrowScreen && (
+                    <SvgText x={14} y={chart.top + (chart.plotH / 2)} fill={themeColors.textMuted} fontSize="10" textAnchor="middle" transform={`rotate(-90, 14, ${chart.top + (chart.plotH / 2)})`}>
+                      Value (Y-axis)
+                    </SvgText>
+                  )}
                 </Svg>
               </View>
             )}
@@ -1545,12 +1620,12 @@ function NPVTool({ navigation, styles, themeColors, openSite }) {
             <View style={styles.fieldFull}><AppText style={styles.label}>Discount Rate (%)</AppText><AppTextInput value={discountRate} onChangeText={setDiscountRate} keyboardType="numeric" style={styles.input} /></View>
             <AppText style={styles.sectionTitle}>Cash Flows ($)</AppText>
             {cashFlows.map((v, idx) => (
-              <View key={`cf-${idx}`} style={styles.resultRow}>
+              <View key={`cf-${idx}`} style={[styles.resultRow, styles.deleteRow]}>
                 <View style={[styles.levelBox, styles.levelPivot]}>
                   <AppText style={styles.levelLabel}>{`Year ${idx + 1}`}</AppText>
                   <AppTextInput value={v} onChangeText={(next) => updateFlow(idx, next)} keyboardType="numeric" style={styles.input} />
                 </View>
-                <Pressable style={styles.ghostBtn} onPress={() => removePeriod(idx)}><AppText style={styles.ghostBtnText}>Remove</AppText></Pressable>
+                <Pressable style={[styles.ghostBtn, styles.deleteIconBtn]} onPress={() => removePeriod(idx)}><Trash2 size={20} color={themeColors.textPrimary} /></Pressable>
               </View>
             ))}
             <Pressable style={styles.ghostBtn} onPress={addPeriod}><AppText style={styles.ghostBtnText}>+ Add Period</AppText></Pressable>
@@ -1856,12 +1931,12 @@ function IRRTool({ navigation, styles, themeColors, openSite }) {
             <View style={styles.divider} />
             <AppText style={styles.sectionTitle}>Cash Flows ($)</AppText>
             {cashFlows.map((v, idx) => (
-              <View key={`irr-${idx}`} style={styles.resultRow}>
+              <View key={`irr-${idx}`} style={[styles.resultRow, styles.deleteRow]}>
                 <View style={[styles.levelBox, styles.levelPivot]}>
                   <AppText style={styles.levelLabel}>{`Year ${idx + 1}`}</AppText>
                   <AppTextInput value={v} onChangeText={(next) => updateFlow(idx, next)} keyboardType="numeric" style={styles.input} />
                 </View>
-                <Pressable style={styles.ghostBtn} onPress={() => removePeriod(idx)}><AppText style={styles.ghostBtnText}>Del</AppText></Pressable>
+                <Pressable style={[styles.ghostBtn, styles.deleteIconBtn]} onPress={() => removePeriod(idx)}><Trash2 size={20} color={themeColors.textPrimary} /></Pressable>
               </View>
             ))}
             <Pressable style={styles.ghostBtn} onPress={addPeriod}><AppText style={styles.ghostBtnText}>+ Add Period</AppText></Pressable>
@@ -1974,12 +2049,12 @@ function DCFTool({ navigation, styles, themeColors, openSite }) {
             <View style={styles.divider} />
             <AppText style={styles.sectionTitle}>Free Cash Flows ($)</AppText>
             {cashFlows.map((v, idx) => (
-              <View key={`dcf-${idx}`} style={styles.resultRow}>
+              <View key={`dcf-${idx}`} style={[styles.resultRow, styles.deleteRow]}>
                 <View style={[styles.levelBox, styles.levelPivot]}>
                   <AppText style={styles.levelLabel}>{`Year ${idx + 1}`}</AppText>
                   <AppTextInput value={v} onChangeText={(next) => updateFlow(idx, next)} keyboardType="numeric" style={styles.input} />
                 </View>
-                <Pressable style={styles.ghostBtn} onPress={() => removePeriod(idx)}><AppText style={styles.ghostBtnText}>Del</AppText></Pressable>
+                <Pressable style={[styles.ghostBtn, styles.deleteIconBtn]} onPress={() => removePeriod(idx)}><Trash2 size={20} color={themeColors.textPrimary} /></Pressable>
               </View>
             ))}
             <Pressable style={styles.ghostBtn} onPress={addPeriod}><AppText style={styles.ghostBtnText}>+ Add Period</AppText></Pressable>
@@ -2543,7 +2618,9 @@ function MobileReadyCalculatorTool({ navigation, calculator, styles, themeColors
 const CalculatorTool = ({ navigation, route }) => {
   const { theme, themeColors } = useUser();
   const isLight = theme === 'light';
-  const styles = useMemo(() => createStyles(themeColors, isLight), [themeColors, isLight]);
+  const { width } = useWindowDimensions();
+  const isCompact = width < 380;
+  const styles = useMemo(() => createStyles(themeColors, isLight, isCompact), [themeColors, isLight, isCompact]);
   const calculator = route?.params?.calculator || { id: 'calculator', title: 'Calculator', description: 'Tool' };
 
   const openSite = async (url = 'https://finance.rajeevprakash.com') => {
@@ -2709,15 +2786,15 @@ const CalculatorTool = ({ navigation, route }) => {
   return <View style={styles.safeArea}><GradientBackground><MobileReadyCalculatorTool navigation={navigation} calculator={calculator} styles={styles} themeColors={themeColors} openSite={openSite} /></GradientBackground></View>;
 };
 
-const createStyles = (colors, isLight) => StyleSheet.create({
+const createStyles = (colors, isLight, isCompact) => StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.background },
-  header: { paddingHorizontal: 12, paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 8 : 50, paddingBottom: 10, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  header: { paddingHorizontal: isCompact ? 10 : 12, paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 8 : 50, paddingBottom: 10, flexDirection: 'row', alignItems: 'center', gap: isCompact ? 8 : 10 },
   iconBtn: { width: 34, height: 34, borderRadius: 17, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceAlt },
   headerCenter: { flex: 1 },
-  title: { color: colors.textPrimary, fontSize: 18, fontFamily: FONT.semiBold },
+  title: { color: colors.textPrimary, fontSize: isCompact ? 16 : 18, fontFamily: FONT.semiBold },
   subtitle: { color: colors.textMuted, fontSize: 12, marginTop: 2 },
-  content: { paddingHorizontal: 12, paddingBottom: 30, gap: 10 },
-  card: { borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceGlass, padding: 10, gap: 8 },
+  content: { paddingHorizontal: isCompact ? 10 : 12, paddingBottom: 30, gap: 10 },
+  card: { borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceGlass, padding: isCompact ? 8 : 10, gap: 8 },
   sectionTitle: { color: colors.textPrimary, fontSize: 15, fontFamily: FONT.semiBold },
   sectionBody: { color: colors.textMuted, fontSize: 12, lineHeight: 18 },
   twoColRow: { gap: 10 },
@@ -2726,15 +2803,16 @@ const createStyles = (colors, isLight) => StyleSheet.create({
   badgePill: { borderRadius: 999, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceAlt, paddingHorizontal: 8, paddingVertical: 3 },
   badgeText: { color: colors.textMuted, fontSize: 11 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  field: { width: '48%', gap: 4 },
-  fieldFull: { width: '100%', gap: 4 },
-  label: { color: colors.textMuted, fontSize: 12 },
+  field: { flexBasis: isCompact ? '100%' : '48%', flexGrow: 1, flexShrink: 1, minWidth: isCompact ? '100%' : 140, gap: 4 },
+  fieldFull: { width: '100%', minWidth: '100%', gap: 4 },
+  label: { color: colors.textMuted, fontSize: 12, flexShrink: 1 },
   input: { borderWidth: 1, borderColor: colors.border, borderRadius: 10, backgroundColor: colors.surfaceAlt, paddingHorizontal: 10, paddingVertical: 8, fontSize: 14, color: colors.textPrimary },
   btnRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
   primaryBtn: { borderRadius: 8, backgroundColor: isLight ? '#2f65dc' : '#1f78ff', paddingHorizontal: 10, paddingVertical: 8 },
   primaryBtnText: { color: '#fff', fontSize: 12, fontFamily: FONT.semiBold },
   ghostBtn: { borderRadius: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceAlt, paddingHorizontal: 10, paddingVertical: 8 },
   ghostBtnText: { color: colors.textPrimary, fontSize: 12 },
+  deleteIconBtn: { width: 40, minWidth: 40, height: 40, paddingHorizontal: 0, paddingVertical: 0, alignItems: 'center', justifyContent: 'center' },
 
 
 
@@ -2748,14 +2826,15 @@ const createStyles = (colors, isLight) => StyleSheet.create({
   divider: { height: 1, backgroundColor: colors.border, marginVertical: 4 },
   boldMuted: { color: colors.textPrimary, fontFamily: FONT.semiBold },
   alignCenter: { alignItems: 'center' },
-  resultRow: { flexDirection: 'row', gap: 8 },
-  levelBox: { flex: 1, borderRadius: 10, borderWidth: 1, padding: 8, gap: 2 },
+  resultRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  deleteRow: { alignItems: 'center' },
+  levelBox: { flex: 1, minWidth: isCompact ? '100%' : 92, borderRadius: 10, borderWidth: 1, padding: 8, gap: 2 },
   levelPivot: { borderColor: isLight ? '#79a6ff' : '#2f90ff', backgroundColor: isLight ? 'rgba(80,128,255,0.08)' : 'rgba(33,96,189,0.2)' },
   levelRes: { borderColor: isLight ? '#71cfab' : '#35be8a', backgroundColor: isLight ? 'rgba(53,190,138,0.08)' : 'rgba(27,140,103,0.2)' },
   levelSup: { borderColor: isLight ? '#f28fb3' : '#ee6e9c', backgroundColor: isLight ? 'rgba(238,110,156,0.08)' : 'rgba(155,48,91,0.2)' },
   levelLabel: { color: colors.textMuted, fontSize: 11 },
   levelValue: { color: colors.textPrimary, fontSize: 15, fontFamily: FONT.semiBold },
-  bigMetric: { color: colors.textPrimary, fontSize: 34, fontFamily: FONT.extraBold, lineHeight: 38 },
+  bigMetric: { color: colors.textPrimary, fontSize: isCompact ? 28 : 34, fontFamily: FONT.extraBold, lineHeight: isCompact ? 32 : 38 },
   gaugeTrack: { height: 10, borderRadius: 999, overflow: 'hidden', backgroundColor: isLight ? '#d8dfec' : '#2e3650' },
   gaugeFill: { height: '100%', backgroundColor: '#2d9dff' },
   gaugeText: { color: colors.textPrimary, fontSize: 14, fontFamily: FONT.semiBold, textAlign: 'center', marginTop: 6 },
@@ -2787,7 +2866,7 @@ const createStyles = (colors, isLight) => StyleSheet.create({
   fibFill: { height: '100%', backgroundColor: isLight ? '#2f65dc' : '#2d9dff' },
   fibVal: { width: 64, color: colors.textPrimary, fontSize: 12, textAlign: 'right' },
   fibRetraceGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 8 },
-  fibLevelItem: { width: '48%' },
+  fibLevelItem: { width: isCompact ? '100%' : '48%' },
   fibLevelItemFull: { width: '100%' },
   fibLevelBox: { borderRadius: 12, paddingVertical: 10, paddingHorizontal: 12 },
   fibLevelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
@@ -2803,7 +2882,7 @@ const createStyles = (colors, isLight) => StyleSheet.create({
   banner: { borderRadius: 12, borderWidth: 1, borderColor: isLight ? '#8fb2ff' : 'rgba(89,134,255,0.4)', backgroundColor: isLight ? '#d9e9ff' : '#1f59bd', padding: 12, gap: 10 },
   bannerTitle: { color: isLight ? '#0f2f66' : '#f2f8ff', fontSize: 16, fontFamily: FONT.semiBold },
   bannerSub: { color: isLight ? '#31578f' : '#dceafe', fontSize: 12, marginTop: 2 },
-  bannerBtns: { flexDirection: 'row', gap: 8 },
+  bannerBtns: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
   bannerPrimary: { borderRadius: 999, backgroundColor: '#ffffff', paddingHorizontal: 12, paddingVertical: 7 },
   bannerPrimaryText: { color: '#184ea7', fontSize: 12, fontFamily: FONT.semiBold },
   bannerGhost: { borderRadius: 999, borderWidth: 1, borderColor: isLight ? 'transparent' : 'rgba(255,255,255,0.7)', backgroundColor: isLight ? '#ffffff' : 'transparent', paddingHorizontal: 12, paddingVertical: 7 },
@@ -2811,16 +2890,36 @@ const createStyles = (colors, isLight) => StyleSheet.create({
   contactWrap: { alignItems: 'center', gap: 8, paddingBottom: 16 },
   contactTag: { borderRadius: 999, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceAlt, paddingHorizontal: 8, paddingVertical: 2 },
   contactTagText: { color: colors.textMuted, fontSize: 10, fontFamily: FONT.semiBold },
-  contactTitle: { color: colors.textPrimary, fontSize: 30, fontFamily: FONT.semiBold, lineHeight: 34 },
+  contactTitle: { color: colors.textPrimary, fontSize: isCompact ? 22 : 30, fontFamily: FONT.semiBold, lineHeight: isCompact ? 26 : 34 },
   contactCard: { width: '100%', borderRadius: 10, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceGlass, padding: 10, gap: 5 },
   contactHead: { color: colors.textPrimary, fontSize: 13, fontFamily: FONT.semiBold },
   contactSub: { color: colors.textMuted, fontSize: 11 },
-  contactRow: { flexDirection: 'row', gap: 8, marginTop: 4 },
-  contactItem: { flex: 1, borderRadius: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceAlt, paddingHorizontal: 10, paddingVertical: 8 },
+  contactRow: { flexDirection: 'row', gap: 8, marginTop: 4, flexWrap: 'wrap' },
+  contactItem: { flex: 1, minWidth: isCompact ? '100%' : 120, borderRadius: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceAlt, paddingHorizontal: 10, paddingVertical: 8 },
   contactItemText: { color: colors.textPrimary, fontSize: 12 },
+  fireStepCard: { borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceAlt, padding: isCompact ? 8 : 10, gap: 8 },
+  fireStepHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  fireStepTitle: { flex: 1, color: colors.textPrimary, fontSize: isCompact ? 13 : 14, fontFamily: FONT.semiBold },
+  fireGroupPill: { borderRadius: 999, borderWidth: 1, backgroundColor: colors.surfaceGlass, paddingHorizontal: 8, paddingVertical: 2 },
+  fireGroupPillText: { fontSize: 10, fontFamily: FONT.semiBold },
+  fireAdjustRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  fireAdjustBtn: { width: isCompact ? 30 : 34, height: isCompact ? 30 : 34, borderRadius: 10, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceGlass, alignItems: 'center', justifyContent: 'center' },
+  fireAdjustBtnText: { color: colors.textPrimary, fontSize: 18, lineHeight: 20, fontFamily: FONT.semiBold },
+  fireMeterWrap: { flex: 1, gap: 5 },
+  fireMeterTrack: { height: 10, borderRadius: 999, backgroundColor: isLight ? '#d8dfec' : '#2f3750', overflow: 'hidden' },
+  fireMeterFill: { height: '100%', borderRadius: 999 },
+  fireMeterValue: { color: colors.textMuted, fontSize: 11, textAlign: 'right', fontFamily: FONT.medium },
+  fireGroupRow: { marginBottom: 8, gap: 4 },
+  fireGroupHead: { flexDirection: 'row', justifyContent: 'space-between' },
+  fireGroupTrack: { height: 8, borderRadius: 999, backgroundColor: colors.surfaceGlass, overflow: 'hidden' },
+  fireGroupFill: { height: '100%', borderRadius: 999 },
 });
 
 export default CalculatorTool;
+
+
+
+
 
 
 
