@@ -6,6 +6,7 @@ import {
   Modal,
   PanResponder,
   Pressable,
+  Share,
   ScrollView,
   StyleSheet,
   TextInput,
@@ -35,6 +36,10 @@ import { BarChart, LineChart, PieChart } from 'react-native-gifted-charts';
 import AppDialog from '../../components/AppDialog';
 import AppText from '../../components/AppText';
 import GradientBackground from '../../components/GradientBackground';
+import { DrawingOverlay } from '../../drawing/Overlay';
+import { DrawingToolbar } from '../../drawing/Toolbar';
+import type { DrawingShape, SharePayload } from '../../drawing/types';
+import { useDrawingEngine } from '../../drawing/useDrawingEngine';
 import { useHorizontalSwipe } from '../../navigation/useHorizontalSwipe';
 import { useUser } from '../../store/UserContext';
 import {
@@ -61,6 +66,7 @@ import {
   normalizeSymbol as normalizeWatchlistSymbol,
   removeSymbol as removeSymbolFromWatchlist,
 } from '../../services/watchlistApi';
+import { loadDrawingsByKey, saveDrawingsByKey } from '../../services/drawingsApi';
 
 const nakshatraTransitData = require('../../../nakshatra-transits.json');
 
@@ -84,6 +90,42 @@ const TAB_LABELS = {
   fundamentals: 'Fundamentals',
   news: 'News',
   alerts: 'Alerts',
+};
+
+const SHARE_LINK_HOST = 'finance.rajeevprakash.com';
+
+const createStockChartPathWithQuery = (symbol: string, timeframe: string, query: Record<string, string>) => {
+  const safeSymbol = encodeURIComponent(normalizeStockSymbol(symbol));
+  const safeTf = encodeURIComponent(normalizeChartTimeframe(timeframe) || DEFAULT_CHART_TIMEFRAME);
+  const qs = Object.entries(query)
+    .filter(([, value]) => typeof value === 'string' && value.length > 0)
+    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+    .join('&');
+  const path = `s/${safeSymbol}/chart/${safeTf}`;
+  return `${path}${qs ? `?${qs}` : ''}`;
+};
+
+const createStockChartDeepLink = (symbol: string, timeframe: string, query: Record<string, string>) =>
+  `financialastrology:///${createStockChartPathWithQuery(symbol, timeframe, query)}`;
+
+const createStockChartWebLink = (symbol: string, timeframe: string, query: Record<string, string>) =>
+  `https://${SHARE_LINK_HOST}/${createStockChartPathWithQuery(symbol, timeframe, query)}`;
+
+const decodeSharedDrawingsFromParam = (encoded: string): DrawingShape[] | null => {
+  try {
+    const parsedDirect = JSON.parse(encoded) as any;
+    if (Array.isArray(parsedDirect?.shapes)) {
+      return parsedDirect.shapes as DrawingShape[];
+    }
+  } catch {}
+
+  try {
+    const parsed = JSON.parse(decodeURIComponent(encoded)) as any;
+    if (!Array.isArray(parsed?.shapes)) return null;
+    return parsed.shapes as DrawingShape[];
+  } catch {
+    return null;
+  }
 };
 
 const formatCurrency = (value: number | null, currency = 'USD') => {
@@ -1046,6 +1088,10 @@ const ChartTab = ({
   watchlistAdded,
   watchlistBusy,
   authFetch,
+  drawingShapes,
+  onDrawingShapesChange,
+  onClearAllDrawings,
+  onShareDrawings,
 }: {
   info: StockInfo | null;
   history: StockHistoryPoint[] | null;
@@ -1059,6 +1105,10 @@ const ChartTab = ({
   watchlistAdded: boolean;
   watchlistBusy: boolean;
   authFetch: any;
+  drawingShapes: DrawingShape[];
+  onDrawingShapesChange: (next: DrawingShape[]) => void;
+  onClearAllDrawings: () => void;
+  onShareDrawings: (payload: SharePayload) => void;
 }) => {
   const styles = useMemo(() => createStyles(themeColors), [themeColors]);
   const normalizedTimeframe = normalizeChartTimeframe(timeframe);
@@ -1187,7 +1237,17 @@ const ChartTab = ({
 
         <View style={styles.chartCanvasWrap}>
           {displayHistory?.length ? (
-            <MainChart points={displayHistory} color={chartColor} tall />
+            <MainChart
+              points={displayHistory}
+              color={chartColor}
+              tall
+              enableDrawing
+              loading={loading}
+              initialDrawings={drawingShapes}
+              onDrawingsChange={onDrawingShapesChange}
+              onClearAllDrawings={onClearAllDrawings}
+              onShareDrawings={onShareDrawings}
+            />
           ) : loading ? (
             <View style={styles.chartLoaderWrap}>
               <ActivityIndicator size="small" color={themeColors.textPrimary} />
@@ -1195,14 +1255,6 @@ const ChartTab = ({
           ) : (
             <AppText style={styles.emptyText}>{error || 'No chart data for this timeframe.'}</AppText>
           )}
-          {loading ? (
-            <View style={styles.chartLoadingOverlay} pointerEvents="none">
-              <View style={styles.chartLoadingTrack}>
-                <View style={[styles.chartLoadingFill, { backgroundColor: chartColor }]} />
-              </View>
-              <AppText style={styles.chartLoadingText}>Updating chart...</AppText>
-            </View>
-          ) : null}
         </View>
 
         <View style={styles.chartTfWrap}>
@@ -3211,10 +3263,22 @@ const MainChart = ({
   points,
   color,
   tall = false,
+  enableDrawing = false,
+  loading = false,
+  initialDrawings = [],
+  onDrawingsChange,
+  onClearAllDrawings,
+  onShareDrawings,
 }: {
   points: StockHistoryPoint[];
   color: string;
   tall?: boolean;
+  enableDrawing?: boolean;
+  loading?: boolean;
+  initialDrawings?: DrawingShape[];
+  onDrawingsChange?: (next: DrawingShape[]) => void;
+  onClearAllDrawings?: () => void;
+  onShareDrawings?: (payload: SharePayload) => void;
 }) => {
   const { theme, themeColors } = useUser() as any;
   const styles = useMemo(() => createStyles(themeColors), [themeColors]);
@@ -3227,6 +3291,9 @@ const MainChart = ({
   const values = hasChartPoints ? chartPoints.map((item) => item.value) : [0];
   const min = Math.min(...values);
   const max = Math.max(...values);
+  const timeValues = hasChartPoints ? chartPoints.map((item) => item.timestamp) : [0];
+  const minX = Math.min(...timeValues);
+  const maxX = Math.max(...timeValues);
   const path = hasChartPoints ? chartPath(chartPoints, chartWidth, plotHeight) : '';
   const areaPath = hasChartPoints ? buildAreaPath(chartPoints, chartWidth, plotHeight) : '';
   const step = chartPoints.length <= 1 ? 0 : chartWidth / (chartPoints.length - 1);
@@ -3237,6 +3304,77 @@ const MainChart = ({
         ? '#DC2626'
         : color;
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  const [toolbarHeight, setToolbarHeight] = useState(0);
+
+  const drawingPlotRect = useMemo(
+    () => ({
+      left: 0,
+      top: 0,
+      width: chartWidth,
+      height: plotHeight,
+    }),
+    [chartWidth, plotHeight],
+  );
+
+  const drawingScales = useMemo(
+    () => ({
+      xToPx: (x: number) => ((x - minX) / (maxX - minX || 1)) * chartWidth,
+      yToPx: (y: number) => (1 - (y - min) / (max - min || 1)) * plotHeight,
+      pxToX: (px: number) => minX + (px / (chartWidth || 1)) * (maxX - minX),
+      pxToY: (py: number) => min + (1 - py / (plotHeight || 1)) * (max - min),
+    }),
+    [chartWidth, max, maxX, min, minX, plotHeight],
+  );
+
+  const drawing = useDrawingEngine({
+    scales: drawingScales,
+    plotRect: drawingPlotRect,
+    initialShapes: initialDrawings,
+    defaultStyle: {
+      color: theme === 'light' ? '#0F172A' : '#E2E8F0',
+      width: 2,
+      opacity: 1,
+    },
+    xDomain: [minX, maxX],
+    onChange: onDrawingsChange,
+    onShare: onShareDrawings,
+  });
+
+  const drawingToolbarTheme = useMemo(
+    () => ({
+      panelBg: theme === 'light' ? 'rgba(255,255,255,0.93)' : 'rgba(10,16,28,0.9)',
+      panelBorder: themeColors.border,
+      toolBg: theme === 'light' ? 'rgba(15,23,42,0.06)' : 'rgba(255,255,255,0.08)',
+      toolText: themeColors.textPrimary,
+      toolActiveBg: themeColors.textPrimary,
+      toolActiveText: themeColors.surface,
+      actionBg: theme === 'light' ? 'rgba(15,23,42,0.08)' : 'rgba(255,255,255,0.12)',
+      actionText: themeColors.textPrimary,
+      scrollBg: theme === 'light' ? 'rgba(15,23,42,0.06)' : 'rgba(255,255,255,0.08)',
+      scrollText: themeColors.textMuted,
+      dangerBg: themeColors.negative,
+      dangerBorder: themeColors.negative,
+      dangerIcon: '#FFFFFF',
+      dangerDisabledBg: theme === 'light' ? 'rgba(148,163,184,0.25)' : 'rgba(148,163,184,0.2)',
+      dangerDisabledIcon: theme === 'light' ? 'rgba(15,23,42,0.45)' : 'rgba(255,255,255,0.55)',
+    }),
+    [theme, themeColors.border, themeColors.negative, themeColors.surface, themeColors.textMuted, themeColors.textPrimary],
+  );
+
+  const drawingOverlayTheme = useMemo(
+    () => ({
+      editorBg: theme === 'light' ? 'rgba(255,255,255,0.96)' : 'rgba(8,16,28,0.95)',
+      editorBorder: themeColors.border,
+      inputBg: theme === 'light' ? '#FFFFFF' : 'transparent',
+      inputBorder: themeColors.border,
+      inputText: themeColors.textPrimary,
+      placeholderText: themeColors.textMuted,
+      cancelBg: theme === 'light' ? 'rgba(15,23,42,0.08)' : 'rgba(255,255,255,0.1)',
+      saveBg: themeColors.textPrimary,
+      buttonText: themeColors.surface,
+    }),
+    [theme, themeColors.border, themeColors.surface, themeColors.textMuted, themeColors.textPrimary],
+  );
 
   const setNearestPoint = useCallback(
     (touchX: number) => {
@@ -3298,12 +3436,47 @@ const MainChart = ({
     }));
   }, [hasChartPoints, max, min, plotHeight, tall]);
 
+  const handleClearDrawings = useCallback(() => {
+    drawing.clearAll();
+    onClearAllDrawings?.();
+  }, [drawing, onClearAllDrawings]);
+
   return (
     <View>
+      {enableDrawing ? (
+        <View
+          style={styles.chartDrawingToolsWrap}
+          onLayout={(evt) => setToolbarHeight(Math.round(evt.nativeEvent.layout.height))}
+        >
+          <DrawingToolbar
+            activeTool={drawing.activeTool}
+            onToolChange={drawing.setActiveTool}
+            onClear={handleClearDrawings}
+            onShare={drawing.share}
+            onDeleteSelected={handleClearDrawings}
+            canDelete={drawing.shapes.length > 0}
+            onUndo={drawing.undo}
+            onRedo={drawing.redo}
+            canUndo={drawing.canUndo}
+            canRedo={drawing.canRedo}
+            onDuplicate={drawing.duplicateSelected}
+            canDuplicate={Boolean(drawing.selectedId)}
+            onToggleLock={drawing.toggleSelectedLock}
+            canToggleLock={Boolean(drawing.selectedId)}
+            isLocked={drawing.selectedLocked}
+            onSettings={() => {
+              console.log('drawing-settings');
+            }}
+            readOnly={!hasChartPoints}
+            compact
+            theme={drawingToolbarTheme}
+          />
+        </View>
+      ) : null}
       <View style={styles.chartWrap}>
         {hasChartPoints ? (
           <View style={styles.chartFrame}>
-            <View>
+            <View style={{ width: chartWidth, height: chartHeight }}>
               <Svg width={chartWidth} height={chartHeight}>
                 <Defs>
                   <LinearGradient id="chartAreaGradient" x1="0" y1="0" x2="0" y2="1">
@@ -3320,7 +3493,7 @@ const MainChart = ({
                 ) : null}
                 <Path d={areaPath} fill="url(#chartAreaGradient)" />
                 <Path d={path} fill="none" stroke={softenedColor} strokeOpacity={0.92} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
-                {activePoint ? (
+                {activePoint && !enableDrawing ? (
                   <>
                     <Line
                       x1={activePoint.x}
@@ -3336,21 +3509,25 @@ const MainChart = ({
                   </>
                 ) : null}
               </Svg>
-              <View style={[StyleSheet.absoluteFill, { left: 0, right: 0 }]} {...panResponder.panHandlers} />
-              <View style={[styles.chartYAxis, { height: chartHeight }]}>
-                {yAxisMarks.map((item) => (
-                  <AppText key={item.key} style={[styles.chartAxisText, styles.chartYAxisText, { top: item.top }]}>
-                    {item.label}
-                  </AppText>
-                ))}
-              </View>
-              <View style={styles.chartXAxis}>
-                {xAxisMarks.map((item) => (
-                  <View key={item.key} style={[styles.chartXAxisSlot, { alignItems: item.align }]}>
-                    <AppText style={styles.chartAxisText}>{item.label}</AppText>
-                  </View>
-                ))}
-              </View>
+              {enableDrawing ? (
+                <DrawingOverlay engine={drawing} scales={drawingScales} plotRect={drawingPlotRect} theme={drawingOverlayTheme} />
+              ) : (
+                <View style={StyleSheet.absoluteFill} {...panResponder.panHandlers} />
+              )}
+            </View>
+            <View style={[styles.chartYAxis, { height: chartHeight }]}>
+              {yAxisMarks.map((item) => (
+                <AppText key={item.key} style={[styles.chartAxisText, styles.chartYAxisText, { top: item.top }]}>
+                  {item.label}
+                </AppText>
+              ))}
+            </View>
+            <View style={styles.chartXAxis}>
+              {xAxisMarks.map((item) => (
+                <View key={item.key} style={[styles.chartXAxisSlot, { alignItems: item.align }]}>
+                  <AppText style={styles.chartAxisText}>{item.label}</AppText>
+                </View>
+              ))}
             </View>
           </View>
         ) : (
@@ -3358,7 +3535,21 @@ const MainChart = ({
             <AppText style={styles.emptyText}>No chart data for this timeframe.</AppText>
           </View>
         )}
-        {activePoint ? (
+        {loading ? (
+          <View
+            style={[
+              styles.chartLoadingOverlay,
+              enableDrawing ? { top: 10 + toolbarHeight + 8 } : null,
+            ]}
+            pointerEvents="none"
+          >
+            <View style={styles.chartLoadingTrack}>
+              <View style={[styles.chartLoadingFill, { backgroundColor: softenedColor }]} />
+            </View>
+            <AppText style={styles.chartLoadingText}>Updating chart...</AppText>
+          </View>
+        ) : null}
+        {activePoint && !enableDrawing ? (
           <View
             style={[
               styles.chartTooltip,
@@ -3412,6 +3603,10 @@ const TabContent = ({
   watchlistAdded,
   watchlistBusy,
   authFetch,
+  drawingShapes,
+  onDrawingShapesChange,
+  onClearAllDrawings,
+  onShareDrawings,
 }: any) => {
   if (activeTab === 'overview') {
     return (
@@ -3445,6 +3640,10 @@ const TabContent = ({
         watchlistAdded={watchlistAdded}
         watchlistBusy={watchlistBusy}
         authFetch={authFetch}
+        drawingShapes={drawingShapes}
+        onDrawingShapesChange={onDrawingShapesChange}
+        onClearAllDrawings={onClearAllDrawings}
+        onShareDrawings={onShareDrawings}
       />
     );
   }
@@ -3489,6 +3688,14 @@ const StockDetailScreen = ({ route }: any) => {
     () => normalizeChartTimeframe(route?.params?.tf),
     [route?.params?.tf],
   );
+  const sharedDrawingKey = useMemo(() => {
+    const raw = route?.params?.dk;
+    return typeof raw === 'string' ? raw.trim() : '';
+  }, [route?.params?.dk]);
+  const sharedDrawingPayload = useMemo(() => {
+    const raw = route?.params?.d;
+    return typeof raw === 'string' ? raw : '';
+  }, [route?.params?.d]);
   const [activeTab, setActiveTab] = useState(routeTab);
   const [chartTimeframe, setChartTimeframe] = useState(routeTimeframe || DEFAULT_CHART_TIMEFRAME);
   const [visitedTabs, setVisitedTabs] = useState<Record<string, boolean>>({ [routeTab]: true, overview: true });
@@ -3502,12 +3709,14 @@ const StockDetailScreen = ({ route }: any) => {
   const [watchlistMemberships, setWatchlistMemberships] = useState<Array<{ id: string; title: string }>>([]);
   const [, setWatchlistMembershipTitles] = useState<string[]>([]);
   const [watchlistError, setWatchlistError] = useState('');
+  const [chartDrawingsBySymbol, setChartDrawingsBySymbol] = useState<Record<string, DrawingShape[]>>({});
   const [watchlistDialog, setWatchlistDialog] = useState({
     visible: false,
     title: '',
     message: '',
   });
   const tabLoadingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const appliedSharedDrawingRef = useRef('');
 
   const stopTabLoading = useCallback((delayMs = 180) => {
     if (tabLoadingTimerRef.current) {
@@ -3531,12 +3740,102 @@ const StockDetailScreen = ({ route }: any) => {
   }, [routeTab, routeTimeframe, symbol]);
 
   useEffect(() => {
+    const shareSignature = [symbol, routeTimeframe || DEFAULT_CHART_TIMEFRAME, sharedDrawingKey, sharedDrawingPayload].join('|');
+    if (!symbol || (!sharedDrawingKey && !sharedDrawingPayload)) {
+      appliedSharedDrawingRef.current = '';
+      return;
+    }
+    if (appliedSharedDrawingRef.current === shareSignature) {
+      return;
+    }
+
+    let active = true;
+    const applyShapes = (incoming: DrawingShape[]) => {
+      if (!active || !Array.isArray(incoming)) return;
+      setChartDrawingsBySymbol((prev) => ({ ...prev, [symbol]: incoming }));
+      setActiveTab('chart');
+      setVisitedTabs((prev) => ({ ...prev, chart: true }));
+      appliedSharedDrawingRef.current = shareSignature;
+    };
+
+    if (sharedDrawingPayload) {
+      const decoded = decodeSharedDrawingsFromParam(sharedDrawingPayload);
+      if (decoded) {
+        applyShapes(decoded);
+      }
+      return () => {
+        active = false;
+      };
+    }
+
+    if (sharedDrawingKey && authFetch) {
+      loadDrawingsByKey(authFetch, sharedDrawingKey)
+        .then((shapes) => {
+          applyShapes(shapes);
+        })
+        .catch(() => {
+          if (!active) return;
+          appliedSharedDrawingRef.current = shareSignature;
+        });
+    }
+
+    return () => {
+      active = false;
+    };
+  }, [authFetch, routeTimeframe, sharedDrawingKey, sharedDrawingPayload, symbol]);
+
+  useEffect(() => {
     setVisitedTabs((prev) => ({ ...prev, [activeTab]: true }));
   }, [activeTab]);
 
   const infoState = useStockInfo(symbol);
   const overviewSparkline = useStockHistory(symbol, '1D', true);
   const chartState = useStockHistory(symbol, chartTimeframe, visitedTabs.chart || activeTab === 'chart');
+  const chartDrawingShapes = chartDrawingsBySymbol[symbol] || [];
+  const handleDrawingShapesChange = useCallback(
+    (next: DrawingShape[]) => {
+      setChartDrawingsBySymbol((prev) => ({ ...prev, [symbol]: next }));
+    },
+    [symbol],
+  );
+  const handleShareDrawings = useCallback(
+    async ({ shapes, xDomain }: SharePayload) => {
+      const payload = {
+        symbol,
+        tf: chartTimeframe,
+        version: 1,
+        shapes: shapes || [],
+        xDomain: xDomain ?? null,
+      };
+
+      const fallbackAppLink = createStockChartDeepLink(symbol, chartTimeframe, { d: JSON.stringify(payload) });
+      const fallbackWebLink = createStockChartWebLink(symbol, chartTimeframe, { d: JSON.stringify(payload) });
+      let shareAppLink = fallbackAppLink;
+      let shareWebLink = fallbackWebLink;
+
+      try {
+        if (authFetch) {
+          const shareKey = `share-${normalizeStockSymbol(symbol)}-${Date.now().toString(36)}-${Math.random()
+            .toString(36)
+            .slice(2, 8)}`;
+          const saved = await saveDrawingsByKey(authFetch, shareKey, payload);
+          if (saved) {
+            shareAppLink = createStockChartDeepLink(symbol, chartTimeframe, { dk: shareKey });
+            shareWebLink = createStockChartWebLink(symbol, chartTimeframe, { dk: shareKey });
+          }
+        }
+      } catch {
+        shareAppLink = fallbackAppLink;
+        shareWebLink = fallbackWebLink;
+      }
+
+      await Share.share({
+        title: `${symbol} chart drawings`,
+        message: `${shareWebLink}\n${shareAppLink}\n\nOpen chart drawing for ${symbol}`,
+      });
+    },
+    [authFetch, chartTimeframe, symbol],
+  );
   const fundamentalsState = useStockFundamentals(symbol, visitedTabs.fundamentals || activeTab === 'fundamentals');
   const newsState = useStockNews(symbol, visitedTabs.news || activeTab === 'news');
   const alertsState = useTickerAlerts(symbol, Boolean(token) && (visitedTabs.alerts || activeTab === 'alerts'));
@@ -3911,6 +4210,9 @@ const StockDetailScreen = ({ route }: any) => {
                 watchlistAdded={watchlistAdded}
                 watchlistBusy={watchlistLoading || watchlistBusy}
                 authFetch={authFetch}
+                drawingShapes={chartDrawingShapes}
+                onDrawingShapesChange={handleDrawingShapesChange}
+                onShareDrawings={handleShareDrawings}
               />
             </View>
           </ScrollView>
@@ -4089,6 +4391,10 @@ const createStyles = (colors: Record<string, string>) =>
       fontSize: 10,
       lineHeight: 14,
       fontFamily: FONT.medium,
+    },
+    chartDrawingToolsWrap: {
+      marginBottom: 10,
+      gap: 8,
     },
     chartLegendRow: {
       flexDirection: 'row',

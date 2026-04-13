@@ -12,7 +12,10 @@ const CalculatorCTAContact = () => {
   const { width } = useWindowDimensions();
   const isLight = theme === 'light';
   const compact = width < 380;
-  const styles = useMemo(() => createStyles(themeColors, isLight, compact), [themeColors, isLight, compact]);
+  const styles = useMemo(
+    () => createStyles(themeColors, isLight, compact),
+    [themeColors, isLight, compact],
+  );
 
   const openLink = async (url) => {
     try {
@@ -56,7 +59,14 @@ const CalculatorCTAContact = () => {
               <AppText style={styles.contactItemText}>+91-96699-19000</AppText>
             </Pressable>
             <Pressable style={styles.contactItem} onPress={() => openLink('mailto:pr@rajeevprakash.com')}>
-              <AppText style={styles.contactItemText}>pr@rajeevprakash.com</AppText>
+              <AppText
+                style={styles.contactItemText}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.85}
+              >
+                pr@rajeevprakash.com
+              </AppText>
             </Pressable>
           </View>
         </View>
@@ -165,23 +175,24 @@ const createStyles = (colors, isLight, compact) =>
     },
     contactRow: {
       flexDirection: 'row',
-      flexWrap: 'wrap',
+      flexWrap: 'nowrap',
       gap: 8,
       marginTop: 4,
     },
     contactItem: {
-      flexGrow: 1,
-      flexBasis: compact ? '100%' : 0,
+      flex: 1,
       borderRadius: 8,
       borderWidth: 1,
       borderColor: colors.border,
       backgroundColor: colors.surfaceAlt,
-      paddingHorizontal: compact ? 9 : 10,
+      paddingHorizontal: compact ? 8 : 10,
       paddingVertical: compact ? 7 : 8,
+      minWidth: 0,
     },
     contactItemText: {
       color: colors.textPrimary,
-      fontSize: compact ? 13 : 14,
+      fontSize: compact ? 12 : 14,
+      flexShrink: 1,
     },
   });
 

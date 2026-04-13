@@ -29,7 +29,7 @@ import SectorDetailScreen from '../screens/SectorDetail/SectorDetailScreen';
 
 const Stack = createNativeStackNavigator();
 const linking = {
-  prefixes: ['financialastrology://', 'https://financialastrology.app'],
+  prefixes: ['financialastrology://', 'https://financialastrology.app', 'https://finance.rajeevprakash.com'],
   config: {
     screens: {
       Login: 'login',
