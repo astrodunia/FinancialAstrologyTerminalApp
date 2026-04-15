@@ -9,6 +9,16 @@ export type AuthUser = {
   id: string;
   name: string;
   email: string;
+  role?: string;
+  plan?: Record<string, any> | null;
+  subscription?: Record<string, any> | null;
+  billing?: Record<string, any> | null;
+  membership?: Record<string, any> | null;
+  planId?: string;
+  plan_id?: string;
+  subscriptionStatus?: string;
+  subscription_status?: string;
+  [key: string]: any;
   providers?: AuthProviders;
 };
 

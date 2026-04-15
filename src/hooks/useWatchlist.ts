@@ -76,7 +76,8 @@ const hasExplicitSymbolPayload = (list: any) =>
   );
 
 const normalizeListMeta = (list: any, fallback: any = {}) => {
-  const fallbackSymbols = normalizeSymbols(fallback?.symbols ?? []);
+  const sameListFallback = String(fallback?.id || '') && String(list?.id || fallback?.id || '') === String(fallback?.id || '');
+  const fallbackSymbols = sameListFallback ? normalizeSymbols(fallback?.symbols ?? []) : [];
   const incomingSymbolsRaw = hasExplicitSymbolPayload(list)
     ? normalizeSymbols(
         list?.symbols ||
@@ -96,7 +97,7 @@ const normalizeListMeta = (list: any, fallback: any = {}) => {
   const symbols = hasUsableIncomingSymbols ? incomingSymbolsRaw || [] : fallbackSymbols;
 
   const rawTitle = String(list?.title || '').trim();
-  const fallbackTitle = String(fallback?.title || '').trim();
+  const fallbackTitle = sameListFallback ? String(fallback?.title || '').trim() : '';
   const title =
     rawTitle && rawTitle !== 'Untitled'
       ? rawTitle
@@ -134,7 +135,7 @@ const buildPlaceholderRows = (symbols: string[], nameMap: Record<string, string>
 };
 
 export const useWatchlist = () => {
-  const { authFetch } = useUser() as any;
+  const { authFetch, currentPlan } = useUser() as any;
 
   const [lists, setLists] = useState<any[]>([]);
   const [activeId, setActiveId] = useState('');
@@ -152,6 +153,11 @@ export const useWatchlist = () => {
   const [sortKey, setSortKey] = useState('symbol');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [phase, setPhase] = useState(getMarketPhase());
+  const [feedbackDialog, setFeedbackDialog] = useState({
+    visible: false,
+    title: '',
+    message: '',
+  });
 
   const listAbortRef = useRef<AbortController | null>(null);
   const detailAbortRef = useRef<AbortController | null>(null);
@@ -160,6 +166,18 @@ export const useWatchlist = () => {
   const quoteRequestRef = useRef(0);
   const activeRef = useRef<any>(null);
   const symInputRef = useRef('');
+
+  const openFeedbackDialog = useCallback((title: string, message: string) => {
+    setFeedbackDialog({
+      visible: true,
+      title,
+      message,
+    });
+  }, []);
+
+  const closeFeedbackDialog = useCallback(() => {
+    setFeedbackDialog((prev) => ({ ...prev, visible: false }));
+  }, []);
 
   useEffect(() => {
     activeSymbolsRef.current = active?.symbols || [];
@@ -331,6 +349,12 @@ export const useWatchlist = () => {
       return;
     }
 
+    const maxWatchlists = currentPlan?.limits?.watchlists;
+    if (typeof maxWatchlists === 'number' && maxWatchlists > 0 && lists.length >= maxWatchlists) {
+      openFeedbackDialog('Watchlist limit reached', `Your ${currentPlan?.title || 'current'} plan allows up to ${maxWatchlists} watchlists.`);
+      return;
+    }
+
     setCreatingList(true);
     try {
       const created = await createList(authFetch, title);
@@ -363,14 +387,14 @@ export const useWatchlist = () => {
         lower.includes('on your plan');
 
       if (quotaHit) {
-        Alert.alert('Watchlist limit reached', message);
+        openFeedbackDialog('Watchlist limit reached', message);
       } else {
         Alert.alert('Create failed', detail);
       }
     } finally {
       setCreatingList(false);
     }
-  }, [applyListUpdate, authFetch, loadDetail, loadLists, newTitle]);
+  }, [applyListUpdate, authFetch, currentPlan?.limits?.watchlists, currentPlan?.title, lists.length, loadDetail, loadLists, newTitle, openFeedbackDialog]);
 
   const onRename = useCallback(async () => {
     if (!activeId) return;
@@ -422,6 +446,12 @@ export const useWatchlist = () => {
       return false;
     }
 
+    const maxSymbols = currentPlan?.limits?.watchlistSymbols;
+    if (typeof maxSymbols === 'number' && maxSymbols > 0 && active.symbols.length >= maxSymbols) {
+      openFeedbackDialog('Ticker limit reached', `Your ${currentPlan?.title || 'current'} plan allows up to ${maxSymbols} tickers in each watchlist.`);
+      return false;
+    }
+
     const prev = active;
     const optimistic = normalizeListMeta({ ...active, symbols: [...active.symbols, symbol], count: active.symbols.length + 1 }, active);
     applyListUpdate(optimistic);
@@ -441,7 +471,7 @@ export const useWatchlist = () => {
       Alert.alert('Add failed', error?.message || 'Unable to add symbol.');
       return false;
     }
-  }, [active, activeId, applyListUpdate, authFetch, reconcileList, refreshQuotes, symInput]);
+  }, [active, activeId, applyListUpdate, authFetch, currentPlan?.limits?.watchlistSymbols, currentPlan?.title, openFeedbackDialog, reconcileList, refreshQuotes, symInput]);
 
   const onRemoveTicker = useCallback(async (symbol: string) => {
     if (!activeId || !active) return;
@@ -506,6 +536,8 @@ export const useWatchlist = () => {
     sortDir,
     phase,
     priceHeaderLabel,
+    feedbackDialog,
+    closeFeedbackDialog,
     setNewTitle,
     setEditTitle,
     setIsEditingTitle,

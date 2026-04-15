@@ -2,7 +2,6 @@ import React from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import {
   Briefcase,
-  Calculator,
   ClipboardList,
   Globe,
   Home as HomeIcon,
@@ -17,7 +16,6 @@ const TABS = [
   { label: 'Sectors', route: 'Sectors', icon: LayoutGrid },
   { label: 'Portfolio', route: 'Portfolio', icon: Briefcase },
   { label: 'Overview', route: 'Overview', icon: Globe },
-  { label: 'Calculators', route: 'Calculators', icon: Calculator },
 ];
 
 export const FOOTER_TAB_ROUTES = TABS.map((item) => item.route);

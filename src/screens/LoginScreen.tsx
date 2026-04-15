@@ -14,6 +14,7 @@ import { Apple, Chrome, Eye, EyeOff, Lock, Mail, ShieldCheck, Sparkles } from 'l
 import AppText from '../components/AppText';
 import AppTextInput from '../components/AppTextInput';
 import GradientBackground from '../components/GradientBackground';
+import { loginWithPasswordRequest } from '../auth/authService';
 import TakeoverDialog from '../components/TakeoverDialog';
 import { useAuth } from '../auth/AuthProvider';
 import { API_BASE_URL } from '../utils/apiBaseUrl';
@@ -55,7 +56,7 @@ const createPalette = (themeColors: any, theme: string) => ({
 
 export default function LoginScreen({ navigation }: { navigation: any }) {
   const { theme, themeColors } = useUser() as any;
-  const { signInWithGoogle, signInWithApple, isAppleSupported, getOrCreateDeviceId, setAuthSession } = useAuth();
+  const { signInWithGoogle, signInWithApple, isAppleSupported, getOrCreateDeviceId, setAuthSession, syncSession } = useAuth();
   const colors = useMemo(() => createPalette(themeColors, theme), [theme, themeColors]);
   const styles = useMemo(() => createStyles(colors, theme), [colors, theme]);
 
@@ -92,27 +93,7 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
       user: data?.user || data?.data?.user || data?.session?.user || data?.data || null,
       firstLogin: Boolean(data?.firstLogin),
     });
-  };
-
-  const performPasswordLogin = async (force: boolean) => {
-    const deviceId = await getOrCreateDeviceId();
-    const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
-      method: 'POST',
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-        'x-device-id': deviceId,
-      },
-      body: JSON.stringify({
-        email: username.trim().toLowerCase(),
-        password,
-        device_id: deviceId,
-        force,
-      }),
-    });
-
-    const data = await response.json().catch(() => null);
-    return { response, data, deviceId };
+    await syncSession().catch(() => null);
   };
 
   const handlePasswordLogin = async () => {
@@ -135,21 +116,8 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
     setStatusMessage('');
 
     try {
-      let { response, data, deviceId } = await performPasswordLogin(false);
-
-      if (response.status === 409 && data?.error === 'device_limit_reached') {
-        const shouldContinue = await requestTakeoverConfirmation();
-        if (!shouldContinue) {
-          return;
-        }
-
-        ({ response, data, deviceId } = await performPasswordLogin(true));
-      }
-
-      if (!response.ok) {
-        throw new Error(data?.message || data?.error || data?.errors?.[0]?.msg || 'Login failed. Please try again.');
-      }
-
+      const deviceId = await getOrCreateDeviceId();
+      const data = await loginWithPasswordRequest(trimmedUsername, password, deviceId, requestTakeoverConfirmation);
       await applyBackendSession(data, deviceId);
       setStatusType('success');
       setStatusMessage('Login successful.');

@@ -1,4 +1,4 @@
-package com.financialastrologyterminalapp
+package com.financialastrologyterminal
 
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate

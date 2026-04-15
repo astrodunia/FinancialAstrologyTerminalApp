@@ -20,11 +20,9 @@ import {
 import AppDialog from '../../components/AppDialog';
 import AppText from '../../components/AppText';
 import AppTextInput from '../../components/AppTextInput';
+import BackButtonHeader from '../../components/BackButtonHeader';
 import BottomTabs from '../../components/BottomTabs';
 import GradientBackground from '../../components/GradientBackground';
-import HomeHeader from '../../components/HomeHeader';
-import { navigateToStockDetail, normalizeStockSymbol } from '../../features/stocks/navigation';
-import { useTickerSearch } from '../../features/stocks/useTickerSearch';
 import { useUser } from '../../store/UserContext';
 
 const FAQS = [
@@ -73,10 +71,7 @@ const Support = ({ navigation }) => {
   const [sessionUser, setSessionUser] = useState(null);
   const [deletingId, setDeletingId] = useState('');
   const [deleteTicketId, setDeleteTicketId] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
   const authFetchRef = useRef(authFetch);
-  const profileName = user?.displayName || user?.name || 'Trader';
-  const { results, loading, error: searchError } = useTickerSearch(searchQuery);
 
   useEffect(() => {
     authFetchRef.current = authFetch;
@@ -227,41 +222,10 @@ const Support = ({ navigation }) => {
     setDeleteTicketId(ticketId || '');
   };
 
-  const submitTickerSearch = () => {
-    const normalized = normalizeStockSymbol(searchQuery);
-    if (/^[A-Z][A-Z0-9.-]{0,9}$/.test(normalized)) {
-      navigateToStockDetail(navigation, normalized);
-      return;
-    }
-
-    if (results[0]?.symbol) {
-      navigateToStockDetail(navigation, results[0].symbol);
-    }
-  };
-
-  const selectTickerSearchResult = (item) => {
-    if (!item?.symbol) return;
-    setSearchQuery(item.symbol);
-    navigateToStockDetail(navigation, item.symbol);
-  };
-
   return (
     <View style={styles.screen}>
       <GradientBackground>
-        <HomeHeader
-          themeColors={themeColors}
-          profileName={profileName}
-          searchQuery={searchQuery}
-          onChangeSearchQuery={setSearchQuery}
-          searchResults={results}
-          searchLoading={loading}
-          searchError={searchError}
-          showSearchResults={Boolean(searchQuery.trim())}
-          onPressSearchResult={selectTickerSearchResult}
-          onSubmitSearch={submitTickerSearch}
-          onPressProfile={() => navigation.navigate('Profile')}
-          onPressGlobalIndices={() => navigation.navigate('GlobalIndices')}
-        />
+        <BackButtonHeader colors={themeColors} onPress={() => navigation.goBack()} containerStyle={styles.header} />
 
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           {error ? (
@@ -277,11 +241,16 @@ const Support = ({ navigation }) => {
           ) : null}
 
           <View style={styles.heroCard}>
+            <View style={styles.heroGlowTop} />
+            <View style={styles.heroGlowBottom} />
             <View style={styles.heroIcon}>
               <LifeBuoy size={20} color={themeColors.accent} />
             </View>
             <View style={styles.heroTextWrap}>
-              <AppText style={styles.heroTitle}>Finance Astrology Terminal Support</AppText>
+              <View style={styles.heroBadge}>
+                <AppText style={styles.heroBadgeText}>Support & Help</AppText>
+              </View>
+              <AppText style={styles.heroTitle}>Fast help for account, billing, alerts, and market workflow issues.</AppText>
               <AppText style={styles.heroBody}>
                 Get quick answers for login, billing, market data, alerts, and account issues, or send a message to support directly from the app.
               </AppText>
@@ -290,17 +259,29 @@ const Support = ({ navigation }) => {
 
           <View style={styles.summaryRow}>
             <View style={styles.summaryPill}>
-              <AppText style={styles.summaryLabel}>Response</AppText>
+              <AppText style={styles.summaryLabel}>Response Time</AppText>
               <AppText style={styles.summaryValue}>Usually within 1 business day</AppText>
             </View>
             <View style={styles.summaryPill}>
               <AppText style={styles.summaryLabel}>Coverage</AppText>
               <AppText style={styles.summaryValue}>Account, data, alerts, billing</AppText>
             </View>
+            <View style={styles.summaryPill}>
+              <AppText style={styles.summaryLabel}>Support Style</AppText>
+              <AppText style={styles.summaryValue}>Profile-linked and privacy-aware</AppText>
+            </View>
           </View>
 
           <View style={styles.card}>
-            <AppText style={styles.cardTitle}>Reach us</AppText>
+            <View style={styles.cardHeader}>
+              <View style={styles.cardHeaderIcon}>
+                <Mail size={16} color={themeColors.accent} />
+              </View>
+              <View style={styles.cardHeaderTextWrap}>
+                <AppText style={styles.cardEyebrow}>Contact Options</AppText>
+                <AppText style={styles.cardTitle}>Reach us</AppText>
+              </View>
+            </View>
             <AppText style={styles.cardDescription}>
               Use the channel that fits your issue. For account-specific help, submit the form below so support can match it to your profile.
             </AppText>
@@ -325,7 +306,15 @@ const Support = ({ navigation }) => {
           </View>
 
           <View style={styles.card}>
-            <AppText style={styles.cardTitle}>Frequently asked questions</AppText>
+            <View style={styles.cardHeader}>
+              <View style={styles.cardHeaderIcon}>
+                <HelpCircle size={16} color={themeColors.accent} />
+              </View>
+              <View style={styles.cardHeaderTextWrap}>
+                <AppText style={styles.cardEyebrow}>Quick Answers</AppText>
+                <AppText style={styles.cardTitle}>Frequently asked questions</AppText>
+              </View>
+            </View>
 
             {FAQS.map((item, index) => {
               const expanded = expandedFaq === index;
@@ -350,7 +339,15 @@ const Support = ({ navigation }) => {
           </View>
 
           <View style={styles.card}>
-            <AppText style={styles.cardTitle}>Contact support</AppText>
+            <View style={styles.cardHeader}>
+              <View style={styles.cardHeaderIcon}>
+                <MessageSquare size={16} color={themeColors.accent} />
+              </View>
+              <View style={styles.cardHeaderTextWrap}>
+                <AppText style={styles.cardEyebrow}>Send a Request</AppText>
+                <AppText style={styles.cardTitle}>Contact support</AppText>
+              </View>
+            </View>
             <AppText style={styles.cardDescription}>
               Your account name and email are used automatically. Describe the issue, the screen involved, and how to reproduce it.
             </AppText>
@@ -385,7 +382,15 @@ const Support = ({ navigation }) => {
           </View>
 
           <View style={styles.card}>
-            <AppText style={styles.cardTitle}>Your support messages</AppText>
+            <View style={styles.cardHeader}>
+              <View style={styles.cardHeaderIcon}>
+                <ShieldCheck size={16} color={themeColors.accent} />
+              </View>
+              <View style={styles.cardHeaderTextWrap}>
+                <AppText style={styles.cardEyebrow}>History</AppText>
+                <AppText style={styles.cardTitle}>Your support messages</AppText>
+              </View>
+            </View>
 
             {loadingTickets ? (
               <View style={styles.centerState}>
@@ -497,12 +502,15 @@ const createStyles = (colors) =>
       flex: 1,
       backgroundColor: colors.background,
     },
+    header: {
+      gap: 16,
+    },
     content: {
       paddingHorizontal: 16,
-      paddingTop: 12,
+      paddingTop: 0,
       paddingBottom: 120,
       flexGrow: 1,
-      gap: 14,
+      gap: 16,
     },
     errorBanner: {
       borderRadius: 14,
@@ -529,19 +537,40 @@ const createStyles = (colors) =>
       fontSize: 12,
     },
     heroCard: {
-      borderRadius: 22,
+      position: 'relative',
+      overflow: 'hidden',
+      marginTop: 8,
+      borderRadius: 28,
       borderWidth: 1,
       borderColor: colors.border,
       backgroundColor: colors.surfaceGlass,
-      padding: 18,
-      flexDirection: 'row',
+      padding: 22,
       gap: 14,
-      alignItems: 'flex-start',
+    },
+    heroGlowTop: {
+      position: 'absolute',
+      top: -34,
+      right: -20,
+      width: 150,
+      height: 150,
+      borderRadius: 75,
+      backgroundColor: colors.accent,
+      opacity: 0.13,
+    },
+    heroGlowBottom: {
+      position: 'absolute',
+      bottom: -44,
+      left: -18,
+      width: 128,
+      height: 128,
+      borderRadius: 64,
+      backgroundColor: colors.positive,
+      opacity: 0.1,
     },
     heroIcon: {
-      width: 42,
-      height: 42,
-      borderRadius: 14,
+      width: 52,
+      height: 52,
+      borderRadius: 18,
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: colors.surfaceAlt,
@@ -549,52 +578,101 @@ const createStyles = (colors) =>
       borderColor: colors.border,
     },
     heroTextWrap: {
-      flex: 1,
-      gap: 6,
+      gap: 8,
+    },
+    heroBadge: {
+      alignSelf: 'flex-start',
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceAlt,
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+    },
+    heroBadgeText: {
+      color: colors.textPrimary,
+      fontSize: 11,
+      fontFamily: 'NotoSans-SemiBold',
     },
     heroTitle: {
       color: colors.textPrimary,
-      fontSize: 18,
+      fontSize: 24,
+      lineHeight: 31,
+      fontFamily: 'NotoSans-ExtraBold',
     },
     heroBody: {
       color: colors.textMuted,
-      fontSize: 13,
-      lineHeight: 20,
+      fontSize: 14,
+      lineHeight: 22,
     },
     summaryRow: {
       flexDirection: 'row',
+      flexWrap: 'wrap',
       gap: 10,
     },
     summaryPill: {
-      flex: 1,
-      borderRadius: 18,
-      borderWidth: 1,
-      borderColor: colors.border,
-      backgroundColor: colors.surfaceGlass,
-      paddingHorizontal: 14,
-      paddingVertical: 12,
-      gap: 4,
-    },
-    summaryLabel: {
-      color: colors.textMuted,
-      fontSize: 11,
-    },
-    summaryValue: {
-      color: colors.textPrimary,
-      fontSize: 12,
-      lineHeight: 18,
-    },
-    card: {
+      minWidth: '30%',
+      flexGrow: 1,
       borderRadius: 20,
       borderWidth: 1,
       borderColor: colors.border,
       backgroundColor: colors.surfaceGlass,
-      padding: 16,
+      paddingHorizontal: 15,
+      paddingVertical: 14,
+      gap: 6,
+    },
+    summaryLabel: {
+      color: colors.textMuted,
+      fontSize: 11,
+      fontFamily: 'NotoSans-Medium',
+      textTransform: 'uppercase',
+      letterSpacing: 0.4,
+    },
+    summaryValue: {
+      color: colors.textPrimary,
+      fontSize: 13,
+      lineHeight: 19,
+      fontFamily: 'NotoSans-SemiBold',
+    },
+    card: {
+      borderRadius: 24,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceGlass,
+      padding: 18,
       gap: 14,
+    },
+    cardHeader: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 12,
+    },
+    cardHeaderIcon: {
+      width: 38,
+      height: 38,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceAlt,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    cardHeaderTextWrap: {
+      flex: 1,
+      gap: 3,
+    },
+    cardEyebrow: {
+      color: colors.textMuted,
+      fontSize: 10,
+      fontFamily: 'NotoSans-SemiBold',
+      textTransform: 'uppercase',
+      letterSpacing: 0.5,
     },
     cardTitle: {
       color: colors.textPrimary,
-      fontSize: 16,
+      fontSize: 17,
+      lineHeight: 23,
+      fontFamily: 'NotoSans-ExtraBold',
     },
     cardDescription: {
       color: colors.textMuted,
@@ -608,12 +686,19 @@ const createStyles = (colors) =>
       flexDirection: 'row',
       alignItems: 'center',
       gap: 10,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceAlt,
+      paddingHorizontal: 12,
+      paddingVertical: 11,
     },
     contactText: {
       flex: 1,
-      color: colors.textMuted,
+      color: colors.textPrimary,
       fontSize: 13,
       lineHeight: 18,
+      fontFamily: 'NotoSans-Medium',
     },
     faqRow: {
       borderTopWidth: 1,
@@ -642,6 +727,7 @@ const createStyles = (colors) =>
       color: colors.textPrimary,
       fontSize: 13,
       lineHeight: 19,
+      fontFamily: 'NotoSans-SemiBold',
     },
     faqAnswer: {
       color: colors.textMuted,
@@ -650,7 +736,7 @@ const createStyles = (colors) =>
       paddingLeft: 26,
     },
     readOnlyField: {
-      borderRadius: 14,
+      borderRadius: 16,
       borderWidth: 1,
       borderColor: colors.border,
       backgroundColor: colors.surfaceAlt,
@@ -672,6 +758,7 @@ const createStyles = (colors) =>
     inputLabel: {
       color: colors.textPrimary,
       fontSize: 12,
+      fontFamily: 'NotoSans-SemiBold',
     },
     textArea: {
       minHeight: 128,
@@ -685,8 +772,8 @@ const createStyles = (colors) =>
       paddingVertical: 12,
     },
     primaryButton: {
-      minHeight: 46,
-      borderRadius: 14,
+      minHeight: 48,
+      borderRadius: 16,
       backgroundColor: colors.accent,
       flexDirection: 'row',
       alignItems: 'center',
@@ -696,6 +783,7 @@ const createStyles = (colors) =>
     primaryButtonText: {
       color: '#FFFFFF',
       fontSize: 13,
+      fontFamily: 'NotoSans-SemiBold',
     },
     centerState: {
       alignItems: 'center',
@@ -709,7 +797,7 @@ const createStyles = (colors) =>
       textAlign: 'center',
     },
     ticketCard: {
-      borderRadius: 16,
+      borderRadius: 18,
       borderWidth: 1,
       borderColor: colors.border,
       backgroundColor: colors.surfaceAlt,
@@ -790,29 +878,31 @@ const createStyles = (colors) =>
       lineHeight: 19,
     },
     footerCard: {
-      borderRadius: 24,
+      borderRadius: 28,
       borderWidth: 1,
       borderColor: colors.border,
       backgroundColor: colors.surfaceGlass,
-      padding: 18,
-      gap: 10,
+      padding: 20,
+      gap: 12,
       marginBottom: 12,
     },
     footerTitle: {
       color: colors.textPrimary,
-      fontSize: 17,
+      fontSize: 20,
+      lineHeight: 26,
+      fontFamily: 'NotoSans-ExtraBold',
     },
     footerBody: {
       color: colors.textMuted,
-      fontSize: 13,
-      lineHeight: 20,
+      fontSize: 14,
+      lineHeight: 21,
     },
     footerButton: {
-      marginTop: 2,
+      marginTop: 4,
       alignSelf: 'flex-start',
-      minHeight: 42,
-      borderRadius: 14,
-      paddingHorizontal: 16,
+      minHeight: 46,
+      borderRadius: 16,
+      paddingHorizontal: 18,
       backgroundColor: colors.accent,
       alignItems: 'center',
       justifyContent: 'center',
@@ -820,6 +910,7 @@ const createStyles = (colors) =>
     footerButtonText: {
       color: '#FFFFFF',
       fontSize: 13,
+      fontFamily: 'NotoSans-SemiBold',
     },
   });
 

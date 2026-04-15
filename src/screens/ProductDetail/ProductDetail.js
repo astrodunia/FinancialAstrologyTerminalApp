@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useRef } from 'react';
 import { Animated, Easing, Image, Linking, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import {
   Activity,
-  ArrowLeft,
   BadgeCheck,
   BellRing,
   Briefcase,
@@ -23,6 +22,7 @@ import {
   TrendingUp,
 } from 'lucide-react-native';
 import AppText from '../../components/AppText';
+import BackButtonHeader from '../../components/BackButtonHeader';
 import BottomTabs from '../../components/BottomTabs';
 import { getProductById } from '../Products/productCatalog';
 
@@ -394,15 +394,11 @@ const ProductDetail = ({ navigation, route }) => {
       <View style={styles.bgGlowTop} />
       <View style={styles.bgGlowBottom} />
 
-      <View style={styles.header}>
-        <Pressable style={styles.backButton} onPress={() => navigation.goBack()}>
-          <ArrowLeft size={18} color="#1F2937" />
-        </Pressable>
-        <View style={styles.headerCopy}>
-          <AppText style={styles.headerTitle}>Explore Product</AppText>
-          <AppText style={styles.headerSubtitle}>{product.title}</AppText>
-        </View>
-      </View>
+      <BackButtonHeader
+        colors={{ border: '#D9E4F2', surfaceGlass: 'rgba(255,255,255,0.86)', textPrimary: '#1F2937' }}
+        onPress={() => navigation.goBack()}
+        containerStyle={styles.header}
+      />
 
       <Animated.ScrollView
         contentContainerStyle={styles.scrollContent}
@@ -410,7 +406,12 @@ const ProductDetail = ({ navigation, route }) => {
         onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })}
         scrollEventThrottle={16}
       >
-        <Animated.View style={[styles.heroCard, entrance(0)]}>
+        <Animated.View style={[styles.pageHeading, entrance(0)]}>
+          <AppText style={styles.pageHeadingTitle}>Explore Product</AppText>
+          <AppText style={styles.pageHeadingSubtitle}>{product.title}</AppText>
+        </Animated.View>
+
+        <Animated.View style={[styles.heroCard, entrance(1)]}>
           <Animated.View style={[styles.heroVisual, heroVisualMotionStyle]}>
             {heroImage ? (
               <View style={styles.heroImageFrame}>
@@ -459,7 +460,7 @@ const ProductDetail = ({ navigation, route }) => {
           </View>
         </Animated.View>
 
-        <Animated.View style={[styles.sectionCard, entrance(1)]}>
+        <Animated.View style={[styles.sectionCard, entrance(2)]}>
           <AppText style={styles.sectionTitle}>Key value</AppText>
           <View style={styles.valueGrid}>
             {landing.valueCards.map((item) => {
@@ -477,7 +478,7 @@ const ProductDetail = ({ navigation, route }) => {
           </View>
         </Animated.View>
 
-        <Animated.View style={[styles.sectionCard, entrance(2)]}>
+        <Animated.View style={[styles.sectionCard, entrance(3)]}>
           <AppText style={styles.sectionTitle}>How it works</AppText>
           {HOW_IT_WORKS.map((step, index) => (
             <View key={step.id} style={styles.stepRow}>
@@ -492,7 +493,7 @@ const ProductDetail = ({ navigation, route }) => {
           ))}
         </Animated.View>
 
-        <Animated.View style={[styles.sectionCard, entrance(3)]}>
+        <Animated.View style={[styles.sectionCard, entrance(4)]}>
           <AppText style={styles.sectionTitle}>Why users love it</AppText>
           <AppText style={styles.sectionLead}>{landing.loveLead}</AppText>
           {landing.lovePoints.map((point) => (
@@ -507,7 +508,7 @@ const ProductDetail = ({ navigation, route }) => {
           </View>
         </Animated.View>
 
-        <Animated.View style={[styles.sectionCard, entrance(4)]}>
+        <Animated.View style={[styles.sectionCard, entrance(5)]}>
           <AppText style={styles.sectionTitle}>Meet our researchers</AppText>
           <View style={styles.researchersGrid}>
             {RESEARCHERS.map((person) => (
@@ -523,7 +524,7 @@ const ProductDetail = ({ navigation, route }) => {
           </View>
         </Animated.View>
 
-        <Animated.View style={[styles.sectionCard, entrance(5)]}>
+        <Animated.View style={[styles.sectionCard, entrance(6)]}>
           <View style={styles.centerHead}>
             <View style={styles.centerChip}>
               <AppText numberOfLines={1} style={styles.centerChipText}>
@@ -545,7 +546,7 @@ const ProductDetail = ({ navigation, route }) => {
           </View>
         </Animated.View>
 
-        <Animated.View style={[styles.sectionCard, entrance(6)]}>
+        <Animated.View style={[styles.sectionCard, entrance(7)]}>
           <View style={styles.centerHead}>
             <View style={styles.centerChip}>
               <AppText style={styles.centerChipText}>Inquiries</AppText>
@@ -572,7 +573,7 @@ const ProductDetail = ({ navigation, route }) => {
           </View>
         </Animated.View>
 
-        <Animated.View style={[styles.finalCta, entrance(7)]}>
+        <Animated.View style={[styles.finalCta, entrance(8)]}>
           <AppText style={styles.finalCtaTitle}>{landing.finalCtaTitle}</AppText>
           <AppText style={styles.finalCtaText}>{landing.finalCtaText}</AppText>
           <Pressable
@@ -616,42 +617,30 @@ const createStyles = (isCompact, accent) =>
       opacity: 0.72,
     },
     header: {
-      paddingTop: 28,
-      paddingHorizontal: 16,
-      paddingBottom: 8,
-      flexDirection: 'row',
-      alignItems: 'center',
+      gap: 16,
     },
-    backButton: {
-      width: 40,
-      height: 40,
-      borderRadius: 12,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: 'rgba(255,255,255,0.86)',
-      borderWidth: 1,
-      borderColor: '#D9E4F2',
-      marginRight: 10,
+    pageHeading: {
+      marginTop: 0,
+      marginBottom: 16,
     },
-    headerCopy: {
-      flex: 1,
-    },
-    headerTitle: {
+    pageHeadingTitle: {
       color: '#1E293B',
-      fontSize: isCompact ? 18 : 20,
-      lineHeight: isCompact ? 24 : 27,
+      fontSize: isCompact ? 20 : 22,
+      lineHeight: isCompact ? 28 : 30,
       fontFamily: 'NotoSans-ExtraBold',
+      letterSpacing: 0.2,
     },
-    headerSubtitle: {
+    pageHeadingSubtitle: {
       color: '#5B6B84',
-      fontSize: 12,
-      lineHeight: 18,
+      fontSize: isCompact ? 13 : 14,
+      lineHeight: isCompact ? 19 : 20,
       fontFamily: 'NotoSans-Medium',
+      marginTop: 6,
     },
     scrollContent: {
       paddingHorizontal: 16,
       paddingBottom: 120,
-      paddingTop: 4,
+      paddingTop: 0,
     },
     heroCard: {
       borderRadius: 24,

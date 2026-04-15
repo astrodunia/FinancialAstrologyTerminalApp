@@ -10,15 +10,15 @@ import {
   X,
 } from 'lucide-react-native';
 import AppDialog from '../../components/AppDialog';
+import BackButtonHeader from '../../components/BackButtonHeader';
 import AppText from '../../components/AppText';
 import BottomTabs from '../../components/BottomTabs';
 import GradientBackground from '../../components/GradientBackground';
-import HomeHeader from '../../components/HomeHeader';
-import { navigateToStockDetail, normalizeStockSymbol } from '../../features/stocks/navigation';
-import { useTickerSearch } from '../../features/stocks/useTickerSearch';
+import { PLAN_CATALOG, PLAN_FEATURES, PLAN_GROUPS } from '../../features/plans/catalog';
 import { useUser } from '../../store/UserContext';
 
 const WEB_BASE_URL = 'https://finance.rajeevprakash.com';
+const WEB_PLANS_URL = `${WEB_BASE_URL}/plans`;
 const FONT = {
   regular: 'NotoSans-Regular',
   medium: 'NotoSans-Medium',
@@ -26,207 +26,8 @@ const FONT = {
   extraBold: 'NotoSans-ExtraBold',
 };
 
-const PLANS = [
-  {
-    id: 'basic',
-    title: 'Basic',
-    subtitle: 'Anyone exploring the terminal',
-    price: '$0',
-    family: 'basic',
-    badge: 'Starter',
-    description: 'A clean entry point for testing dashboards, layouts, and lightweight tracking.',
-    bullets: ['Core dashboards', 'Snapshot data', 'Watchlist up to 20 symbols', '3 price alerts'],
-  },
-  {
-    id: 'pro',
-    title: 'Pro',
-    subtitle: 'Individual traders',
-    price: '$500 / month',
-    family: 'pro',
-    badge: 'Popular',
-    description: 'Built for active market participants who need realtime data, overlays, and timing tools.',
-    bullets: ['Realtime market data', 'Full calendars', 'Planetary overlays', '500 symbols and 50 alerts'],
-  },
-  {
-    id: 'pro_insights',
-    title: 'Pro + Insights',
-    subtitle: 'Curated market windows',
-    price: '$1,000 / month',
-    family: 'pro',
-    badge: 'Research',
-    description: 'Adds curated windows and stronger context for traders who want higher-conviction timing.',
-    bullets: ['Everything in Pro', 'Insights windows', 'Higher-conviction timing workflows', 'Priority research context'],
-  },
-  {
-    id: 'pro_insights_consult',
-    title: 'Pro + Insights + Consultation',
-    subtitle: 'Curated windows plus weekly 1:1 time',
-    price: '$2,000 / month',
-    family: 'pro',
-    badge: 'Advisor',
-    description: 'For users who want direct analyst interaction in addition to data, overlays, and insights.',
-    bullets: ['Everything in Pro + Insights', 'Weekly 1:1 consultation', 'Higher-touch guidance', 'Deeper workflow support'],
-  },
-  {
-    id: 'enterprise',
-    title: 'Enterprise',
-    subtitle: 'Teams and desks',
-    price: '$1,000 / user / month',
-    family: 'enterprise',
-    badge: 'Team',
-    description: 'A desk-ready plan with seat controls, shared workflows, and broader operational support.',
-    bullets: ['Everything in Pro', 'Seat management', 'Shared workflows', 'Account support'],
-  },
-  {
-    id: 'enterprise_insights',
-    title: 'Enterprise + Insights',
-    subtitle: 'Firms with curated windows',
-    price: '$2,000 / user / month',
-    family: 'enterprise',
-    badge: 'Desk Research',
-    description: 'Adds guided timing context for firms that need shared workflows and curated windows together.',
-    bullets: ['Everything in Enterprise', 'Insights windows', 'Team-ready research context', 'Broader workflow coverage'],
-  },
-  {
-    id: 'enterprise_insights_consult',
-    title: 'Enterprise + Insights + Consultation',
-    subtitle: 'Firms that also want analyst time',
-    price: '$3,000 / user / month',
-    family: 'enterprise',
-    badge: 'White Glove',
-    description: 'The highest-touch package for firms that want platform depth plus weekly consultation.',
-    bullets: ['Everything in Enterprise + Insights', 'Weekly 1:1 consultation', 'Higher-touch support', 'Advanced team workflow guidance'],
-  },
-];
-
-const PLAN_GROUPS = [
-  {
-    key: 'basic',
-    title: 'Start Simple',
-    body: 'For new users who want the terminal structure without full trading depth yet.',
-  },
-  {
-    key: 'pro',
-    title: 'Trade With Precision',
-    body: 'For active traders who want realtime data, overlays, curated windows, and optional consultation.',
-  },
-  {
-    key: 'enterprise',
-    title: 'Scale Across Teams',
-    body: 'For desks and firms that need seat controls, shared workflows, and higher-touch support.',
-  },
-];
-
-const FEATURES = [
-  {
-    label: 'Realtime market data',
-    values: {
-      basic: false,
-      pro: true,
-      pro_insights: true,
-      pro_insights_consult: true,
-      enterprise: true,
-      enterprise_insights: true,
-      enterprise_insights_consult: true,
-    },
-  },
-  {
-    label: 'Planetary overlays and alerts',
-    values: {
-      basic: false,
-      pro: true,
-      pro_insights: true,
-      pro_insights_consult: true,
-      enterprise: true,
-      enterprise_insights: true,
-      enterprise_insights_consult: true,
-    },
-  },
-  {
-    label: 'Watchlist capacity',
-    values: {
-      basic: '20',
-      pro: '500',
-      pro_insights: '500',
-      pro_insights_consult: '500',
-      enterprise: '2,000 / seat',
-      enterprise_insights: '2,000 / seat',
-      enterprise_insights_consult: '2,000 / seat',
-    },
-  },
-  {
-    label: 'Price and volume alerts',
-    values: {
-      basic: '3',
-      pro: '50',
-      pro_insights: '50',
-      pro_insights_consult: '50',
-      enterprise: '250 / seat',
-      enterprise_insights: '250 / seat',
-      enterprise_insights_consult: '250 / seat',
-    },
-  },
-  {
-    label: 'Curated insights windows',
-    values: {
-      basic: false,
-      pro: false,
-      pro_insights: true,
-      pro_insights_consult: true,
-      enterprise: false,
-      enterprise_insights: true,
-      enterprise_insights_consult: true,
-    },
-  },
-  {
-    label: 'Weekly 1:1 consultation',
-    values: {
-      basic: false,
-      pro: false,
-      pro_insights: false,
-      pro_insights_consult: true,
-      enterprise: false,
-      enterprise_insights: false,
-      enterprise_insights_consult: true,
-    },
-  },
-  {
-    label: 'Seat management and shared lists',
-    values: {
-      basic: false,
-      pro: false,
-      pro_insights: false,
-      pro_insights_consult: false,
-      enterprise: true,
-      enterprise_insights: true,
-      enterprise_insights_consult: true,
-    },
-  },
-  {
-    label: 'API access and SSO',
-    values: {
-      basic: false,
-      pro: false,
-      pro_insights: false,
-      pro_insights_consult: false,
-      enterprise: true,
-      enterprise_insights: true,
-      enterprise_insights_consult: true,
-    },
-  },
-  {
-    label: 'Dedicated account manager',
-    values: {
-      basic: false,
-      pro: false,
-      pro_insights: false,
-      pro_insights_consult: false,
-      enterprise: true,
-      enterprise_insights: true,
-      enterprise_insights_consult: true,
-    },
-  },
-];
+const PLANS = PLAN_CATALOG;
+const FEATURES = PLAN_FEATURES;
 
 const FAMILY_META = {
   basic: {
@@ -275,50 +76,17 @@ const renderFeatureValue = (value, colors) => {
 };
 
 const Plans = ({ navigation }) => {
-  const { themeColors, user } = useUser();
+  const { themeColors, currentPlan } = useUser();
   const styles = useMemo(() => createStyles(themeColors), [themeColors]);
-  const [searchQuery, setSearchQuery] = useState('');
   const [linkErrorVisible, setLinkErrorVisible] = useState(false);
-  const profileName = user?.displayName || user?.name || 'Trader';
-  const { results, loading, error: searchError } = useTickerSearch(searchQuery);
-
-  const submitTickerSearch = () => {
-    const normalized = normalizeStockSymbol(searchQuery);
-    if (/^[A-Z][A-Z0-9.-]{0,9}$/.test(normalized)) {
-      navigateToStockDetail(navigation, normalized);
-      return;
-    }
-
-    if (results[0]?.symbol) {
-      navigateToStockDetail(navigation, results[0].symbol);
-    }
-  };
-
-  const selectTickerSearchResult = (item) => {
-    if (!item?.symbol) return;
-    setSearchQuery(item.symbol);
-    navigateToStockDetail(navigation, item.symbol);
-  };
 
   return (
     <View style={styles.screen}>
       <GradientBackground>
-        <HomeHeader
-          themeColors={themeColors}
-          profileName={profileName}
-          searchQuery={searchQuery}
-          onChangeSearchQuery={setSearchQuery}
-          searchResults={results}
-          searchLoading={loading}
-          searchError={searchError}
-          showSearchResults={Boolean(searchQuery.trim())}
-          onPressSearchResult={selectTickerSearchResult}
-          onSubmitSearch={submitTickerSearch}
-          onPressProfile={() => navigation.navigate('Profile')}
-          onPressGlobalIndices={() => navigation.navigate('GlobalIndices')}
-        />
+        <BackButtonHeader colors={themeColors} onPress={() => navigation.goBack()} containerStyle={styles.header} />
 
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+
           <View style={styles.heroCard}>
             <View style={styles.heroGlowLeft} />
             <View style={styles.heroGlowRight} />
@@ -350,6 +118,55 @@ const Plans = ({ navigation }) => {
             </View>
           </View>
 
+          <View style={styles.manageCard}>
+            <View style={styles.manageRow}>
+              <View style={styles.manageIconWrap}>
+                <ShieldCheck size={18} color={themeColors.accent} />
+              </View>
+              <View style={styles.manageTextWrap}>
+                <AppText style={styles.manageTitle}>Current plan: {currentPlan.title}</AppText>
+                <AppText style={styles.manageText}>
+                  {currentPlan.id
+                    ? `${currentPlan.price} • ${currentPlan.status || 'active'}`
+                    : 'No active subscription plan was found in the current session.'}
+                </AppText>
+              </View>
+            </View>
+
+            {currentPlan.id ? (
+              <View style={styles.currentPlanFeatureWrap}>
+                <View style={styles.bulletRow}>
+                  <Check size={14} color={themeColors.positive} />
+                  <AppText style={styles.bulletText}>
+                    {`Watchlists: ${currentPlan.limits?.watchlists == null ? 'Multiple / unlimited by plan' : currentPlan.limits.watchlists}`}
+                  </AppText>
+                </View>
+                <View style={styles.bulletRow}>
+                  <Check size={14} color={themeColors.positive} />
+                  <AppText style={styles.bulletText}>
+                    {`Tickers per watchlist: ${currentPlan.limits?.watchlistSymbols == null ? 'Plan-based' : currentPlan.limits.watchlistSymbols}`}
+                  </AppText>
+                </View>
+                <View style={styles.bulletRow}>
+                  <Check size={14} color={themeColors.positive} />
+                  <AppText style={styles.bulletText}>
+                    {`Realtime data: ${currentPlan.features?.realtime_data ? 'Enabled' : 'Disabled'}`}
+                  </AppText>
+                </View>
+                {currentPlan.bullets.slice(0, 3).map((item) => (
+                  <View key={item} style={styles.bulletRow}>
+                    <Check size={14} color={themeColors.positive} />
+                    <AppText style={styles.bulletText}>{item}</AppText>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+
+            <Pressable style={styles.secondaryButton} onPress={() => openExternal(WEB_PLANS_URL, () => setLinkErrorVisible(true))}>
+              <AppText style={styles.secondaryButtonText}>Open website plans</AppText>
+            </Pressable>
+          </View>
+
           <View style={styles.planStack}>
             {PLAN_GROUPS.map((group) => {
               const meta = FAMILY_META[group.key];
@@ -371,6 +188,7 @@ const Plans = ({ navigation }) => {
                   <View style={styles.familyCardStack}>
                     {groupPlans.map((plan) => {
                       const Icon = meta.icon;
+                      const isCurrentPlan = currentPlan.id === plan.id;
 
                       return (
                         <View
@@ -385,9 +203,16 @@ const Plans = ({ navigation }) => {
                         >
                           <View style={styles.planTopRow}>
                             <View style={styles.planTitleBlock}>
-                              <View style={[styles.familyBadge, { borderColor: meta.accentSoft, backgroundColor: meta.panel }]}>
-                                <Icon size={13} color={meta.tint} />
-                                <AppText style={[styles.familyBadgeText, { color: meta.tint }]}>{plan.badge}</AppText>
+                              <View style={styles.badgeRow}>
+                                <View style={[styles.familyBadge, { borderColor: meta.accentSoft, backgroundColor: meta.panel }]}>
+                                  <Icon size={13} color={meta.tint} />
+                                  <AppText style={[styles.familyBadgeText, { color: meta.tint }]}>{plan.badge}</AppText>
+                                </View>
+                                {isCurrentPlan ? (
+                                  <View style={styles.currentPlanBadge}>
+                                    <AppText style={styles.currentPlanBadgeText}>Current plan</AppText>
+                                  </View>
+                                ) : null}
                               </View>
                               <AppText style={styles.planTitle}>{plan.title}</AppText>
                               <AppText style={styles.planSubtitle}>{plan.subtitle}</AppText>
@@ -410,11 +235,23 @@ const Plans = ({ navigation }) => {
                           </View>
 
                           <Pressable
-                            style={[styles.primaryButton, { backgroundColor: meta.buttonBg }]}
-                            onPress={() => openExternal(`${WEB_BASE_URL}/checkout?plan=${encodeURIComponent(plan.id)}`, () => setLinkErrorVisible(true))}
+                            style={[
+                              styles.primaryButton,
+                              { backgroundColor: isCurrentPlan ? themeColors.surfaceAlt : meta.buttonBg },
+                              isCurrentPlan ? styles.currentPlanButton : null,
+                            ]}
+                            onPress={() => {
+                              if (isCurrentPlan) {
+                                return;
+                              }
+
+                              openExternal(`${WEB_PLANS_URL}?plan=${encodeURIComponent(plan.id)}`, () => setLinkErrorVisible(true));
+                            }}
                           >
-                            <AppText style={styles.primaryButtonText}>Choose {plan.title}</AppText>
-                            <ArrowRight size={15} color="#FFFFFF" />
+                            <AppText style={[styles.primaryButtonText, isCurrentPlan ? styles.currentPlanButtonText : null]}>
+                              {isCurrentPlan ? `Current: ${plan.title}` : `Upgrade on website`}
+                            </AppText>
+                            {isCurrentPlan ? null : <ArrowRight size={15} color="#FFFFFF" />}
                           </Pressable>
                         </View>
                       );
@@ -486,8 +323,11 @@ const createStyles = (colors) =>
     },
     content: {
       paddingHorizontal: 10,
-      paddingTop: 12,
+      paddingTop: 0,
       paddingBottom: 120,
+      gap: 16,
+    },
+    header: {
       gap: 16,
     },
     heroCard: {
@@ -636,6 +476,12 @@ const createStyles = (colors) =>
       flex: 1,
       gap: 6,
     },
+    badgeRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      flexWrap: 'wrap',
+    },
     familyBadge: {
       alignSelf: 'flex-start',
       flexDirection: 'row',
@@ -649,6 +495,20 @@ const createStyles = (colors) =>
     familyBadgeText: {
       fontFamily: FONT.medium,
       fontSize: 11,
+    },
+    currentPlanBadge: {
+      alignSelf: 'flex-start',
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: 'rgba(25, 158, 99, 0.28)',
+      backgroundColor: 'rgba(25, 158, 99, 0.10)',
+    },
+    currentPlanBadgeText: {
+      fontFamily: FONT.semiBold,
+      fontSize: 11,
+      color: colors.positive,
     },
     planTitle: {
       fontFamily: FONT.extraBold,
@@ -708,6 +568,16 @@ const createStyles = (colors) =>
       fontFamily: FONT.semiBold,
       color: '#FFFFFF',
       fontSize: 13,
+    },
+    currentPlanButton: {
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    currentPlanButtonText: {
+      color: colors.textPrimary,
+    },
+    currentPlanFeatureWrap: {
+      gap: 10,
     },
     manageCard: {
       borderRadius: 24,

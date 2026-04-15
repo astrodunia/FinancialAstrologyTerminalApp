@@ -1,13 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { ArrowDownRight, ArrowUpRight } from 'lucide-react-native';
+import { ArrowDownRight, ArrowLeft, ArrowUpRight, ChevronLeft, ChevronRight } from 'lucide-react-native';
 import AppText from '../../components/AppText';
+import BottomTabs from '../../components/BottomTabs';
 import GradientBackground from '../../components/GradientBackground';
-import HomeHeader from '../../components/HomeHeader';
-import { getSectorPage, SECTOR_BY_SLUG, SECTOR_PAGE_SIZE } from '../../data/sectors/sectorUniverse';
+import { getSectorPage, SECTOR_BY_SLUG } from '../../data/sectors/sectorUniverse';
 import { fetchStockInfo } from '../../features/stocks/api';
-import { navigateToStockDetail, normalizeStockSymbol } from '../../features/stocks/navigation';
-import { useTickerSearch } from '../../features/stocks/useTickerSearch';
+import { navigateToStockDetail } from '../../features/stocks/navigation';
 import { useUser } from '../../store/UserContext';
 
 const toNumber = (value) => {
@@ -22,6 +21,7 @@ const toNumber = (value) => {
 const mapSectorStockInfo = (payload, symbol) => {
   const source = payload?.data || payload || {};
   return {
+    isLoading: false,
     symbol,
     name: String(source?.longName || source?.shortName || source?.companyName || symbol),
     price: toNumber(
@@ -36,10 +36,11 @@ const mapSectorStockInfo = (payload, symbol) => {
 
 const buildPlaceholderStocks = (tickers) =>
   tickers.map((ticker) => ({
+    isLoading: true,
     symbol: ticker,
     name: ticker,
-    price: 0,
-    pct: 0,
+    price: null,
+    pct: null,
   }));
 
 const formatPrice = (value) => {
@@ -58,28 +59,21 @@ const formatPct = (value) => {
 
 const SectorDetailScreen = ({ navigation, route }) => {
   const slug = route?.params?.slug || 'technology';
-  const { themeColors, user, authFetch } = useUser();
+  const { themeColors, authFetch } = useUser();
   const styles = useMemo(() => createStyles(themeColors), [themeColors]);
   const sector = SECTOR_BY_SLUG[slug] || SECTOR_BY_SLUG.technology;
-  const profileName = user?.displayName || user?.name || 'Trader';
 
   const [page, setPage] = useState(1);
-  const [searchQuery, setSearchQuery] = useState('');
   const [stockItems, setStockItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const { results, loading: searchLoading, error: searchError } = useTickerSearch(searchQuery);
 
   useEffect(() => {
     setPage(1);
-    setSearchQuery('');
   }, [slug]);
 
   const pageTickers = useMemo(() => getSectorPage(sector, page), [page, sector]);
   const totalPages = sector?.totalPages || 1;
-  const total = sector?.count || 0;
-  const startIndex = total === 0 ? 0 : (page - 1) * SECTOR_PAGE_SIZE + 1;
-  const endIndex = Math.min(page * SECTOR_PAGE_SIZE, total);
 
   const loadQuotes = useCallback(
     async (signal) => {
@@ -127,61 +121,45 @@ const SectorDetailScreen = ({ navigation, route }) => {
     return () => controller.abort();
   }, [loadQuotes]);
 
-  const visibleStocks = useMemo(() => {
-    const normalized = searchQuery.trim().toLowerCase();
-    if (!normalized) return stockItems;
-
-    return stockItems.filter((item) => {
-      return item.symbol.toLowerCase().includes(normalized) || item.name.toLowerCase().includes(normalized);
-    });
-  }, [searchQuery, stockItems]);
-
-  const submitTickerSearch = useCallback(() => {
-    const normalized = normalizeStockSymbol(searchQuery);
-    if (/^[A-Z][A-Z0-9.-]{0,9}$/.test(normalized)) {
-      navigateToStockDetail(navigation, normalized);
-      return;
-    }
-
-    if (results[0]?.symbol) {
-      navigateToStockDetail(navigation, results[0].symbol);
-    }
-  }, [navigation, results, searchQuery]);
-
-  const selectTickerSearchResult = useCallback(
-    (item) => {
-      if (!item?.symbol) return;
-      setSearchQuery(item.symbol);
-      navigateToStockDetail(navigation, item.symbol);
-    },
-    [navigation],
-  );
+  const visibleStocks = stockItems;
 
   return (
     <View style={styles.screen}>
       <GradientBackground>
-        <HomeHeader
-          themeColors={themeColors}
-          profileName={profileName}
-          searchQuery={searchQuery}
-          onChangeSearchQuery={setSearchQuery}
-          searchResults={results}
-          searchLoading={searchLoading}
-          searchError={searchError}
-          showSearchResults={Boolean(searchQuery.trim())}
-          onPressSearchResult={selectTickerSearchResult}
-          onSubmitSearch={submitTickerSearch}
-          onPressProfile={() => navigation.navigate('Profile')}
-          onPressGlobalIndices={() => navigation.navigate('GlobalIndices')}
-        />
-
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          <Pressable
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+          >
+            <ArrowLeft size={22} color={themeColors.textPrimary} />
+          </Pressable>
+
           <View style={styles.sectionBlock}>
             <View style={styles.sectionHeader}>
-              <AppText style={styles.sectionTitle}>{sector?.name || 'Tech'} stocks</AppText>
-              <AppText style={styles.sectionLink}>
-                Page {page}/{totalPages}  {startIndex}-{endIndex} of {total}
-              </AppText>
+              <View style={styles.sectionTitleBlock}>
+                <AppText style={styles.sectionTitle}>{sector?.name || 'Tech'} stocks</AppText>
+              </View>
+              <View style={styles.paginationBar}>
+                <Pressable
+                  style={[styles.pageIconBtn, page <= 1 && styles.pageBtnDisabled]}
+                  disabled={page <= 1}
+                  onPress={() => setPage((current) => Math.max(1, current - 1))}
+                >
+                  <ChevronLeft size={16} color={page <= 1 ? themeColors.textMuted : themeColors.textPrimary} />
+                </Pressable>
+
+                <AppText style={styles.pageText}>{page}/{totalPages}</AppText>
+
+                <Pressable
+                  style={[styles.pageIconBtn, page >= totalPages && styles.pageBtnDisabled]}
+                  disabled={page >= totalPages}
+                  onPress={() => setPage((current) => Math.min(totalPages, current + 1))}
+                >
+                  <ChevronRight size={16} color={page >= totalPages ? themeColors.textMuted : themeColors.textPrimary} />
+                </Pressable>
+              </View>
             </View>
 
             <View style={styles.stocksCard}>
@@ -193,13 +171,6 @@ const SectorDetailScreen = ({ navigation, route }) => {
                 </View>
               </View>
 
-              {loading ? (
-                <View style={styles.inlineStateRow}>
-                  <ActivityIndicator size="small" color={themeColors.textPrimary} />
-                  <AppText style={styles.stateText}>Loading live quotes...</AppText>
-                </View>
-              ) : null}
-
               {!loading && error ? (
                 <View style={styles.inlineStateRow}>
                   <AppText style={styles.errorText}>{error}</AppText>
@@ -208,6 +179,24 @@ const SectorDetailScreen = ({ navigation, route }) => {
 
               {visibleStocks.length
                 ? visibleStocks.map((item, idx) => {
+                    if (item.isLoading) {
+                      return (
+                        <View key={item.symbol} style={[styles.stockRow, idx === visibleStocks.length - 1 && styles.listRowLast]}>
+                          <View style={styles.stockLeft}>
+                            <AppText style={styles.ticker}>{item.symbol}</AppText>
+                            <View style={styles.loadingCompanyBar} />
+                          </View>
+
+                          <View style={styles.stockRight}>
+                            <View style={styles.loadingPriceBar} />
+                            <View style={styles.loadingChangePill}>
+                              <ActivityIndicator size="small" color={themeColors.textMuted} />
+                            </View>
+                          </View>
+                        </View>
+                      );
+                    }
+
                     const pct = item.pct ?? 0;
                     const isFlat = Math.abs(pct) < 0.000001;
                     const up = pct > 0;
@@ -253,43 +242,11 @@ const SectorDetailScreen = ({ navigation, route }) => {
                   })
                 : null}
 
-              {!visibleStocks.length ? (
-                <View style={styles.centerState}>
-                  <AppText style={styles.stateText}>No stocks match your search.</AppText>
-                </View>
-              ) : null}
-            </View>
-
-            <View style={styles.paginationBar}>
-              <Pressable
-                style={[styles.pageBtn, page <= 1 && styles.pageBtnDisabled]}
-                disabled={page <= 1}
-                onPress={() => setPage((current) => Math.max(1, current - 1))}
-              >
-                <AppText style={[styles.pageBtnText, page <= 1 && styles.pageBtnTextDisabled]}>
-                  Previous
-                </AppText>
-              </Pressable>
-
-              <View style={styles.paginationCenter}>
-                <AppText style={styles.pageText}>{page} / {totalPages}</AppText>
-                <AppText style={styles.pageMeta}>
-                  {startIndex}-{endIndex} of {total}
-                </AppText>
-              </View>
-
-              <Pressable
-                style={[styles.pageBtn, page >= totalPages && styles.pageBtnDisabled]}
-                disabled={page >= totalPages}
-                onPress={() => setPage((current) => Math.min(totalPages, current + 1))}
-              >
-                <AppText style={[styles.pageBtnText, page >= totalPages && styles.pageBtnTextDisabled]}>
-                  Next
-                </AppText>
-              </Pressable>
+              {!visibleStocks.length ? <View style={styles.centerState}><AppText style={styles.stateText}>No stocks available.</AppText></View> : null}
             </View>
           </View>
         </ScrollView>
+        <BottomTabs activeRoute="Sectors" navigation={navigation} />
       </GradientBackground>
     </View>
   );
@@ -304,8 +261,22 @@ const createStyles = (colors) =>
 
     content: {
       paddingHorizontal: 16,
-      paddingTop: 12,
-      paddingBottom: 44,
+      paddingTop: 28,
+      paddingBottom: 120,
+    },
+
+    backButton: {
+      alignSelf: 'flex-start',
+      width: 44,
+      height: 44,
+      marginTop: 14,
+      marginBottom: 20,
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceGlass,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
 
     sectionBlock: {
@@ -315,23 +286,20 @@ const createStyles = (colors) =>
     sectionHeader: {
       flexDirection: 'row',
       justifyContent: 'space-between',
-      alignItems: 'center',
+      alignItems: 'flex-start',
       gap: 10,
       marginBottom: 10,
+    },
+
+    sectionTitleBlock: {
+      flex: 1,
+      paddingRight: 10,
     },
 
     sectionTitle: {
       color: colors.textPrimary,
       fontSize: 16,
       fontFamily: 'NotoSans-ExtraBold',
-    },
-
-    sectionLink: {
-      color: colors.textMuted,
-      fontSize: 12,
-      textAlign: 'right',
-      flexShrink: 1,
-      fontFamily: 'NotoSans-Regular',
     },
 
     stocksCard: {
@@ -415,12 +383,29 @@ const createStyles = (colors) =>
       fontFamily: 'NotoSans-Regular',
     },
 
+    loadingCompanyBar: {
+      width: 92,
+      height: 9,
+      marginTop: 6,
+      borderRadius: 999,
+      backgroundColor: colors.surfaceAlt,
+      opacity: 0.9,
+    },
+
     priceText: {
       color: colors.textPrimary,
       fontSize: 12,
       width: 92,
       textAlign: 'right',
       fontFamily: 'NotoSans-Regular',
+    },
+
+    loadingPriceBar: {
+      width: 68,
+      height: 10,
+      borderRadius: 999,
+      backgroundColor: colors.surfaceAlt,
+      opacity: 0.9,
     },
 
     changePill: {
@@ -448,6 +433,18 @@ const createStyles = (colors) =>
     changePillNeutral: {
       backgroundColor: 'rgba(255, 255, 255, 0.06)',
       borderColor: colors.border,
+    },
+
+    loadingChangePill: {
+      minWidth: 82,
+      minHeight: 28,
+      paddingHorizontal: 8,
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceAlt,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
 
     changeText: {
@@ -488,54 +485,28 @@ const createStyles = (colors) =>
     paginationBar: {
       flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'space-between',
-      gap: 12,
-      marginTop: 12,
+      gap: 8,
     },
 
-    pageBtn: {
-      minWidth: 98,
+    pageIconBtn: {
+      width: 34,
+      height: 34,
       alignItems: 'center',
       justifyContent: 'center',
-      paddingHorizontal: 14,
-      paddingVertical: 11,
-      borderRadius: 14,
-      backgroundColor: colors.accent,
+      borderRadius: 12,
+      backgroundColor: colors.surfaceGlass,
       borderWidth: 1,
-      borderColor: colors.accent,
-    },
-
-    pageBtnDisabled: {
-      backgroundColor: colors.surfaceAlt,
       borderColor: colors.border,
     },
 
-    pageBtnText: {
-      fontSize: 12,
-      color: '#FFFFFF',
-      fontFamily: 'NotoSans-SemiBold',
-    },
-
-    pageBtnTextDisabled: {
-      color: colors.textMuted,
-    },
-
-    paginationCenter: {
-      flex: 1,
-      alignItems: 'center',
+    pageBtnDisabled: {
+      opacity: 0.5,
     },
 
     pageText: {
-      fontSize: 14,
+      fontSize: 12,
       color: colors.textPrimary,
-      marginBottom: 2,
       fontFamily: 'NotoSans-SemiBold',
-    },
-
-    pageMeta: {
-      fontSize: 11,
-      color: colors.textMuted,
-      fontFamily: 'NotoSans-Regular',
     },
   });
 

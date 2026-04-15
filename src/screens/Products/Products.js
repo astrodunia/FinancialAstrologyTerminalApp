@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import {
   Briefcase,
@@ -11,11 +11,9 @@ import {
   TrendingUp,
 } from 'lucide-react-native';
 import AppText from '../../components/AppText';
+import BackButtonHeader from '../../components/BackButtonHeader';
 import BottomTabs from '../../components/BottomTabs';
 import GradientBackground from '../../components/GradientBackground';
-import HomeHeader from '../../components/HomeHeader';
-import { navigateToStockDetail, normalizeStockSymbol } from '../../features/stocks/navigation';
-import { useTickerSearch } from '../../features/stocks/useTickerSearch';
 import { useUser } from '../../store/UserContext';
 import { PRODUCT_CATALOG } from './productCatalog';
 
@@ -31,49 +29,15 @@ const ICON_MAP = {
 };
 
 const Products = ({ navigation }) => {
-  const { themeColors, user } = useUser();
-  const [searchQuery, setSearchQuery] = useState('');
+  const { themeColors } = useUser();
   const { width } = useWindowDimensions();
   const isCompact = width < 380;
   const styles = useMemo(() => createStyles(themeColors, isCompact), [themeColors, isCompact]);
-  const profileName = user?.displayName || user?.name || 'Trader';
-  const { results, loading, error: searchError } = useTickerSearch(searchQuery);
-
-  const submitTickerSearch = () => {
-    const normalized = normalizeStockSymbol(searchQuery);
-    if (/^[A-Z][A-Z0-9.-]{0,9}$/.test(normalized)) {
-      navigateToStockDetail(navigation, normalized);
-      return;
-    }
-
-    if (results[0]?.symbol) {
-      navigateToStockDetail(navigation, results[0].symbol);
-    }
-  };
-
-  const selectTickerSearchResult = (item) => {
-    if (!item?.symbol) return;
-    setSearchQuery(item.symbol);
-    navigateToStockDetail(navigation, item.symbol);
-  };
 
   return (
     <View style={styles.safeArea}>
       <GradientBackground>
-        <HomeHeader
-          themeColors={themeColors}
-          profileName={profileName}
-          searchQuery={searchQuery}
-          onChangeSearchQuery={setSearchQuery}
-          searchResults={results}
-          searchLoading={loading}
-          searchError={searchError}
-          showSearchResults={Boolean(searchQuery.trim())}
-          onPressSearchResult={selectTickerSearchResult}
-          onSubmitSearch={submitTickerSearch}
-          onPressProfile={() => navigation.navigate('Profile')}
-          onPressGlobalIndices={() => navigation.navigate('GlobalIndices')}
-        />
+        <BackButtonHeader colors={themeColors} onPress={() => navigation.goBack()} containerStyle={styles.header} />
 
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           {PRODUCT_CATALOG.map((item) => {
@@ -110,9 +74,12 @@ const createStyles = (colors, isCompact) =>
       flex: 1,
       backgroundColor: colors.background,
     },
+    header: {
+      gap: 16,
+    },
     content: {
       paddingHorizontal: 16,
-      paddingTop: 10,
+      paddingTop: 0,
       paddingBottom: 120,
       gap: 10,
     },

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Modal,
   Pressable,
   ScrollView,
@@ -9,7 +10,6 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { Info, TrendingDown, TrendingUp, X } from 'lucide-react-native';
 import AppText from './AppText';
-import CardLoadingOverlay from './CardLoadingOverlay';
 import { API_BASE_URL, useUser } from '../store/UserContext';
 import { getMarketDataCache, getUsMarketSession, setMarketDataCache, shouldRefreshMarketData } from '../utils/marketDataCache';
 
@@ -114,6 +114,7 @@ const classify = (pct?: number | null): 'BULLISH' | 'BEARISH' | 'NEUTRAL' => {
 };
 
 type ViewRow = {
+  isLoading?: boolean;
   symbol: string;
   name: string;
   close: number | null;
@@ -125,23 +126,6 @@ type ViewRow = {
 type Props = {
   onPressIndex?: (symbol: string) => void;
 };
-
-function SkeletonCard({ styles, colors }: { styles: any; colors: any }) {
-  return (
-    <View style={[styles.card, styles.skeletonCard]}>
-      <View style={styles.skeletonContent}>
-        <View style={styles.skeletonTop}>
-          <View style={styles.skeletonSymbol} />
-          <View style={styles.skeletonMood} />
-        </View>
-        <View style={styles.skeletonPrice} />
-        <View style={styles.skeletonDelta} />
-        <View style={styles.skeletonFooter} />
-      </View>
-      <CardLoadingOverlay color={colors.textMuted} />
-    </View>
-  );
-}
 
 function InfoModal({
   symbol,
@@ -302,8 +286,9 @@ export default function LiveIndicesTicker({ onPressIndex }: Props) {
   const cards = useMemo(
     () =>
       rows.length
-        ? rows
+        ? rows.map((row) => ({ ...row, isLoading: false }))
         : INDEX_LIST.map((item) => ({
+            isLoading: true,
             symbol: item.id,
             name: item.name,
             close: null,
@@ -332,9 +317,30 @@ export default function LiveIndicesTicker({ onPressIndex }: Props) {
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.rowTrack}
       >
-        {status === 'loading' && !rows.length && INDEX_LIST.map((item) => <SkeletonCard key={item.id} styles={styles} colors={colors} />)}
+        {cards.map((row) => {
+          if (row.isLoading) {
+            return (
+              <View key={row.symbol} style={[styles.card, styles.skeletonCard]}>
+                <View style={styles.headerRow}>
+                  <View style={styles.symbolPill}>
+                    <AppText style={styles.symbolText}>{row.symbol}</AppText>
+                  </View>
+                  <View style={styles.loadingBadge}>
+                    <ActivityIndicator size="small" color={colors.textMuted} />
+                  </View>
+                </View>
 
-        {(status === 'ok' || rows.length > 0) && cards.map((row) => {
+                <AppText numberOfLines={1} style={styles.nameText}>{row.name}</AppText>
+                <View style={styles.skeletonPrice} />
+                <View style={styles.skeletonDelta} />
+                <View style={styles.footerRow}>
+                  <View style={styles.skeletonFooter} />
+                  <View style={styles.infoBtnPlaceholder} />
+                </View>
+              </View>
+            );
+          }
+
           const mood = classify(row.changePercent);
           const isUp = (row.change ?? 0) >= 0;
           return (
@@ -445,27 +451,7 @@ const createStyles = (colors: any) => StyleSheet.create({
     minHeight: 120,
   },
   skeletonCard: {
-    justifyContent: 'center',
-  },
-  skeletonContent: {
-    gap: 6,
-  },
-  skeletonTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  skeletonSymbol: {
-    width: 54,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: colors.surfaceAlt,
-  },
-  skeletonMood: {
-    width: 62,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: colors.surfaceAlt,
+    justifyContent: 'flex-start',
   },
   skeletonPrice: {
     width: '56%',
@@ -485,9 +471,20 @@ const createStyles = (colors: any) => StyleSheet.create({
     borderRadius: 7,
     backgroundColor: colors.surfaceAlt,
   },
+  loadingBadge: {
+    width: 62,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceAlt,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   errorText: {
     color: colors.negative,
     fontSize: 11,
+    fontFamily: 'NotoSans-Regular',
   },
   headerRow: {
     flexDirection: 'row',
@@ -506,10 +503,12 @@ const createStyles = (colors: any) => StyleSheet.create({
   symbolText: {
     fontSize: 9,
     color: colors.textPrimary,
+    fontFamily: 'NotoSans-SemiBold',
   },
   nameText: {
     fontSize: 11,
     color: colors.textMuted,
+    fontFamily: 'NotoSans-Regular',
   },
   badge: {
     borderWidth: 1,
@@ -519,6 +518,7 @@ const createStyles = (colors: any) => StyleSheet.create({
   },
   badgeText: {
     fontSize: 9,
+    fontFamily: 'NotoSans-SemiBold',
   },
   badgeBullish: {
     borderColor: colors.badgeBullishBorder,
@@ -545,6 +545,7 @@ const createStyles = (colors: any) => StyleSheet.create({
     color: colors.textPrimary,
     fontSize: 20,
     letterSpacing: 0.2,
+    fontFamily: 'NotoSans-ExtraBold',
   },
   deltaPill: {
     flexDirection: 'row',
@@ -574,6 +575,7 @@ const createStyles = (colors: any) => StyleSheet.create({
   changeText: {
     fontSize: 10,
     letterSpacing: 0.2,
+    fontFamily: 'NotoSans-SemiBold',
   },
   upText: {
     color: colors.positive,
@@ -584,6 +586,7 @@ const createStyles = (colors: any) => StyleSheet.create({
   mutedText: {
     color: colors.textMuted,
     fontSize: 10,
+    fontFamily: 'NotoSans-Regular',
   },
   footerRow: {
     flexDirection: 'row',
@@ -596,6 +599,7 @@ const createStyles = (colors: any) => StyleSheet.create({
     color: colors.textMuted,
     fontSize: 9,
     flex: 1,
+    fontFamily: 'NotoSans-Regular',
   },
   infoBtn: {
     width: 22,
@@ -605,6 +609,12 @@ const createStyles = (colors: any) => StyleSheet.create({
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: colors.surfaceAlt,
+  },
+  infoBtnPlaceholder: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     backgroundColor: colors.surfaceAlt,
   },
   modalBackdrop: {

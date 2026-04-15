@@ -1,10 +1,10 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { Image, Linking, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { BrainCircuit, CalendarClock, CheckCircle2, Compass, Layers3, Orbit, ShieldCheck, Sparkles, Users2 } from 'lucide-react-native';
 import AppText from '../../components/AppText';
+import BackButtonHeader from '../../components/BackButtonHeader';
 import BottomTabs from '../../components/BottomTabs';
 import GradientBackground from '../../components/GradientBackground';
-import HomeHeader from '../../components/HomeHeader';
 import { useUser } from '../../store/UserContext';
 
 const ABOUT_IMAGE_URL = 'https://finance.rajeevprakash.com/_next/image/?url=%2Fimages%2Fabout.png&w=1920&q=75';
@@ -55,30 +55,15 @@ const CTA_PRODUCTS = [
 ];
 
 const AboutTerminal = ({ navigation }) => {
-  const { themeColors, user } = useUser();
-  const [searchQuery, setSearchQuery] = useState('');
+  const { themeColors } = useUser();
   const { width } = useWindowDimensions();
   const isCompact = width < 380;
   const styles = useMemo(() => createStyles(themeColors, isCompact), [themeColors, isCompact]);
-  const profileName = user?.displayName || user?.name || 'Trader';
 
   return (
     <View style={styles.safeArea}>
       <GradientBackground>
-        <HomeHeader
-          themeColors={themeColors}
-          profileName={profileName}
-          searchQuery={searchQuery}
-          onChangeSearchQuery={setSearchQuery}
-          searchResults={[]}
-          searchLoading={false}
-          searchError=""
-          showSearchResults={false}
-          onPressSearchResult={() => {}}
-          onSubmitSearch={() => {}}
-          onPressProfile={() => navigation.navigate('Profile')}
-          onPressGlobalIndices={() => navigation.navigate('GlobalIndices')}
-        />
+        <BackButtonHeader colors={themeColors} onPress={() => navigation.goBack()} containerStyle={styles.header} />
 
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           <View style={styles.card}>
@@ -275,13 +260,17 @@ const createStyles = (colors, isCompact) =>
       flex: 1,
       backgroundColor: colors.background,
     },
+    header: {
+      gap: 16,
+    },
     content: {
       paddingHorizontal: 16,
-      paddingTop: 10,
+      paddingTop: 0,
       paddingBottom: 120,
       gap: 16,
     },
     card: {
+      marginTop: 8,
       borderRadius: 20,
       borderWidth: 1,
       borderColor: colors.border,

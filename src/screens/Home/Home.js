@@ -151,6 +151,7 @@ const mapHomeStockInfo = (payload, symbol, fallbackName) => {
   const source = payload?.data || payload || {};
 
   return {
+    isLoading: false,
     symbol,
     shortName: String(source?.shortName || source?.name || fallbackName || ''),
     longName: String(source?.longName || source?.companyName || source?.name || fallbackName || ''),
@@ -166,6 +167,14 @@ const mapHomeStockInfo = (payload, symbol, fallbackName) => {
     postMarketChangePercent: toNumber(source?.postMarketChangePercent),
   };
 };
+
+const buildHomePlaceholderStocks = () =>
+  STOCK_ROWS.map((item) => ({
+    isLoading: true,
+    symbol: item.symbol,
+    name: item.name,
+    info: null,
+  }));
 
 const formatPrice = (value) => {
   if (value == null || Number.isNaN(value)) return '--';
@@ -334,6 +343,9 @@ const Home = ({ navigation }) => {
 
     setStocksLoading(true);
     setStocksError('');
+    if (!cached.length) {
+      setStockItems(buildHomePlaceholderStocks());
+    }
 
     try {
       const settled = await Promise.allSettled(
@@ -453,10 +465,21 @@ const Home = ({ navigation }) => {
 
   const visibleStocks = useMemo(() => {
     return stockItems.map((item) => {
+      if (item.isLoading) {
+        return {
+          isLoading: true,
+          symbol: item.symbol,
+          name: item.name,
+          price: null,
+          pct: null,
+        };
+      }
+
       const price = resolveDisplayPrice(item.info, marketClock);
       const pct = resolveDisplayPct(item.info, price, marketClock);
 
       return {
+        isLoading: false,
         symbol: item.symbol,
         name: item.name,
         price,
@@ -514,13 +537,6 @@ const Home = ({ navigation }) => {
                     </View>
                   </View>
 
-                  {stocksLoading && !visibleStocks.length ? (
-                    <View style={styles.centerState}>
-                      <ActivityIndicator size="small" color={themeColors.textPrimary} />
-                      <AppText style={styles.stateText}>Loading live quotes...</AppText>
-                    </View>
-                  ) : null}
-
                   {stocksError && !visibleStocks.length ? (
                     <View style={styles.centerState}>
                       <AppText style={styles.errorText}>{stocksError}</AppText>
@@ -528,6 +544,23 @@ const Home = ({ navigation }) => {
                   ) : null}
 
                   {visibleStocks.map((item, idx) => {
+                    if (item.isLoading) {
+                      return (
+                        <View key={item.symbol} style={[styles.stockRow, idx === visibleStocks.length - 1 && styles.listRowLast]}>
+                          <View style={styles.stockLeft}>
+                            <AppText style={styles.ticker}>{item.symbol}</AppText>
+                            <View style={styles.loadingCompanyBar} />
+                          </View>
+                          <View style={styles.stockRight}>
+                            <View style={styles.loadingPriceBar} />
+                            <View style={styles.loadingChangePill}>
+                              <ActivityIndicator size="small" color={themeColors.textMuted} />
+                            </View>
+                          </View>
+                        </View>
+                      );
+                    }
+
                     const up = (item.pct ?? 0) >= 0;
 
                     return (
@@ -680,6 +713,7 @@ const createStyles = (colors) =>
       color: colors.textMuted,
       fontSize: 11,
       letterSpacing: 0.3,
+      fontFamily: 'NotoSans-Regular',
     },
     stockHeadRight: {
       flexDirection: 'row',
@@ -692,6 +726,7 @@ const createStyles = (colors) =>
       letterSpacing: 0.3,
       width: 72,
       textAlign: 'right',
+      fontFamily: 'NotoSans-Regular',
     },
     stockRow: {
       flexDirection: 'row',
@@ -716,17 +751,35 @@ const createStyles = (colors) =>
     ticker: {
       color: colors.textPrimary,
       fontSize: 14,
+      fontFamily: 'NotoSans-ExtraBold',
     },
     company: {
       color: colors.textMuted,
       fontSize: 11,
       marginTop: 2,
+      fontFamily: 'NotoSans-Regular',
+    },
+    loadingCompanyBar: {
+      width: 92,
+      height: 9,
+      marginTop: 6,
+      borderRadius: 999,
+      backgroundColor: colors.surfaceAlt,
+      opacity: 0.9,
     },
     priceText: {
       color: colors.textPrimary,
       fontSize: 12,
       width: 92,
       textAlign: 'right',
+      fontFamily: 'NotoSans-Regular',
+    },
+    loadingPriceBar: {
+      width: 68,
+      height: 10,
+      borderRadius: 999,
+      backgroundColor: colors.surfaceAlt,
+      opacity: 0.9,
     },
     changePill: {
       minWidth: 82,
@@ -747,8 +800,20 @@ const createStyles = (colors) =>
       backgroundColor: 'rgba(240, 140, 140, 0.12)',
       borderColor: 'rgba(240, 140, 140, 0.45)',
     },
+    loadingChangePill: {
+      minWidth: 82,
+      minHeight: 28,
+      paddingHorizontal: 8,
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceAlt,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
     changeText: {
       fontSize: 11,
+      fontFamily: 'NotoSans-SemiBold',
     },
     centerState: {
       alignItems: 'center',
@@ -759,11 +824,13 @@ const createStyles = (colors) =>
     stateText: {
       color: colors.textMuted,
       fontSize: 12,
+      fontFamily: 'NotoSans-Regular',
     },
     errorText: {
       color: colors.negative,
       fontSize: 12,
       textAlign: 'center',
+      fontFamily: 'NotoSans-Regular',
     },
     newsGrid: {
       gap: 12,
