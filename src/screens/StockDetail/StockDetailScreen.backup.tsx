@@ -1907,7 +1907,7 @@ const FundamentalsTab = ({
               yAxisLabelWidth={0}
               hideYAxisText
               disableScroll
-              labelTextStyle={styles.fundChartAxisText}
+              xAxisLabelTextStyle={styles.fundChartAxisText}
             />
           </View>
         ) : (
@@ -1938,7 +1938,7 @@ const FundamentalsTab = ({
               hideYAxisText
               disableScroll
               dataPointsColor="#16A34A"
-              labelTextStyle={styles.fundChartAxisText}
+              xAxisLabelTextStyle={styles.fundChartAxisText}
             />
           </View>
         ) : null}
@@ -1970,7 +1970,7 @@ const FundamentalsTab = ({
               disableScroll
               showValuesAsTopLabel
               topLabelTextStyle={styles.fundChartTopLabel}
-              labelTextStyle={styles.fundChartAxisText}
+              xAxisLabelTextStyle={styles.fundChartAxisText}
             />
           </View>
         ) : (
@@ -2004,7 +2004,7 @@ const FundamentalsTab = ({
               disableScroll
               showValuesAsTopLabel
               topLabelTextStyle={styles.fundChartTopLabel}
-              labelTextStyle={styles.fundChartAxisText}
+              xAxisLabelTextStyle={styles.fundChartAxisText}
             />
           </View>
         ) : (
@@ -2104,7 +2104,7 @@ const FundamentalsTab = ({
                   showValuesAsDataPointsText
                   textColor="#7C3AED"
                   textFontSize={10}
-                  labelTextStyle={styles.fundChartAxisText}
+                  xAxisLabelTextStyle={styles.fundChartAxisText}
                 />
               </View>
             ) : null}
@@ -2130,8 +2130,7 @@ const FundamentalsTab = ({
                   disableScroll
                   showValuesAsTopLabel
                   topLabelTextStyle={styles.fundChartTopLabel}
-                  labelTextStyle={styles.fundChartAxisText}
-                />
+                  xAxisLabelTextStyle={styles.fundChartAxisText}/>
               </View>
             ) : null}
             {!earningsEstimateChartData.length && !revenueEstimateChartData.length ? (
