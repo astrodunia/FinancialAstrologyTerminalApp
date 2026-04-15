@@ -13,6 +13,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Defs, LinearGradient, Line, Path, Stop } from 'react-native-svg';
 import {
@@ -3844,6 +3845,12 @@ const TabContent = ({
   watchlistAdded,
   watchlistBusy,
   authFetch,
+  drawingShapes,
+  onDrawingShapesChange,
+  onClearAllDrawings,
+  onShareDrawings,
+  hasProPlan,
+  onUpgradePress,
 }: any) => {
   if (activeTab === 'overview') {
     return (
@@ -3879,6 +3886,12 @@ const TabContent = ({
         watchlistAdded={watchlistAdded}
         watchlistBusy={watchlistBusy}
         authFetch={authFetch}
+        drawingShapes={drawingShapes}
+        onDrawingShapesChange={onDrawingShapesChange}
+        onClearAllDrawings={onClearAllDrawings}
+        onShareDrawings={onShareDrawings}
+        hasProPlan={hasProPlan}
+        onUpgradePress={onUpgradePress}
       />
     );
   }
@@ -4038,6 +4051,9 @@ const StockDetailScreen = ({ navigation, route }: any) => {
     },
     [symbol],
   );
+  const handleClearAllDrawings = useCallback(() => {
+    setChartDrawingsBySymbol((prev) => ({ ...prev, [symbol]: [] }));
+  }, [symbol]);
   const handleShareDrawings = useCallback(
     async ({ shapes, xDomain }: SharePayload) => {
       const payload = {
@@ -4295,6 +4311,14 @@ const StockDetailScreen = ({ navigation, route }: any) => {
     setIsTabSwitching(false);
   }, [openWatchlistDialog, token]);
 
+  const handleUpgradePress = useCallback(() => {
+    if (navigation?.navigate) {
+      navigation.navigate('Plans');
+    } else {
+      Linking.openURL('https://finance.rajeevprakash.com/plans');
+    }
+  }, [navigation]);
+
   const handleAddToWatchlist = useCallback(async () => {
     if (!token) {
       openWatchlistDialog('Sign in required', 'Sign in to save stocks to your watchlist.');
@@ -4462,6 +4486,12 @@ const StockDetailScreen = ({ navigation, route }: any) => {
                 watchlistAdded={watchlistAdded}
                 watchlistBusy={watchlistLoading || watchlistBusy}
                 authFetch={authFetch}
+                drawingShapes={chartDrawingShapes}
+                onDrawingShapesChange={handleDrawingShapesChange}
+                onClearAllDrawings={handleClearAllDrawings}
+                onShareDrawings={handleShareDrawings}
+                hasProPlan={hasProPlan}
+                onUpgradePress={handleUpgradePress}
               />
             </View>
           </ScrollView>
