@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import {
   Box,
+  Calculator,
   Eye,
   EyeOff,
   Info,
@@ -33,8 +34,10 @@ import {
 import DialogX from '../../components/DialogX';
 import AppText from '../../components/AppText';
 import AppTextInput from '../../components/AppTextInput';
+import BackButtonHeader from '../../components/BackButtonHeader';
 import BottomTabs from '../../components/BottomTabs';
 import GradientBackground from '../../components/GradientBackground';
+import PlanGate from '../../components/PlanGate';
 import { useUser } from '../../store/UserContext';
 
 const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
@@ -87,7 +90,7 @@ const THEME_OPTIONS = [
 ];
 
 const Profile = ({ navigation }) => {
-  const { user, themeColors, themePreference, setThemePreference, authFetch, updateUserProfile, updateProfileImage, logout } = useUser();
+  const { user, themeColors, themePreference, setThemePreference, authFetch, updateUserProfile, updateProfileImage, logout, currentPlan } = useUser();
   const { width } = useWindowDimensions();
   const isCompact = width < 380;
   const styles = useMemo(() => createStyles(themeColors, isCompact), [themeColors, isCompact]);
@@ -351,20 +354,12 @@ const Profile = ({ navigation }) => {
   return (
     <View style={styles.safeArea}>
       <GradientBackground>
-        <View style={styles.header}>
+        <BackButtonHeader colors={themeColors} onPress={() => navigation.goBack()} containerStyle={styles.header}>
           <View style={styles.headerTextWrap}>
             <AppText style={styles.title}>Profile</AppText>
             <AppText style={styles.subtitle}>Keep your identity, image, and account access up to date.</AppText>
           </View>
-
-          <Pressable style={styles.iconButton} onPress={confirmLogout} disabled={loggingOut}>
-            {loggingOut ? (
-              <ActivityIndicator size="small" color={themeColors.textPrimary} />
-            ) : (
-              <LogOut size={18} color={themeColors.textPrimary} />
-            )}
-          </Pressable>
-        </View>
+        </BackButtonHeader>
 
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           {error ? (
@@ -552,10 +547,91 @@ const Profile = ({ navigation }) => {
               Compare plans, review pricing, and open billing actions from one place.
             </AppText>
 
-            <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate('Plans')}>
+            <View style={styles.planSummaryCard}>
+              <View style={styles.planSummaryRow}>
+                <Rocket size={16} color={themeColors.accent} />
+                <AppText style={styles.planSummaryTitle}>{currentPlan.title}</AppText>
+              </View>
+              <AppText style={styles.planSummaryMeta}>
+                {currentPlan.id ? `${currentPlan.price} • ${currentPlan.status || 'active'}` : 'No active plan found in your current session'}
+              </AppText>
+              {currentPlan.id ? (
+                <AppText style={styles.planSummaryBody}>
+                  {currentPlan.description}
+                </AppText>
+              ) : null}
+              <AppText style={styles.planSummaryBody}>
+                {`Watchlists: ${currentPlan.limits?.watchlists == null ? 'Multiple / plan-based' : currentPlan.limits.watchlists}`}
+              </AppText>
+              <AppText style={styles.planSummaryBody}>
+                {`Tickers per watchlist: ${currentPlan.limits?.watchlistSymbols == null ? 'Plan-based' : currentPlan.limits.watchlistSymbols}`}
+              </AppText>
+              <AppText style={styles.planSummaryBody}>
+                {`Alerts: ${currentPlan.limits?.alerts == null ? 'Plan-based' : currentPlan.limits.alerts}`}
+              </AppText>
+            </View>
+
+            <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate('UpgradeOnWebsite')}>
               <Rocket size={16} color={themeColors.accent} />
-              <AppText style={styles.secondaryButtonText}>Plans & pricing</AppText>
+              <AppText style={styles.secondaryButtonText}>{currentPlan.id ? 'Upgrade on website' : 'Plans & pricing'}</AppText>
             </Pressable>
+          </View>
+
+          <View style={styles.card}>
+            <AppText style={styles.cardTitle}>Access in app</AppText>
+            <AppText style={styles.cardDescription}>
+              The backend plan decides what this app unlocks. These blocks are examples of entitlement gating from your current /me response.
+            </AppText>
+
+            <View style={styles.planAccessLockedCard}>
+              <AppText style={styles.planAccessLockedTitle}>Current limits</AppText>
+              <AppText style={styles.planAccessLockedBody}>
+                {`Current plan: ${currentPlan.title}`}
+              </AppText>
+              <AppText style={styles.planAccessLockedBody}>
+                {`Watchlists allowed: ${currentPlan.limits?.watchlists == null ? 'Multiple / unlimited by plan' : currentPlan.limits.watchlists}`}
+              </AppText>
+              <AppText style={styles.planAccessLockedBody}>
+                {`Symbols per watchlist: ${currentPlan.limits?.watchlistSymbols == null ? 'Plan-based' : currentPlan.limits.watchlistSymbols}`}
+              </AppText>
+              <AppText style={styles.planAccessLockedBody}>
+                {`Portfolio positions: ${currentPlan.limits?.portfolioPositions == null ? 'Plan-based' : currentPlan.limits.portfolioPositions}`}
+              </AppText>
+              <AppText style={styles.planAccessLockedBody}>
+                {`Realtime data: ${currentPlan.features?.realtime_data ? 'Yes' : 'No'}`}
+              </AppText>
+              <AppText style={styles.planAccessLockedBody}>
+                {`Planetary overlays: ${currentPlan.features?.planetary_overlays ? 'Yes' : 'No'}`}
+              </AppText>
+              <AppText style={styles.planAccessLockedBody}>
+                {`Insights: ${currentPlan.features?.insights ? 'Yes' : 'No'}`}
+              </AppText>
+              <AppText style={styles.planAccessLockedBody}>
+                {`Consultation: ${currentPlan.features?.consultation ? 'Yes' : 'No'}`}
+              </AppText>
+            </View>
+
+            <PlanGate
+              plan={currentPlan}
+              feature="insights"
+              fallback={
+                <View style={styles.planAccessLockedCard}>
+                  <AppText style={styles.planAccessLockedTitle}>Insights locked</AppText>
+                  <AppText style={styles.planAccessLockedBody}>Upgrade on the website to unlock insights content in the app.</AppText>
+                  <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate('UpgradeOnWebsite')}>
+                    <AppText style={styles.secondaryButtonText}>Upgrade on website</AppText>
+                  </Pressable>
+                </View>
+              }
+            >
+              <View style={styles.planAccessEnabledCard}>
+                <AppText style={styles.planAccessEnabledTitle}>Insights unlocked</AppText>
+                <AppText style={styles.planAccessEnabledBody}>
+                  This content is visible because your current backend plan includes insights access.
+                </AppText>
+              </View>
+            </PlanGate>
+
           </View>
 
           <View style={styles.card}>
@@ -596,6 +672,34 @@ const Profile = ({ navigation }) => {
             <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate('Support')}>
               <LifeBuoy size={16} color={themeColors.accent} />
               <AppText style={styles.secondaryButtonText}>Support & help</AppText>
+            </Pressable>
+          </View>
+
+          <View style={styles.card}>
+            <AppText style={styles.cardTitle}>Tools</AppText>
+            <AppText style={styles.cardDescription}>
+              Open trading and finance calculators from your profile whenever you need them.
+            </AppText>
+
+            <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate('Calculators')}>
+              <Calculator size={16} color={themeColors.accent} />
+              <AppText style={styles.secondaryButtonText}>Calculators</AppText>
+            </Pressable>
+          </View>
+
+          <View style={styles.logoutCard}>
+            <AppText style={styles.cardTitle}>Logout</AppText>
+            <AppText style={styles.cardDescription}>
+              Sign out from this device if you want to end your current session securely.
+            </AppText>
+
+            <Pressable style={styles.logoutButton} onPress={confirmLogout} disabled={loggingOut}>
+              {loggingOut ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <LogOut size={18} color="#FFFFFF" />
+              )}
+              <AppText style={styles.logoutButtonText}>{loggingOut ? 'Logging out...' : 'Log out'}</AppText>
             </Pressable>
           </View>
         </ScrollView>
@@ -642,41 +746,54 @@ const createStyles = (colors, isCompact) =>
       backgroundColor: colors.background,
     },
     header: {
-      paddingHorizontal: 16,
-      paddingTop: 28,
-      paddingBottom: 12,
-      flexDirection: 'row',
-      alignItems: 'flex-start',
-      justifyContent: 'space-between',
-      gap: 14,
+      gap: 16,
     },
     headerTextWrap: {
-      flex: 1,
-      gap: 4,
+      gap: 6,
     },
     title: {
       color: colors.textPrimary,
       fontSize: 24,
       lineHeight: 30,
+      fontFamily: 'NotoSans-ExtraBold',
     },
     subtitle: {
       color: colors.textMuted,
       fontSize: 12,
       lineHeight: 18,
+      fontFamily: 'NotoSans-Regular',
     },
-    iconButton: {
-      width: 40,
-      height: 40,
-      borderRadius: 12,
+    logoutCard: {
+      borderRadius: 20,
       borderWidth: 1,
-      borderColor: colors.border,
-      backgroundColor: colors.surfaceGlass,
+      borderColor: 'rgba(207, 63, 88, 0.22)',
+      backgroundColor: 'rgba(207, 63, 88, 0.08)',
+      padding: isCompact ? 14 : 16,
+      gap: 14,
+      marginBottom: 8,
+    },
+    logoutButton: {
+      width: '100%',
+      minHeight: 48,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: 'rgba(207, 63, 88, 0.38)',
+      backgroundColor: colors.negative,
+      flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
+      gap: 8,
+      paddingHorizontal: 14,
+    },
+    logoutButtonText: {
+      color: '#FFFFFF',
+      fontSize: 13,
+      fontFamily: 'NotoSans-SemiBold',
     },
     content: {
       paddingHorizontal: 16,
       paddingBottom: 110,
+      paddingTop: 4,
       gap: 16,
     },
     errorBanner: {
@@ -690,6 +807,7 @@ const createStyles = (colors, isCompact) =>
     errorText: {
       color: colors.negative,
       fontSize: 12,
+      fontFamily: 'NotoSans-Regular',
     },
     okBanner: {
       borderRadius: 14,
@@ -702,6 +820,7 @@ const createStyles = (colors, isCompact) =>
     okText: {
       color: colors.positive,
       fontSize: 12,
+      fontFamily: 'NotoSans-Regular',
     },
     heroCard: {
       position: 'relative',
@@ -750,6 +869,7 @@ const createStyles = (colors, isCompact) =>
     avatarInitials: {
       color: colors.textPrimary,
       fontSize: 12,
+      fontFamily: 'NotoSans-SemiBold',
     },
     heroMeta: {
       flex: 1,
@@ -759,15 +879,18 @@ const createStyles = (colors, isCompact) =>
       color: colors.textPrimary,
       fontSize: 24,
       lineHeight: 30,
+      fontFamily: 'NotoSans-ExtraBold',
     },
     profileMeta: {
       color: colors.textMuted,
       fontSize: 13,
+      fontFamily: 'NotoSans-Regular',
     },
     profileSubtext: {
       color: colors.textMuted,
       fontSize: 12,
       lineHeight: 18,
+      fontFamily: 'NotoSans-Regular',
     },
     avatarActions: {
       flexDirection: 'row',
@@ -788,6 +911,7 @@ const createStyles = (colors, isCompact) =>
     primaryInlineButtonText: {
       color: '#FFFFFF',
       fontSize: 13,
+      fontFamily: 'NotoSans-SemiBold',
     },
     ghostInlineButton: {
       minHeight: 42,
@@ -807,10 +931,12 @@ const createStyles = (colors, isCompact) =>
     ghostInlineButtonText: {
       color: colors.negative,
       fontSize: 13,
+      fontFamily: 'NotoSans-SemiBold',
     },
     heroHint: {
       color: colors.textMuted,
       fontSize: 11,
+      fontFamily: 'NotoSans-Regular',
     },
     card: {
       borderRadius: 20,
@@ -823,12 +949,84 @@ const createStyles = (colors, isCompact) =>
     cardTitle: {
       color: colors.textPrimary,
       fontSize: 16,
+      fontFamily: 'NotoSans-SemiBold',
     },
     cardDescription: {
       color: colors.textMuted,
       fontSize: 13,
       lineHeight: 19,
       marginTop: -2,
+      fontFamily: 'NotoSans-Regular',
+    },
+    planSummaryCard: {
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceAlt,
+      paddingHorizontal: 12,
+      paddingVertical: 12,
+      gap: 6,
+    },
+    planSummaryRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    planSummaryTitle: {
+      color: colors.textPrimary,
+      fontSize: 14,
+      fontFamily: 'NotoSans-SemiBold',
+    },
+    planSummaryMeta: {
+      color: colors.textMuted,
+      fontSize: 12,
+      fontFamily: 'NotoSans-Medium',
+    },
+    planSummaryBody: {
+      color: colors.textMuted,
+      fontSize: 12,
+      lineHeight: 18,
+      fontFamily: 'NotoSans-Regular',
+    },
+    planAccessEnabledCard: {
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: 'rgba(25, 158, 99, 0.28)',
+      backgroundColor: 'rgba(25, 158, 99, 0.10)',
+      paddingHorizontal: 12,
+      paddingVertical: 12,
+      gap: 6,
+    },
+    planAccessEnabledTitle: {
+      color: colors.positive,
+      fontSize: 13,
+      fontFamily: 'NotoSans-SemiBold',
+    },
+    planAccessEnabledBody: {
+      color: colors.textPrimary,
+      fontSize: 12,
+      lineHeight: 18,
+      fontFamily: 'NotoSans-Regular',
+    },
+    planAccessLockedCard: {
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceAlt,
+      paddingHorizontal: 12,
+      paddingVertical: 12,
+      gap: 8,
+    },
+    planAccessLockedTitle: {
+      color: colors.textPrimary,
+      fontSize: 13,
+      fontFamily: 'NotoSans-SemiBold',
+    },
+    planAccessLockedBody: {
+      color: colors.textMuted,
+      fontSize: 12,
+      lineHeight: 18,
+      fontFamily: 'NotoSans-Regular',
     },
     themeOptions: {
       gap: 10,
@@ -910,6 +1108,7 @@ const createStyles = (colors, isCompact) =>
     inputLabel: {
       color: colors.textPrimary,
       fontSize: 12,
+      fontFamily: 'NotoSans-SemiBold',
     },
     inputWrap: {
       flexDirection: 'row',
@@ -938,6 +1137,7 @@ const createStyles = (colors, isCompact) =>
     primaryButtonText: {
       color: '#FFFFFF',
       fontSize: 13,
+      fontFamily: 'NotoSans-SemiBold',
     },
     secondaryButton: {
       minHeight: 46,
@@ -954,6 +1154,7 @@ const createStyles = (colors, isCompact) =>
     secondaryButtonText: {
       color: colors.textPrimary,
       fontSize: 13,
+      fontFamily: 'NotoSans-SemiBold',
     },
     infoCardTitle: {
       color: colors.textPrimary,

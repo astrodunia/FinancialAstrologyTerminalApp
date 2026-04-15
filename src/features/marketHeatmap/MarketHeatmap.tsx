@@ -563,11 +563,15 @@ const createStyles = (heatmapHeight: number, colors: any, theme: string) =>
     },
     modalBackdrop: {
       flex: 1,
-      backgroundColor: theme === 'dark' ? 'rgba(0, 0, 0, 0.68)' : 'rgba(9, 20, 32, 0.34)',
-      justifyContent: 'flex-end',
+      backgroundColor: theme === 'dark' ? 'rgba(0, 0, 0, 0.1)' : 'rgba(9, 20, 32, 0.5)',
+      justifyContent: 'center',
+      alignItems: 'center',
       padding: 16,
     },
     bottomSheet: {
+      width: '100%',
+      maxWidth: 420,
+      maxHeight: '80%',
       borderRadius: 22,
       backgroundColor: colors.surface,
       borderWidth: 1,

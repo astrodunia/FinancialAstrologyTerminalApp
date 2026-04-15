@@ -12,9 +12,11 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Defs, LinearGradient, Line, Path, Stop } from 'react-native-svg';
 import {
   Activity,
+  ArrowLeft,
   BarChart3,
   Bell,
   Bookmark,
@@ -31,11 +33,12 @@ import {
   Wallet,
   X,
 } from 'lucide-react-native';
-import { BarChart, LineChart, PieChart } from 'react-native-gifted-charts';
+import { LineChart, PieChart } from 'react-native-gifted-charts';
 import AppDialog from '../../components/AppDialog';
 import AppText from '../../components/AppText';
 import GradientBackground from '../../components/GradientBackground';
 import { useHorizontalSwipe } from '../../navigation/useHorizontalSwipe';
+import { hasProAccess } from '../../features/plans/guards';
 import { useUser } from '../../store/UserContext';
 import {
   CHART_TIMEFRAME_OPTIONS,
@@ -70,6 +73,9 @@ const FONT = {
   semiBold: 'NotoSans-SemiBold',
   extraBold: 'NotoSans-ExtraBold',
 };
+
+const PREMIUM_TARGET_LABELS = new Set(['Target Mean', 'Target High', 'Target Low', 'Analyst Count', 'Recommendation']);
+const PREMIUM_FUNDAMENTAL_METRIC_LABELS = new Set(['Analyst Target', 'Recommendation']);
 
 const normalizeInitialTabState = (tab: string, hasToken: boolean) => {
   if (tab === 'alerts' && !hasToken) {
@@ -665,6 +671,8 @@ const OverviewTab = ({
   themeColors,
   watchlistAdded,
   watchlistBusy,
+  hasProPlan,
+  onUpgradePress,
 }: {
   info: StockInfo | null;
   company: CompanyProfile | null;
@@ -676,6 +684,8 @@ const OverviewTab = ({
   themeColors: Record<string, string>;
   watchlistAdded: boolean;
   watchlistBusy: boolean;
+  hasProPlan: boolean;
+  onUpgradePress: () => void;
 }) => {
   const styles = useMemo(() => createStyles(themeColors), [themeColors]);
   const name = company?.name || info?.longName || info?.shortName || info?.symbol || '--';
@@ -688,6 +698,7 @@ const OverviewTab = ({
   const latestSparkClose = sparkline?.length
     ? (sparkline[sparkline.length - 1]?.close ?? sparkline[sparkline.length - 1]?.value ?? null)
     : null;
+  const snapshotDisplayPrice = info?.regularMarketPrice ?? info?.regularMarketClose ?? latestSparkClose ?? null;
   const updatedAt = sparkline?.[sparkline.length - 1]?.timestamp
     ? new Date(sparkline[sparkline.length - 1].timestamp).toLocaleTimeString()
     : '';
@@ -752,7 +763,7 @@ const OverviewTab = ({
             <Activity size={16} color={themeColors.textPrimary} />
             <AppText style={styles.cardTitle}>Price Snapshot</AppText>
           </View>
-          <AppText style={styles.metricValue}>{formatCurrency(latestSparkClose ?? info?.regularMarketClose ?? info?.regularMarketPrice ?? null, info?.currency)}</AppText>
+          <AppText style={styles.metricValue}>{formatCurrency(snapshotDisplayPrice, info?.currency)}</AppText>
         </View>
         <AppText style={styles.snapshotMetaText}>
           {formatCurrency(info?.regularMarketPreviousClose ?? null, info?.currency)} prev close
@@ -872,8 +883,8 @@ const OverviewTab = ({
           <OverviewKpiCard
             icon={<Target size={15} color={themeColors.textMuted} />}
             label="Target Mean"
-            value={targetLabel}
-            sub={info?.numberOfAnalystOpinions != null ? `${info.numberOfAnalystOpinions} analysts` : undefined}
+            value={hasProPlan ? targetLabel : '•••••'}
+            sub={hasProPlan ? (info?.numberOfAnalystOpinions != null ? `${info.numberOfAnalystOpinions} analysts` : undefined) : 'Upgrade to Pro to unlock analyst targets'}
             styles={styles}
           />
         </View>
@@ -901,14 +912,32 @@ const OverviewTab = ({
             <BarChart3 size={16} color={themeColors.textPrimary} />
             <AppText style={styles.cardTitle}>Key Statistics</AppText>
           </View>
-        <View style={styles.metricsGrid}>
-          {overviewStatCards.map((item, index) => (
-            <View key={`${item.label}-${index}`} style={styles.metricCard}>
-              <AppText style={styles.metricLabel}>{item.label}</AppText>
-              <AppText style={styles.metricValue}>{item.value}</AppText>
-            </View>
-            ))}
+          <View style={styles.metricsGrid}>
+            {overviewStatCards.map((item, index) => {
+              const locked = !hasProPlan && PREMIUM_TARGET_LABELS.has(item.label);
+              return (
+                <View
+                  key={`${item.label}-${index}`}
+                  style={[styles.metricCard, locked ? styles.premiumMetricCard : null]}
+                >
+                  <AppText style={styles.metricLabel}>{item.label}</AppText>
+                  <AppText style={[styles.metricValue, locked ? styles.premiumMetricValue : null]}>
+                    {locked ? '•••••' : item.value}
+                  </AppText>
+                </View>
+              );
+            })}
           </View>
+          {!hasProPlan ? (
+            <PremiumLockedCard
+              styles={styles}
+              title="Analyst targets are available on Pro"
+              body="Target mean, analyst count, and premium rating context are locked on the Basic plan."
+              ctaLabel="View plans"
+              onPress={onUpgradePress}
+              compact
+            />
+          ) : null}
         </View>
 
         <View style={styles.card}>
@@ -1013,6 +1042,32 @@ const OverviewKpiCard = ({
   </View>
 );
 
+const PremiumLockedCard = ({
+  styles,
+  title,
+  body,
+  ctaLabel = 'Upgrade to Pro',
+  onPress,
+  compact = false,
+}: {
+  styles: ReturnType<typeof createStyles>;
+  title: string;
+  body: string;
+  ctaLabel?: string;
+  onPress: () => void;
+  compact?: boolean;
+}) => (
+  <View style={[styles.premiumLockedCard, compact ? styles.premiumLockedCardCompact : null]}>
+    <View style={styles.premiumLockedGlow} />
+    <AppText style={styles.premiumLockedEyebrow}>Pro Preview</AppText>
+    <AppText style={styles.premiumLockedTitle}>{title}</AppText>
+    <AppText style={styles.premiumLockedBody}>{body}</AppText>
+    <Pressable style={styles.premiumLockedButton} onPress={onPress}>
+      <AppText style={styles.premiumLockedButtonText}>{ctaLabel}</AppText>
+    </Pressable>
+  </View>
+);
+
 const OverviewMiniRow = ({
   icon,
   label,
@@ -1046,6 +1101,8 @@ const ChartTab = ({
   watchlistAdded,
   watchlistBusy,
   authFetch,
+  hasProPlan,
+  onUpgradePress,
 }: {
   info: StockInfo | null;
   history: StockHistoryPoint[] | null;
@@ -1059,6 +1116,8 @@ const ChartTab = ({
   watchlistAdded: boolean;
   watchlistBusy: boolean;
   authFetch: any;
+  hasProPlan: boolean;
+  onUpgradePress: () => void;
 }) => {
   const styles = useMemo(() => createStyles(themeColors), [themeColors]);
   const normalizedTimeframe = normalizeChartTimeframe(timeframe);
@@ -1088,7 +1147,6 @@ const ChartTab = ({
   }, [
     displayHistory,
     info?.regularMarketClose,
-    info?.regularMarketOpen,
     info?.regularMarketPreviousClose,
     info?.regularMarketPrice,
     normalizedTimeframe,
@@ -1233,134 +1291,146 @@ const ChartTab = ({
           </View>
         </View>
 
-        <View style={styles.chartTransitModeRow}>
-          {(['planetary', 'nakshatra'] as TransitMode[]).map((mode) => {
-            const active = mode === transitMode;
-            return (
-              <Pressable
-                key={mode}
-                onPress={() => setTransitMode(mode)}
-                style={[styles.chartTransitModeChip, active ? styles.chartTransitModeChipActive : null]}
-              >
-                <AppText style={[styles.chartTransitModeText, active ? styles.chartTransitModeTextActive : null]}>
-                  {mode === 'planetary' ? 'Planetary' : 'Nakshatra'}
-                </AppText>
-              </Pressable>
-            );
-          })}
-        </View>
-
-        {transitPlanets.length > 1 ? (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
-            {transitPlanets.map((planet) => {
-              const active = planet === selectedTransitPlanet;
-              return (
-                <Pressable
-                  key={planet}
-                  onPress={() => setSelectedTransitPlanet(planet)}
-                  style={[styles.chip, active ? styles.chipActive : null]}
-                >
-                  <AppText style={[styles.chipText, active ? styles.chipTextActive : null]}>{planet}</AppText>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-        ) : null}
-
-        {featuredTransit ? (
-          <View style={styles.transitFeaturedCard}>
-            <View style={styles.transitFeaturedHeader}>
-              <View style={styles.transitFeaturedTitleBlock}>
-                <AppText style={styles.transitFeaturedEyebrow}>
-                  {featuredTransit.isActive ? 'Current Transit' : 'Latest Transit'}
-                </AppText>
-                <AppText style={styles.transitFeaturedTitle}>{featuredTransit.label}</AppText>
-                <AppText style={styles.transitFeaturedSub}>{featuredTransit.subLabel}</AppText>
-              </View>
-              <View style={styles.transitFeaturedValueBlock}>
-                <AppText
-                  style={[
-                    styles.transitFeaturedPct,
-                    { color: featuredTransit.pctChange >= 0 ? themeColors.positive : themeColors.negative },
-                  ]}
-                >
-                  {featuredTransit.pctChange >= 0 ? '+' : ''}
-                  {featuredTransit.pctChange.toFixed(2)}%
-                </AppText>
-                <AppText style={styles.transitFeaturedValue}>
-                  {featuredTransit.absChange >= 0 ? '+' : ''}
-                  {formatCurrency(featuredTransit.absChange, info?.currency)}
-                </AppText>
-              </View>
+        {hasProPlan ? (
+          <>
+            <View style={styles.chartTransitModeRow}>
+              {(['planetary', 'nakshatra'] as TransitMode[]).map((mode) => {
+                const active = mode === transitMode;
+                return (
+                  <Pressable
+                    key={mode}
+                    onPress={() => setTransitMode(mode)}
+                    style={[styles.chartTransitModeChip, active ? styles.chartTransitModeChipActive : null]}
+                  >
+                    <AppText style={[styles.chartTransitModeText, active ? styles.chartTransitModeTextActive : null]}>
+                      {mode === 'planetary' ? 'Planetary' : 'Nakshatra'}
+                    </AppText>
+                  </Pressable>
+                );
+              })}
             </View>
 
-            <AppText style={styles.transitFeaturedRange}>
-              {formatDateTime(featuredTransit.start)} {'->'} {formatDateTime(featuredTransit.end || latestHistoryTimestamp || '')}
-            </AppText>
+            {transitPlanets.length > 1 ? (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
+                {transitPlanets.map((planet) => {
+                  const active = planet === selectedTransitPlanet;
+                  return (
+                    <Pressable
+                      key={planet}
+                      onPress={() => setSelectedTransitPlanet(planet)}
+                      style={[styles.chip, active ? styles.chipActive : null]}
+                    >
+                      <AppText style={[styles.chipText, active ? styles.chipTextActive : null]}>{planet}</AppText>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            ) : null}
 
-            <View style={styles.transitMetricRow}>
-              <View style={styles.transitMetricCard}>
-                <AppText style={styles.transitMetricLabel}>Start</AppText>
-                <AppText style={styles.transitMetricValue}>{formatCurrency(featuredTransit.startClose, info?.currency)}</AppText>
-              </View>
-              <View style={styles.transitMetricCard}>
-                <AppText style={styles.transitMetricLabel}>End</AppText>
-                <AppText style={styles.transitMetricValue}>{formatCurrency(featuredTransit.endClose, info?.currency)}</AppText>
-              </View>
-            </View>
-          </View>
-        ) : null}
-
-        {transitLoading ? (
-          <View style={styles.chartTransitState}>
-            <ActivityIndicator size="small" color={themeColors.textPrimary} />
-            <AppText style={styles.emptyText}>Loading transit windows...</AppText>
-          </View>
-        ) : transitMode === 'planetary' && transitError ? (
-          <AppText style={styles.emptyText}>{transitError}</AppText>
-        ) : filteredTransitResults.length ? (
-          <View style={styles.transitList}>
-            {filteredTransitResults.slice(0, 8).map((item) => (
-              <View key={item.key} style={styles.transitListCard}>
-                <View style={styles.transitListHeader}>
-                  <View style={styles.transitListTitleBlock}>
-                    <AppText style={styles.transitListTitle}>{item.label}</AppText>
-                    <AppText style={styles.transitListSub}>{item.subLabel}</AppText>
+            {featuredTransit ? (
+              <View style={styles.transitFeaturedCard}>
+                <View style={styles.transitFeaturedHeader}>
+                  <View style={styles.transitFeaturedTitleBlock}>
+                    <AppText style={styles.transitFeaturedEyebrow}>
+                      {featuredTransit.isActive ? 'Current Transit' : 'Latest Transit'}
+                    </AppText>
+                    <AppText style={styles.transitFeaturedTitle}>{featuredTransit.label}</AppText>
+                    <AppText style={styles.transitFeaturedSub}>{featuredTransit.subLabel}</AppText>
                   </View>
-                  <AppText
-                    style={[
-                      styles.transitListPct,
-                      { color: item.pctChange >= 0 ? themeColors.positive : themeColors.negative },
-                    ]}
-                  >
-                    {item.pctChange >= 0 ? '+' : ''}
-                    {item.pctChange.toFixed(2)}%
-                  </AppText>
+                  <View style={styles.transitFeaturedValueBlock}>
+                    <AppText
+                      style={[
+                        styles.transitFeaturedPct,
+                        { color: featuredTransit.pctChange >= 0 ? themeColors.positive : themeColors.negative },
+                      ]}
+                    >
+                      {featuredTransit.pctChange >= 0 ? '+' : ''}
+                      {featuredTransit.pctChange.toFixed(2)}%
+                    </AppText>
+                    <AppText style={styles.transitFeaturedValue}>
+                      {featuredTransit.absChange >= 0 ? '+' : ''}
+                      {formatCurrency(featuredTransit.absChange, info?.currency)}
+                    </AppText>
+                  </View>
                 </View>
-                <AppText style={styles.transitListRange}>
-                  {formatDateTime(item.start)} {'->'} {formatDateTime(item.end || latestHistoryTimestamp || '')}
+
+                <AppText style={styles.transitFeaturedRange}>
+                  {formatDateTime(featuredTransit.start)} {'->'} {formatDateTime(featuredTransit.end || latestHistoryTimestamp || '')}
                 </AppText>
-                <View style={styles.transitListFooter}>
-                  <AppText style={styles.transitListValue}>
-                    {formatCurrency(item.startClose, info?.currency)} {'->'} {formatCurrency(item.endClose, info?.currency)}
-                  </AppText>
-                  <AppText
-                    style={[
-                      styles.transitListValue,
-                      { color: item.absChange >= 0 ? themeColors.positive : themeColors.negative },
-                    ]}
-                  >
-                    {item.absChange >= 0 ? '+' : ''}
-                    {formatCurrency(item.absChange, info?.currency)}
-                  </AppText>
+
+                <View style={styles.transitMetricRow}>
+                  <View style={styles.transitMetricCard}>
+                    <AppText style={styles.transitMetricLabel}>Start</AppText>
+                    <AppText style={styles.transitMetricValue}>{formatCurrency(featuredTransit.startClose, info?.currency)}</AppText>
+                  </View>
+                  <View style={styles.transitMetricCard}>
+                    <AppText style={styles.transitMetricLabel}>End</AppText>
+                    <AppText style={styles.transitMetricValue}>{formatCurrency(featuredTransit.endClose, info?.currency)}</AppText>
+                  </View>
                 </View>
               </View>
-            ))}
-          </View>
+            ) : null}
+
+            {transitLoading ? (
+              <View style={styles.chartTransitState}>
+                <ActivityIndicator size="small" color={themeColors.textPrimary} />
+                <AppText style={styles.emptyText}>Loading transit windows...</AppText>
+              </View>
+            ) : transitMode === 'planetary' && transitError ? (
+              <AppText style={styles.emptyText}>{transitError}</AppText>
+            ) : filteredTransitResults.length ? (
+              <View style={styles.transitList}>
+                {filteredTransitResults.slice(0, 8).map((item) => (
+                  <View key={item.key} style={styles.transitListCard}>
+                    <View style={styles.transitListHeader}>
+                      <View style={styles.transitListTitleBlock}>
+                        <AppText style={styles.transitListTitle}>{item.label}</AppText>
+                        <AppText style={styles.transitListSub}>{item.subLabel}</AppText>
+                      </View>
+                      <AppText
+                        style={[
+                          styles.transitListPct,
+                          { color: item.pctChange >= 0 ? themeColors.positive : themeColors.negative },
+                        ]}
+                      >
+                        {item.pctChange >= 0 ? '+' : ''}
+                        {item.pctChange.toFixed(2)}%
+                      </AppText>
+                    </View>
+                    <AppText style={styles.transitListRange}>
+                      {formatDateTime(item.start)} {'->'} {formatDateTime(item.end || latestHistoryTimestamp || '')}
+                    </AppText>
+                    <View style={styles.transitListFooter}>
+                      <AppText style={styles.transitListValue}>
+                        {formatCurrency(item.startClose, info?.currency)} {'->'} {formatCurrency(item.endClose, info?.currency)}
+                      </AppText>
+                      <AppText
+                        style={[
+                          styles.transitListValue,
+                          { color: item.absChange >= 0 ? themeColors.positive : themeColors.negative },
+                        ]}
+                      >
+                        {item.absChange >= 0 ? '+' : ''}
+                        {formatCurrency(item.absChange, info?.currency)}
+                      </AppText>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <AppText style={styles.emptyText}>
+                No {transitMode === 'planetary' ? 'planetary' : 'nakshatra'} transit performance matched this chart range.
+              </AppText>
+            )}
+          </>
         ) : (
-          <AppText style={styles.emptyText}>
-            No {transitMode === 'planetary' ? 'planetary' : 'nakshatra'} transit performance matched this chart range.
-          </AppText>
+          <PremiumLockedCard
+            styles={styles}
+            title="Planetary performance is available on Pro"
+            body="Upgrade to Pro to unlock planetary and nakshatra performance for the current chart range."
+            ctaLabel="Go to plans"
+            onPress={onUpgradePress}
+          />
         )}
       </View>
 
@@ -1421,6 +1491,96 @@ const renderDetailRows = (
     ))}
   </View>
 );
+
+const FUND_SECTION_INFO: Record<string, { title: string; message: string }> = {
+  profitability: {
+    title: 'Margins and returns',
+    message:
+      'Shows profit and efficiency metrics like gross margin, operating margin, profit margin, ROE, and ROA. Higher values usually mean the company keeps more profit and uses capital better, which can support confidence, valuation, and future growth expectations.',
+  },
+  targetRange: {
+    title: 'Analyst target range',
+    message:
+      'Shows analyst low, current price, mean target, and high target. It exists to show expected upside or downside around the stock. Target changes can affect sentiment, but this is not a guarantee.',
+  },
+  balanceMix: {
+    title: 'Balance sheet mix',
+    message:
+      'Shows the biggest balance sheet buckets like cash, receivables, inventory, debt, and equity. It exists to show where financial strength or risk sits. More cash can improve resilience, while more debt can increase pressure.',
+  },
+  companyContext: {
+    title: 'Company context',
+    message:
+      'Shows the company profile such as sector, industry, margins, returns, and size. It exists to give quick business context before you judge the stock.',
+  },
+  companyInfo: {
+    title: 'All company info',
+    message:
+      'Shows broader raw company details from the data source. It exists for users who want extra context that may explain valuation, scale, or risk.',
+  },
+  estimateTrend: {
+    title: 'Earnings estimate trend',
+    message:
+      'Shows analyst earnings and revenue estimate trends for upcoming periods. If you see labels like Period 2 or Period 3, they mean later forecast periods after the nearest one. It exists because rising or falling estimates often move the stock before actual results are released.',
+  },
+  analystOutlook: {
+    title: 'Analyst outlook',
+    message:
+      'Shows the key analyst summary like mean target, high, low, and analyst count. It exists as a compact view of market expectations around the stock.',
+  },
+  latestIncome: {
+    title: 'Latest income snapshot',
+    message:
+      'Shows the latest income statement values such as revenue, gross profit, and net income. It exists to show the company’s most recent operating performance, which can affect confidence and future expectations.',
+  },
+  latestBalance: {
+    title: 'Latest balance snapshot',
+    message:
+      'Shows the latest balance sheet values such as assets, debt, cash, and equity. It exists to show financial position, because strong balance sheets usually mean lower risk.',
+  },
+  earningsEstimates: {
+    title: 'Earnings estimates',
+    message:
+      'Shows analyst EPS forecasts for upcoming periods. Period 2 or Period 3 means the second or third forecast period ahead, not a score. It exists because earnings expectations are one of the biggest drivers of stock moves around results.',
+  },
+  revenueEstimates: {
+    title: 'Revenue estimates',
+    message:
+      'Shows analyst revenue forecasts for upcoming periods. Period 2 or Period 3 means a later forecast period ahead. It exists because expected sales growth often affects valuation and market confidence.',
+  },
+  earningsHistory: {
+    title: 'Earnings history',
+    message:
+      'Shows previously reported EPS values by period. It exists to show whether earnings have been stable, improving, or weakening over time.',
+  },
+  incomeStatement: {
+    title: 'Income statement',
+    message:
+      'Shows reported revenue and detailed operating lines. It exists because changes in sales, costs, and profit directly affect business quality and valuation.',
+  },
+  balanceSheet: {
+    title: 'Balance sheet',
+    message:
+      'Shows reported balance sheet line items and structure. It exists to show liquidity, leverage, and financing strength, which affect company risk.',
+  },
+};
+
+const isLikelyPeriodValue = (value: unknown) => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value >= 1900 && value <= 2100;
+  }
+
+  if (typeof value !== 'string') return false;
+  const text = value.trim();
+  if (!text) return false;
+  if (/^P\d+$/i.test(text)) return true;
+  if (/^(fy|q[1-4]|h[12])[\s-]?\d{2,4}$/i.test(text)) return true;
+  if (/^\d{4}([/-]\d{1,2}([/-]\d{1,2})?)?$/.test(text)) return true;
+  if (/^[A-Za-z]{3,9}\s+\d{2,4}$/.test(text)) return true;
+
+  const parsed = new Date(text).getTime();
+  return Number.isFinite(parsed);
+};
 
 const renderEstimateCards = (
   rows: Record<string, unknown>[],
@@ -1574,22 +1734,22 @@ const extractPeriodValue = (row: Record<string, unknown> | null | undefined) => 
 
   for (const candidate of candidates) {
     if (candidate == null) continue;
-    if (typeof candidate === 'string' || typeof candidate === 'number') return String(candidate);
+    if ((typeof candidate === 'string' || typeof candidate === 'number') && isLikelyPeriodValue(candidate)) return String(candidate);
     if (typeof candidate === 'object') {
       const nested = candidate as Record<string, unknown>;
       const nestedValue = nested.fmt || nested.formatted || nested.display || nested.raw || nested.value;
-      if (nestedValue != null) return String(nestedValue);
+      if (nestedValue != null && isLikelyPeriodValue(nestedValue)) return String(nestedValue);
     }
   }
 
   const fallbackKey = Object.keys(row).find((key) => /date|period|year/i.test(key) && row[key] != null);
   if (fallbackKey) {
     const fallbackValue = row[fallbackKey];
-    if (typeof fallbackValue === 'string' || typeof fallbackValue === 'number') return String(fallbackValue);
+    if ((typeof fallbackValue === 'string' || typeof fallbackValue === 'number') && isLikelyPeriodValue(fallbackValue)) return String(fallbackValue);
     if (typeof fallbackValue === 'object' && fallbackValue) {
       const nested = fallbackValue as Record<string, unknown>;
       const nestedValue = nested.fmt || nested.formatted || nested.display || nested.raw || nested.value;
-      if (nestedValue != null) return String(nestedValue);
+      if (nestedValue != null && isLikelyPeriodValue(nestedValue)) return String(nestedValue);
     }
   }
 
@@ -1598,6 +1758,10 @@ const extractPeriodValue = (row: Record<string, unknown> | null | undefined) => 
 
 const formatDisplayPeriodLabel = (row: Record<string, unknown>, fallback: string) => {
   const text = extractPeriodValue(row) || fallback;
+  const periodMatch = String(text).match(/^P(\d+)$/i);
+  if (periodMatch) {
+    return `Period ${periodMatch[1]}`;
+  }
   const parsed = new Date(text).getTime();
   if (Number.isFinite(parsed) && !text.match(/^P\d+$/)) {
     return new Intl.DateTimeFormat('en-US', { month: 'short', day: '2-digit', year: 'numeric' }).format(parsed);
@@ -1643,6 +1807,8 @@ const getCompactPeriodLabel = (row: Record<string, unknown>, index: number) => {
     return new Intl.DateTimeFormat('en-US', { month: 'short', year: '2-digit' }).format(parsed);
   }
   const text = String(raw);
+  const periodMatch = text.match(/^P(\d+)$/i);
+  if (periodMatch) return `Period ${periodMatch[1]}`;
   const yearMatch = text.match(/\d{4}/);
   if (yearMatch) return yearMatch[0];
   return text.slice(0, 8);
@@ -1786,31 +1952,27 @@ const formatChartValue = (value: number, mode: 'percent' | 'price' | 'compact' =
 const buildAreaChartData = (
   items: { value: number; label: string; frontColor?: string }[],
   mode: 'percent' | 'price' | 'compact' = 'compact',
+  options: {
+    labelColor?: string;
+    textFontSize?: number;
+    textShiftX?: number;
+    textShiftY?: number;
+    dataPointRadius?: number;
+  } = {},
 ) =>
   items.map((item) => ({
     value: item.value,
     label: item.label,
     dataPointText: formatChartValue(item.value, mode),
-    textColor: item.frontColor || '#0F172A',
+    textColor: options.labelColor || '#0F172A',
+    textFontSize: options.textFontSize ?? 10,
+    textShiftY: options.textShiftY ?? 22,
+    textShiftX: options.textShiftX ?? 0,
+    dataPointColor: item.frontColor || '#2563EB',
+    dataPointRadius: options.dataPointRadius ?? 4,
+    focusedDataPointColor: item.frontColor || '#1D4ED8',
+    focusedDataPointRadius: (options.dataPointRadius ?? 4) + 1.5,
   }));
-
-const buildChartSummaryItems = (
-  items: { value: number; label: string }[],
-  mode: 'percent' | 'price' | 'compact' = 'compact',
-) => {
-  if (!items.length) return [];
-  const sorted = [...items].sort((a, b) => a.value - b.value);
-  const first = items[0];
-  const last = items[items.length - 1];
-  const min = sorted[0];
-  const max = sorted[sorted.length - 1];
-  return [
-    { label: 'Start', value: `${first.label} ${formatChartValue(first.value, mode)}` },
-    { label: 'High', value: `${max.label} ${formatChartValue(max.value, mode)}` },
-    { label: 'Low', value: `${min.label} ${formatChartValue(min.value, mode)}` },
-    { label: 'Latest', value: `${last.label} ${formatChartValue(last.value, mode)}` },
-  ];
-};
 
 const statementKeyOrder = {
   income: [
@@ -2007,14 +2169,19 @@ const FundamentalsTab = ({
   loading,
   error,
   themeColors,
+  hasProPlan,
+  onUpgradePress,
 }: {
   bundle: FundamentalsBundle | null;
   loading: boolean;
   error: string;
   themeColors: Record<string, string>;
+  hasProPlan: boolean;
+  onUpgradePress: () => void;
 }) => {
   const styles = useMemo(() => createStyles(themeColors), [themeColors]);
   const { width } = useWindowDimensions();
+  const [activeFundSectionInfo, setActiveFundSectionInfo] = useState<keyof typeof FUND_SECTION_INFO | null>(null);
   const info = bundle?.info || null;
   const latestIncomeRow = pickLatestRow(bundle?.incomeStatement || []);
   const latestBalanceRow = pickLatestRow(bundle?.balanceSheet || []);
@@ -2050,19 +2217,6 @@ const FundamentalsTab = ({
     { label: 'ROA', value: formatPercent(info?.returnOnAssets ?? null) },
     { label: 'Revenue Growth', value: formatPercent(info?.revenueGrowth ?? null) },
   ];
-  const revenueTrendData = useMemo(
-    () =>
-      buildStatementBarData(
-        bundle?.incomeStatement || [],
-        ['TotalRevenue', 'OperatingRevenue', 'totalRevenue', 'revenue'],
-        '#2563EB',
-      ),
-    [bundle?.incomeStatement],
-  );
-  const incomeTrendData = useMemo(
-    () => buildStatementBarData(bundle?.incomeStatement || [], ['NetIncome', 'netIncome'], '#16A34A'),
-    [bundle?.incomeStatement],
-  );
   const earningsEstimateChartData = useMemo(
     () => buildEstimateBarData(bundle?.earningsEstimate || [], ['avg', 'estimate', 'estimated', 'consensus'], '#7C3AED'),
     [bundle?.earningsEstimate],
@@ -2083,29 +2237,42 @@ const FundamentalsTab = ({
     () => buildStatementBarData(bundle?.incomeStatement || [], ['TotalRevenue', 'OperatingRevenue', 'totalRevenue', 'revenue'], '#2563EB'),
     [bundle?.incomeStatement],
   );
-  const profitabilityAreaData = useMemo(() => buildAreaChartData(marginChartData, 'percent'), [marginChartData]);
-  const targetAreaData = useMemo(() => buildAreaChartData(targetRangeChartData, 'price'), [targetRangeChartData]);
-  const earningsAreaData = useMemo(() => buildAreaChartData(earningsEstimateChartData, 'price'), [earningsEstimateChartData]);
-  const revenueAreaData = useMemo(() => buildAreaChartData(revenueEstimateChartData, 'compact'), [revenueEstimateChartData]);
+  const profitabilityAreaData = useMemo(
+    () =>
+      buildAreaChartData(marginChartData, 'percent', {
+        labelColor: themeColors.textPrimary,
+        textShiftY: 38,
+        textFontSize: 11,
+        dataPointRadius: 4.5,
+      }).map((item, index, array) => ({
+        ...item,
+        textShiftX: index === 0 ? 24 : index === array.length - 1 ? -8 : 0,
+      })),
+    [marginChartData, themeColors.textPrimary],
+  );
+  const targetAreaData = useMemo(
+    () => buildAreaChartData(targetRangeChartData, 'price', { labelColor: themeColors.textPrimary }),
+    [targetRangeChartData, themeColors.textPrimary],
+  );
+  const earningsAreaData = useMemo(
+    () => buildAreaChartData(earningsEstimateChartData, 'price', { labelColor: themeColors.textPrimary }),
+    [earningsEstimateChartData, themeColors.textPrimary],
+  );
+  const revenueAreaData = useMemo(
+    () => buildAreaChartData(revenueEstimateChartData, 'compact', { labelColor: themeColors.textPrimary }),
+    [revenueEstimateChartData, themeColors.textPrimary],
+  );
   const earningsHistoryAreaData = useMemo(
-    () => buildAreaChartData(earningsHistoryActualChartData, 'price'),
-    [earningsHistoryActualChartData],
+    () => buildAreaChartData(earningsHistoryActualChartData, 'price', { labelColor: themeColors.textPrimary }),
+    [earningsHistoryActualChartData, themeColors.textPrimary],
   );
   const incomeStatementRevenueAreaData = useMemo(
-    () => buildAreaChartData(incomeStatementRevenueChartData, 'compact'),
-    [incomeStatementRevenueChartData],
+    () => buildAreaChartData(incomeStatementRevenueChartData, 'compact', { labelColor: themeColors.textPrimary }),
+    [incomeStatementRevenueChartData, themeColors.textPrimary],
   );
-  const profitabilitySummary = useMemo(() => buildChartSummaryItems(profitabilityAreaData, 'percent'), [profitabilityAreaData]);
-  const targetSummary = useMemo(() => buildChartSummaryItems(targetAreaData, 'price'), [targetAreaData]);
-  const earningsSummary = useMemo(() => buildChartSummaryItems(earningsAreaData, 'price'), [earningsAreaData]);
-  const revenueSummary = useMemo(() => buildChartSummaryItems(revenueAreaData, 'compact'), [revenueAreaData]);
-  const earningsHistorySummary = useMemo(
-    () => buildChartSummaryItems(earningsHistoryAreaData, 'price'),
-    [earningsHistoryAreaData],
-  );
-  const incomeStatementSummary = useMemo(
-    () => buildChartSummaryItems(incomeStatementRevenueAreaData, 'compact'),
-    [incomeStatementRevenueAreaData],
+  const profitabilityPresentPoint = useMemo(
+    () => (profitabilityAreaData.length ? profitabilityAreaData[profitabilityAreaData.length - 1] : null),
+    [profitabilityAreaData],
   );
   const getFundLineSpacing = useCallback(
     (pointCount: number, minimum: number) => (
@@ -2220,7 +2387,30 @@ const FundamentalsTab = ({
     }),
     [renderTargetPointerLabel],
   );
-
+  const openFundSectionInfo = useCallback((key: keyof typeof FUND_SECTION_INFO) => {
+    setActiveFundSectionInfo(key);
+  }, []);
+  const closeFundSectionInfo = useCallback(() => {
+    setActiveFundSectionInfo(null);
+  }, []);
+  const renderFundSectionTitle = useCallback(
+    (title: string, infoKey?: keyof typeof FUND_SECTION_INFO) => (
+      <View style={styles.fundSectionTitleRow}>
+        <AppText style={[styles.cardTitle, styles.fundSectionTitle]}>{title}</AppText>
+        {infoKey ? (
+          <Pressable
+            style={styles.sectionInfoButton}
+            onPress={() => openFundSectionInfo(infoKey)}
+            accessibilityRole="button"
+            accessibilityLabel={`Explain ${title} section`}
+          >
+            <Info size={15} color={themeColors.textMuted} />
+          </Pressable>
+        ) : null}
+      </View>
+    ),
+    [openFundSectionInfo, styles, themeColors.textMuted],
+  );
   if (loading && !bundle) {
     return <FundamentalsLoadingState styles={styles} themeColors={themeColors} />;
   }
@@ -2246,19 +2436,27 @@ const FundamentalsTab = ({
       </View>
 
       <View style={styles.metricsGrid}>
-        {metricCards.map((item, index) => (
-          <View key={`${item.label}-${index}`} style={styles.metricCard}>
-            <AppText style={styles.metricLabel}>{item.label}</AppText>
-            <AppText style={styles.metricValue}>{item.value}</AppText>
-          </View>
-        ))}
+        {metricCards.map((item, index) => {
+          const locked = !hasProPlan && PREMIUM_FUNDAMENTAL_METRIC_LABELS.has(item.label);
+          return (
+            <View key={`${item.label}-${index}`} style={[styles.metricCard, locked ? styles.premiumMetricCard : null]}>
+              <AppText style={styles.metricLabel}>{item.label}</AppText>
+              <AppText style={[styles.metricValue, locked ? styles.premiumMetricValue : null]}>
+                {locked ? '•••••' : item.value}
+              </AppText>
+            </View>
+          );
+        })}
       </View>
 
       <View style={[styles.card, styles.fundamentalsSectionCard]}>
         <View style={styles.fundSectionHeader}>
-          <AppText style={[styles.cardTitle, styles.fundSectionTitle]}>Margins and returns</AppText>
+          {renderFundSectionTitle('Margins and returns', 'profitability')}
           <AppText style={[styles.sectionHeroText, styles.fundSectionText]}>
             Curved line view of margin and return quality across core profitability metrics.
+          </AppText>
+          <AppText style={[styles.sectionHeroText, styles.fundSectionText]}>
+            Higher margins and returns usually mean the company keeps more profit and uses capital more efficiently, which can support confidence and valuation. Current endpoint: {profitabilityPresentPoint ? `${profitabilityPresentPoint.label} ${formatChartValue(profitabilityPresentPoint.value, 'percent')}` : '--'}.
           </AppText>
         </View>
         {profitabilityAreaData.length ? (
@@ -2270,18 +2468,19 @@ const FundamentalsTab = ({
               data={profitabilityAreaData}
               width={chartWidth}
               height={218}
-              spacing={getFundLineSpacing(profitabilityAreaData.length, 52)}
-              initialSpacing={24}
-              endSpacing={24}
+              spacing={getFundLineSpacing(profitabilityAreaData.length, 42)}
+              initialSpacing={38}
+              endSpacing={30}
               thickness={2.5}
               isAnimated
               animationDuration={1100}
+              overflowTop={38}
               startFillColor="rgba(96, 165, 250, 0.28)"
               endFillColor="rgba(29, 78, 216, 0.04)"
               startOpacity={0.95}
               endOpacity={0.12}
               hideDataPoints={false}
-              dataPointsRadius={2}
+              dataPointsRadius={4.5}
               color="#2563EB"
               lineGradient
               lineGradientStartColor="#60A5FA"
@@ -2297,23 +2496,15 @@ const FundamentalsTab = ({
               showVerticalLines
               verticalLinesColor="rgba(148,163,184,0.12)"
               verticalLinesThickness={1}
-              dataPointsColor="#2563EB"
+              dataPointsColor="#FFFFFF"
               focusedDataPointColor="#1D4ED8"
-              focusedDataPointRadius={7}
+              focusedDataPointRadius={8}
               showDataPointLabelOnFocus
               pointerConfig={profitPointerConfig}
               xAxisLabelTextStyle={styles.fundChartAxisText}
               focusEnabled
               disableScroll
             />
-            </View>
-            <View style={styles.fundChartMetaRow}>
-              {profitabilitySummary.map((item, index) => (
-                <View key={`${item.label}-${index}`} style={styles.fundChartMetaPill}>
-                  <AppText style={styles.fundChartMetaLabel}>{item.label}</AppText>
-                  <AppText style={styles.fundChartMetaValue}>{item.value}</AppText>
-                </View>
-              ))}
             </View>
           </View>
         ) : (
@@ -2323,74 +2514,76 @@ const FundamentalsTab = ({
 
       <View style={[styles.card, styles.fundamentalsSectionCard]}>
         <View style={styles.fundSectionHeader}>
-          <AppText style={[styles.cardTitle, styles.fundSectionTitle]}>Analyst target range</AppText>
+          {renderFundSectionTitle('Analyst target range', 'targetRange')}
           <AppText style={[styles.sectionHeroText, styles.fundSectionText]}>
-            Curved line view of low, current, mean, and high analyst expectations.
+            Low is the most conservative analyst target, Price is the current stock price, Mean is the average target, and High is the most optimistic target.
           </AppText>
         </View>
-        {targetAreaData.length ? (
-          <View style={styles.fundChartStage}>
-            <View style={styles.fundChartHalo}>
-            <LineChart
-              areaChart
-              curved
-              data={targetAreaData}
-              width={chartWidth}
-              height={218}
-              spacing={getFundLineSpacing(targetAreaData.length, 58)}
-              initialSpacing={24}
-              endSpacing={24}
-              thickness={2.5}
-              isAnimated
-              animationDuration={1100}
-              startFillColor="rgba(14, 165, 233, 0.22)"
-              endFillColor="rgba(8, 145, 178, 0.03)"
-              startOpacity={0.9}
-              endOpacity={0.1}
-              hideDataPoints={false}
-              dataPointsRadius={5.5}
-              color="#0891B2"
-              lineGradient
-              lineGradientStartColor="#22D3EE"
-              lineGradientEndColor="#0E7490"
-              noOfSections={4}
-              hideRules
-              showYAxisIndices
-              yAxisIndicesColor="rgba(148,163,184,0.14)"
-              xAxisThickness={0}
-              yAxisThickness={0}
-              yAxisLabelWidth={0}
-              hideYAxisText
-              showVerticalLines
-              verticalLinesColor="rgba(148,163,184,0.12)"
-              verticalLinesThickness={1}
-              dataPointsColor="#0891B2"
-              focusedDataPointColor="#0E7490"
-              focusedDataPointRadius={7}
-              showDataPointLabelOnFocus
-              pointerConfig={targetPointerConfig}
-              xAxisLabelTextStyle={styles.fundChartAxisText}
-              focusEnabled
-              disableScroll
-            />
+        {hasProPlan ? (
+          targetAreaData.length ? (
+            <View style={styles.fundChartStage}>
+              <View style={styles.fundChartHalo}>
+              <LineChart
+                areaChart
+                curved
+                data={targetAreaData}
+                width={chartWidth}
+                height={218}
+                spacing={getFundLineSpacing(targetAreaData.length, 58)}
+                initialSpacing={24}
+                endSpacing={24}
+                thickness={2.5}
+                isAnimated
+                animationDuration={1100}
+                startFillColor="rgba(14, 165, 233, 0.22)"
+                endFillColor="rgba(8, 145, 178, 0.03)"
+                startOpacity={0.9}
+                endOpacity={0.1}
+                hideDataPoints={false}
+                dataPointsRadius={5.5}
+                color="#0891B2"
+                lineGradient
+                lineGradientStartColor="#22D3EE"
+                lineGradientEndColor="#0E7490"
+                noOfSections={4}
+                hideRules
+                showYAxisIndices
+                yAxisIndicesColor="rgba(148,163,184,0.14)"
+                xAxisThickness={0}
+                yAxisThickness={0}
+                yAxisLabelWidth={0}
+                hideYAxisText
+                showVerticalLines
+                verticalLinesColor="rgba(148,163,184,0.12)"
+                verticalLinesThickness={1}
+                dataPointsColor="#0891B2"
+                focusedDataPointColor="#0E7490"
+                focusedDataPointRadius={7}
+                showDataPointLabelOnFocus
+                pointerConfig={targetPointerConfig}
+                xAxisLabelTextStyle={styles.fundChartAxisText}
+                focusEnabled
+                disableScroll
+              />
+              </View>
             </View>
-            <View style={styles.fundChartMetaRow}>
-              {targetSummary.map((item, index) => (
-                <View key={`${item.label}-${index}`} style={styles.fundChartMetaPill}>
-                  <AppText style={styles.fundChartMetaLabel}>{item.label}</AppText>
-                  <AppText style={styles.fundChartMetaValue}>{item.value}</AppText>
-                </View>
-              ))}
-            </View>
-          </View>
+          ) : (
+            <AppText style={styles.emptyText}>No analyst target data available.</AppText>
+          )
         ) : (
-          <AppText style={styles.emptyText}>No analyst target data available.</AppText>
+          <PremiumLockedCard
+            styles={styles}
+            title="Analyst targets are available on Pro"
+            body="Target range, target values, and recommendation-style outlook are locked on the Basic plan."
+            ctaLabel="Go to plans"
+            onPress={onUpgradePress}
+          />
         )}
       </View>
 
       <View style={[styles.card, styles.fundamentalsSectionCard]}>
         <View style={styles.fundSectionHeader}>
-          <AppText style={[styles.cardTitle, styles.fundSectionTitle]}>Balance sheet mix</AppText>
+          {renderFundSectionTitle('Balance sheet mix', 'balanceMix')}
           <AppText style={[styles.sectionHeroText, styles.fundSectionText]}>
             Latest balance sheet composition using the biggest reported asset buckets.
           </AppText>
@@ -2426,7 +2619,8 @@ const FundamentalsTab = ({
 
       <View style={[styles.card, styles.fundamentalsSectionCard]}>
         <View style={styles.fundSectionHeader}>
-          <AppText style={[styles.cardTitle, styles.fundSectionTitle]}>Company context</AppText>
+          {renderFundSectionTitle('Company context', 'companyContext')}
+          
         </View>
         <View style={styles.snapshotTileGrid}>
           {companyInfoCards.map((item, index) => (
@@ -2440,7 +2634,7 @@ const FundamentalsTab = ({
 
       <View style={[styles.card, styles.fundamentalsSectionCard]}>
         <View style={styles.fundSectionHeader}>
-          <AppText style={[styles.cardTitle, styles.fundSectionTitle]}>All company info</AppText>
+          {renderFundSectionTitle('All company info', 'companyInfo')}
         </View>
         {renderInfoFields(info, styles)}
       </View>
@@ -2455,146 +2649,156 @@ const FundamentalsTab = ({
         <>
           <View style={[styles.card, styles.fundamentalsSectionCard]}>
             <View style={styles.fundSectionHeader}>
-              <AppText style={[styles.cardTitle, styles.fundSectionTitle]}>Earnings estimate trend</AppText>
+              {renderFundSectionTitle('Earnings estimate trend', 'estimateTrend')}
               <AppText style={[styles.sectionHeroText, styles.fundSectionText]}>
                 Animated line charts for forward earnings and revenue expectations.
               </AppText>
+              <AppText style={[styles.sectionHeroText, styles.fundSectionText]}>
+                `Period 2` and `Period 3` mean later forecast periods after the nearest upcoming one.
+              </AppText>
             </View>
-            {earningsAreaData.length ? (
-              <View style={styles.fundChartStage}>
-                <View style={styles.fundChartHalo}>
-                <LineChart
-                  areaChart
-                  data={earningsAreaData}
-                  width={chartWidth}
-                  height={218}
-                  spacing={getFundLineSpacing(earningsAreaData.length, 52)}
-                  initialSpacing={24}
-                  endSpacing={24}
-                  thickness={2.5}
-                  curved
-                  isAnimated
-                  animationDuration={1200}
-                  color="#7C3AED"
-                  lineGradient
-                  lineGradientStartColor="#A78BFA"
-                  lineGradientEndColor="#6D28D9"
-                  startFillColor="rgba(167, 139, 250, 0.28)"
-                  endFillColor="rgba(109, 40, 217, 0.04)"
-                  startOpacity={0.94}
-                  endOpacity={0.12}
-                  noOfSections={4}
-                  hideRules
-                  showYAxisIndices
-                  yAxisIndicesColor="rgba(148,163,184,0.14)"
-                  xAxisThickness={0}
-                  yAxisThickness={0}
-                  yAxisLabelWidth={0}
-                  hideYAxisText
-                  hideDataPoints={false}
-                  dataPointsRadius={5.5}
-                  showVerticalLines
-                  verticalLinesColor="rgba(148,163,184,0.16)"
-                  verticalLinesThickness={1}
-                  dataPointsColor="#7C3AED"
-                  focusedDataPointColor="#6D28D9"
-                  focusedDataPointRadius={7}
-                  showDataPointLabelOnFocus
-                  pointerConfig={earningsPointerConfig}
-                  xAxisLabelTextStyle={styles.fundChartAxisText}
-                  focusEnabled
-                  disableScroll
-                />
-                </View>
-                <View style={styles.fundChartMetaRow}>
-                  {earningsSummary.map((item, index) => (
-                    <View key={`${item.label}-${index}`} style={styles.fundChartMetaPill}>
-                      <AppText style={styles.fundChartMetaLabel}>{item.label}</AppText>
-                      <AppText style={styles.fundChartMetaValue}>{item.value}</AppText>
+            {hasProPlan ? (
+              <>
+                {earningsAreaData.length ? (
+                  <View style={styles.fundChartStage}>
+                    <View style={styles.fundChartHalo}>
+                    <LineChart
+                      areaChart
+                      data={earningsAreaData}
+                      width={chartWidth}
+                      height={218}
+                      spacing={getFundLineSpacing(earningsAreaData.length, 52)}
+                      initialSpacing={24}
+                      endSpacing={24}
+                      thickness={2.5}
+                      curved
+                      isAnimated
+                      animationDuration={1200}
+                      color="#7C3AED"
+                      lineGradient
+                      lineGradientStartColor="#A78BFA"
+                      lineGradientEndColor="#6D28D9"
+                      startFillColor="rgba(167, 139, 250, 0.28)"
+                      endFillColor="rgba(109, 40, 217, 0.04)"
+                      startOpacity={0.94}
+                      endOpacity={0.12}
+                      noOfSections={4}
+                      hideRules
+                      showYAxisIndices
+                      yAxisIndicesColor="rgba(148,163,184,0.14)"
+                      xAxisThickness={0}
+                      yAxisThickness={0}
+                      yAxisLabelWidth={0}
+                      hideYAxisText
+                      hideDataPoints={false}
+                      dataPointsRadius={5.5}
+                      showVerticalLines
+                      verticalLinesColor="rgba(148,163,184,0.16)"
+                      verticalLinesThickness={1}
+                      dataPointsColor="#7C3AED"
+                      focusedDataPointColor="#6D28D9"
+                      focusedDataPointRadius={7}
+                      showDataPointLabelOnFocus
+                      pointerConfig={earningsPointerConfig}
+                      xAxisLabelTextStyle={styles.fundChartAxisText}
+                      focusEnabled
+                      disableScroll
+                    />
                     </View>
-                  ))}
-                </View>
-              </View>
-            ) : null}
-            {revenueAreaData.length ? (
-              <View style={styles.fundChartStage}>
-                <AppText style={styles.fundMiniTrendTitle}></AppText>
-                <View style={styles.fundChartHalo}>
-                <LineChart
-                  areaChart
-                  data={revenueAreaData}
-                  width={chartWidth}
-                  height={218}
-                  spacing={getFundLineSpacing(revenueAreaData.length, 52)}
-                  initialSpacing={24}
-                  endSpacing={24}
-                  thickness={2.5}
-                  curved
-                  isAnimated
-                  animationDuration={1200}
-                  hideDataPoints={false}
-                  dataPointsRadius={5.5}
-                  color="#0F766E"
-                  lineGradient
-                  lineGradientStartColor="#2DD4BF"
-                  lineGradientEndColor="#0F766E"
-                  startFillColor="rgba(45, 212, 191, 0.24)"
-                  endFillColor="rgba(15, 118, 110, 0.035)"
-                  startOpacity={0.92}
-                  endOpacity={0.12}
-                  noOfSections={4}
-                  hideRules
-                  showYAxisIndices
-                  yAxisIndicesColor="rgba(148,163,184,0.14)"
-                  xAxisThickness={0}
-                  yAxisThickness={0}
-                  yAxisLabelWidth={0}
-                  hideYAxisText
-                  showVerticalLines
-                  verticalLinesColor="rgba(148,163,184,0.16)"
-                  verticalLinesThickness={1}
-                  dataPointsColor="#0F766E"
-                  focusedDataPointColor="#0F766E"
-                  focusedDataPointRadius={7}
-                  showDataPointLabelOnFocus
-                  pointerConfig={revenuePointerConfig}
-                  xAxisLabelTextStyle={styles.fundChartAxisText}
-                  focusEnabled
-                  disableScroll
-                />
-                </View>
-                <View style={styles.fundChartMetaRow}>
-                  {revenueSummary.map((item, index) => (
-                    <View key={`${item.label}-${index}`} style={styles.fundChartMetaPill}>
-                      <AppText style={styles.fundChartMetaLabel}>{item.label}</AppText>
-                      <AppText style={styles.fundChartMetaValue}>{item.value}</AppText>
+                  </View>
+                ) : null}
+                {revenueAreaData.length ? (
+                  <View style={styles.fundChartStage}>
+                    <AppText style={styles.fundMiniTrendTitle} />
+                    <View style={styles.fundChartHalo}>
+                    <LineChart
+                      areaChart
+                      data={revenueAreaData}
+                      width={chartWidth}
+                      height={218}
+                      spacing={getFundLineSpacing(revenueAreaData.length, 52)}
+                      initialSpacing={24}
+                      endSpacing={24}
+                      thickness={2.5}
+                      curved
+                      isAnimated
+                      animationDuration={1200}
+                      hideDataPoints={false}
+                      dataPointsRadius={5.5}
+                      color="#0F766E"
+                      lineGradient
+                      lineGradientStartColor="#2DD4BF"
+                      lineGradientEndColor="#0F766E"
+                      startFillColor="rgba(45, 212, 191, 0.24)"
+                      endFillColor="rgba(15, 118, 110, 0.035)"
+                      startOpacity={0.92}
+                      endOpacity={0.12}
+                      noOfSections={4}
+                      hideRules
+                      showYAxisIndices
+                      yAxisIndicesColor="rgba(148,163,184,0.14)"
+                      xAxisThickness={0}
+                      yAxisThickness={0}
+                      yAxisLabelWidth={0}
+                      hideYAxisText
+                      showVerticalLines
+                      verticalLinesColor="rgba(148,163,184,0.16)"
+                      verticalLinesThickness={1}
+                      dataPointsColor="#0F766E"
+                      focusedDataPointColor="#0F766E"
+                      focusedDataPointRadius={7}
+                      showDataPointLabelOnFocus
+                      pointerConfig={revenuePointerConfig}
+                      xAxisLabelTextStyle={styles.fundChartAxisText}
+                      focusEnabled
+                      disableScroll
+                    />
                     </View>
-                  ))}
-                </View>
-              </View>
-            ) : null}
-            {!earningsEstimateChartData.length && !revenueEstimateChartData.length ? (
-              <AppText style={styles.emptyText}>No estimate chart data available.</AppText>
-            ) : null}
+                  </View>
+                ) : null}
+                {!earningsEstimateChartData.length && !revenueEstimateChartData.length ? (
+                  <AppText style={styles.emptyText}>No estimate chart data available.</AppText>
+                ) : null}
+              </>
+            ) : (
+              <PremiumLockedCard
+                styles={styles}
+                title="Forecast charts are available on Pro"
+                body="Forward earnings and revenue estimate trends are locked on the Basic plan."
+                ctaLabel="Go to plans"
+                onPress={onUpgradePress}
+              />
+            )}
           </View>
 
           <View style={[styles.card, styles.fundamentalsSectionCard]}>
             <View style={styles.fundSectionHeader}>
-              <AppText style={[styles.cardTitle, styles.fundSectionTitle]}>Analyst outlook</AppText>
+              {renderFundSectionTitle('Analyst outlook', 'analystOutlook')}
+              
             </View>
-            <View style={styles.metricsGrid}>
-              {analystSummary.map((item, index) => (
-                <View key={`${item.label}-${index}`} style={styles.metricCard}>
-                  <AppText style={styles.metricLabel}>{item.label}</AppText>
-                  <AppText style={styles.metricValue}>{item.value}</AppText>
-                </View>
-              ))}
-            </View>
+            {hasProPlan ? (
+              <View style={styles.metricsGrid}>
+                {analystSummary.map((item, index) => (
+                  <View key={`${item.label}-${index}`} style={styles.metricCard}>
+                    <AppText style={styles.metricLabel}>{item.label}</AppText>
+                    <AppText style={styles.metricValue}>{item.value}</AppText>
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <PremiumLockedCard
+                styles={styles}
+                title="Analyst outlook is available on Pro"
+                body="Target mean, target range, analyst count, and recommendation-style outlook are locked on the Basic plan."
+                ctaLabel="Go to plans"
+                onPress={onUpgradePress}
+              />
+            )}
           </View>
 
           <View style={[styles.card, styles.fundamentalsSectionCard]}>
             <View style={styles.fundSectionHeader}>
-              <AppText style={[styles.cardTitle, styles.fundSectionTitle]}>Latest income snapshot</AppText>
+              {renderFundSectionTitle('Latest income snapshot', 'latestIncome')}
               <AppText style={[styles.sectionHeroText, styles.fundSectionText]}>
                 {getPeriodLabel(latestIncomeRow || {}, 'Most recent period')}
               </AppText>
@@ -2623,7 +2827,7 @@ const FundamentalsTab = ({
 
           <View style={[styles.card, styles.fundamentalsSectionCard]}>
             <View style={styles.fundSectionHeader}>
-              <AppText style={[styles.cardTitle, styles.fundSectionTitle]}>Latest balance snapshot</AppText>
+              {renderFundSectionTitle('Latest balance snapshot', 'latestBalance')}
               <AppText style={[styles.sectionHeroText, styles.fundSectionText]}>
                 {getPeriodLabel(latestBalanceRow || {}, 'Most recent period')}
               </AppText>
@@ -2652,129 +2856,164 @@ const FundamentalsTab = ({
 
           <View style={[styles.card, styles.fundamentalsSectionCard]}>
             <View style={styles.fundSectionHeader}>
-              <AppText style={[styles.cardTitle, styles.fundSectionTitle]}>Earnings estimates</AppText>
+              {renderFundSectionTitle('Earnings estimates', 'earningsEstimates')}
+              <AppText style={[styles.sectionHeroText, styles.fundSectionText]}>
+                Analyst EPS estimates for upcoming reporting periods.
+              </AppText>
+              <AppText style={[styles.sectionHeroText, styles.fundSectionText]}>
+                `Period 2` or `Period 3` means the second or third estimate period ahead.
+              </AppText>
             </View>
-            {bundle.earningsEstimate.length ? (
-              <>
-                {earningsAreaData.length ? (
-                  <View style={styles.fundChartStage}>
-                    <View style={styles.fundChartHalo}>
-                      <LineChart
-                        areaChart
-                        data={earningsAreaData}
-                        width={chartWidth}
-                        height={210}
-                        spacing={getFundLineSpacing(earningsAreaData.length, 52)}
-                        initialSpacing={24}
-                        endSpacing={24}
-                        thickness={4.5}
-                        curved
-                        isAnimated
-                        animationDuration={1200}
-                        color="#7C3AED"
-                        lineGradient
-                        lineGradientStartColor="#A78BFA"
-                        lineGradientEndColor="#6D28D9"
-                        startFillColor="rgba(167, 139, 250, 0.28)"
-                        endFillColor="rgba(109, 40, 217, 0.04)"
-                        startOpacity={0.94}
-                        endOpacity={0.12}
-                        noOfSections={4}
-                        hideRules
-                        showYAxisIndices
-                        yAxisIndicesColor="rgba(148,163,184,0.14)"
-                        xAxisThickness={0}
-                        yAxisThickness={0}
-                        yAxisLabelWidth={0}
-                        hideYAxisText
-                        hideDataPoints={false}
-                        dataPointsRadius={5.5}
-                        showVerticalLines
-                        verticalLinesColor="rgba(148,163,184,0.16)"
-                        verticalLinesThickness={1}
-                        dataPointsColor="#7C3AED"
-                        focusedDataPointColor="#6D28D9"
-                        focusedDataPointRadius={7}
-                        showDataPointLabelOnFocus
-                        pointerConfig={earningsPointerConfig}
-                        xAxisLabelTextStyle={styles.fundChartAxisText}
-                        focusEnabled
-                        disableScroll
-                      />
+            {hasProPlan ? (
+              bundle.earningsEstimate.length ? (
+                <>
+                  {earningsAreaData.length ? (
+                    <View style={styles.fundChartStage}>
+                      <View style={styles.fundChartHalo}>
+                        <LineChart
+                          areaChart
+                          data={earningsAreaData}
+                          width={chartWidth}
+                          height={210}
+                          spacing={getFundLineSpacing(earningsAreaData.length, 52)}
+                          initialSpacing={24}
+                          endSpacing={24}
+                          thickness={4.5}
+                          curved
+                          isAnimated
+                          animationDuration={1200}
+                          color="#7C3AED"
+                          lineGradient
+                          lineGradientStartColor="#A78BFA"
+                          lineGradientEndColor="#6D28D9"
+                          startFillColor="rgba(167, 139, 250, 0.28)"
+                          endFillColor="rgba(109, 40, 217, 0.04)"
+                          startOpacity={0.94}
+                          endOpacity={0.12}
+                          noOfSections={4}
+                          hideRules
+                          showYAxisIndices
+                          yAxisIndicesColor="rgba(148,163,184,0.14)"
+                          xAxisThickness={0}
+                          yAxisThickness={0}
+                          yAxisLabelWidth={0}
+                          hideYAxisText
+                          hideDataPoints={false}
+                          dataPointsRadius={5.5}
+                          showVerticalLines
+                          verticalLinesColor="rgba(148,163,184,0.16)"
+                          verticalLinesThickness={1}
+                          dataPointsColor="#7C3AED"
+                          focusedDataPointColor="#6D28D9"
+                          focusedDataPointRadius={7}
+                          showDataPointLabelOnFocus
+                          pointerConfig={earningsPointerConfig}
+                          xAxisLabelTextStyle={styles.fundChartAxisText}
+                          focusEnabled
+                          disableScroll
+                        />
+                      </View>
                     </View>
-                  </View>
-                ) : null}
-                <View style={styles.fundDataStack}>{renderEstimateCards(bundle.earningsEstimate, styles, info?.currency)}</View>
-              </>
+                  ) : null}
+                  <View style={styles.fundDataStack}>{renderEstimateCards(bundle.earningsEstimate, styles, info?.currency)}</View>
+                </>
+              ) : (
+                <AppText style={styles.emptyText}>No earnings estimate data.</AppText>
+              )
             ) : (
-              <AppText style={styles.emptyText}>No earnings estimate data.</AppText>
+              <PremiumLockedCard
+                styles={styles}
+                title="Earnings estimates are available on Pro"
+                body="Forward EPS estimates and forecast periods are locked on the Basic plan."
+                ctaLabel="Go to plans"
+                onPress={onUpgradePress}
+              />
             )}
           </View>
 
           <View style={[styles.card, styles.fundamentalsSectionCard]}>
             <View style={styles.fundSectionHeader}>
-              <AppText style={[styles.cardTitle, styles.fundSectionTitle]}>Revenue estimates</AppText>
+              {renderFundSectionTitle('Revenue estimates', 'revenueEstimates')}
+              <AppText style={[styles.sectionHeroText, styles.fundSectionText]}>
+                Analyst revenue estimates for upcoming periods.
+              </AppText>
+              <AppText style={[styles.sectionHeroText, styles.fundSectionText]}>
+                `Period 2` or `Period 3` means a later estimate period ahead, after the nearest one.
+              </AppText>
             </View>
-            {bundle.revenueEstimate.length ? (
-              <>
-                {revenueAreaData.length ? (
-                  <View style={styles.fundChartStage}>
-                    <View style={styles.fundChartHalo}>
-                      <LineChart
-                        areaChart
-                        data={revenueAreaData}
-                        width={chartWidth}
-                        height={210}
-                        spacing={getFundLineSpacing(revenueAreaData.length, 52)}
-                        initialSpacing={24}
-                        endSpacing={24}
-                        thickness={2.5}
-                        curved
-                        isAnimated
-                        animationDuration={1200}
-                        hideDataPoints={false}
-                        dataPointsRadius={5.5}
-                        color="#0F766E"
-                        lineGradient
-                        lineGradientStartColor="#2DD4BF"
-                        lineGradientEndColor="#0F766E"
-                        startFillColor="rgba(45, 212, 191, 0.24)"
-                        endFillColor="rgba(15, 118, 110, 0.035)"
-                        startOpacity={0.92}
-                        endOpacity={0.12}
-                        noOfSections={4}
-                        hideRules
-                        showYAxisIndices
-                        yAxisIndicesColor="rgba(148,163,184,0.14)"
-                        xAxisThickness={0}
-                        yAxisThickness={0}
-                        yAxisLabelWidth={0}
-                        hideYAxisText
-                        showVerticalLines
-                        verticalLinesColor="rgba(148,163,184,0.16)"
-                        verticalLinesThickness={1}
-                        dataPointsColor="#0F766E"
-                        focusedDataPointColor="#0F766E"
-                        focusedDataPointRadius={7}
-                        showDataPointLabelOnFocus
-                        pointerConfig={revenuePointerConfig}
-                        xAxisLabelTextStyle={styles.fundChartAxisText}
-                        focusEnabled
-                        disableScroll
-                      />
+            {hasProPlan ? (
+              bundle.revenueEstimate.length ? (
+                <>
+                  {revenueAreaData.length ? (
+                    <View style={styles.fundChartStage}>
+                      <View style={styles.fundChartHalo}>
+                        <LineChart
+                          areaChart
+                          data={revenueAreaData}
+                          width={chartWidth}
+                          height={210}
+                          spacing={getFundLineSpacing(revenueAreaData.length, 52)}
+                          initialSpacing={24}
+                          endSpacing={24}
+                          thickness={2.5}
+                          curved
+                          isAnimated
+                          animationDuration={1200}
+                          hideDataPoints={false}
+                          dataPointsRadius={5.5}
+                          color="#0F766E"
+                          lineGradient
+                          lineGradientStartColor="#2DD4BF"
+                          lineGradientEndColor="#0F766E"
+                          startFillColor="rgba(45, 212, 191, 0.24)"
+                          endFillColor="rgba(15, 118, 110, 0.035)"
+                          startOpacity={0.92}
+                          endOpacity={0.12}
+                          noOfSections={4}
+                          hideRules
+                          showYAxisIndices
+                          yAxisIndicesColor="rgba(148,163,184,0.14)"
+                          xAxisThickness={0}
+                          yAxisThickness={0}
+                          yAxisLabelWidth={0}
+                          hideYAxisText
+                          showVerticalLines
+                          verticalLinesColor="rgba(148,163,184,0.16)"
+                          verticalLinesThickness={1}
+                          dataPointsColor="#0F766E"
+                          focusedDataPointColor="#0F766E"
+                          focusedDataPointRadius={7}
+                          showDataPointLabelOnFocus
+                          pointerConfig={revenuePointerConfig}
+                          xAxisLabelTextStyle={styles.fundChartAxisText}
+                          focusEnabled
+                          disableScroll
+                        />
+                      </View>
                     </View>
-                  </View>
-                ) : null}
-                <View style={styles.fundDataStack}>{renderEstimateCards(bundle.revenueEstimate, styles, info?.currency)}</View>
-              </>
+                  ) : null}
+                  <View style={styles.fundDataStack}>{renderEstimateCards(bundle.revenueEstimate, styles, info?.currency)}</View>
+                </>
+              ) : (
+                <AppText style={styles.emptyText}>No revenue estimate data.</AppText>
+              )
             ) : (
-              <AppText style={styles.emptyText}>No revenue estimate data.</AppText>
+              <PremiumLockedCard
+                styles={styles}
+                title="Revenue estimates are available on Pro"
+                body="Forward revenue estimate trends and forecast periods are locked on the Basic plan."
+                ctaLabel="Go to plans"
+                onPress={onUpgradePress}
+              />
             )}
           </View>
 
           <View style={[styles.card, styles.fundamentalsSectionCard]}>
             <View style={styles.fundSectionHeader}>
-              <AppText style={[styles.cardTitle, styles.fundSectionTitle]}>Earnings history</AppText>
+              {renderFundSectionTitle('Earnings history', 'earningsHistory')}
+              <AppText style={[styles.sectionHeroText, styles.fundSectionText]}>
+                Reported EPS over past periods.
+              </AppText>
             </View>
             {bundle.earningsHistory.length ? (
               <>
@@ -2825,14 +3064,6 @@ const FundamentalsTab = ({
                         disableScroll
                       />
                     </View>
-                    <View style={styles.fundChartMetaRow}>
-                      {earningsHistorySummary.map((item, index) => (
-                        <View key={`${item.label}-${index}`} style={styles.fundChartMetaPill}>
-                          <AppText style={styles.fundChartMetaLabel}>{item.label}</AppText>
-                          <AppText style={styles.fundChartMetaValue}>{item.value}</AppText>
-                        </View>
-                      ))}
-                    </View>
                   </View>
                 ) : null}
                 <View style={styles.fundDataStack}>{renderEarningsHistoryCards(bundle.earningsHistory, styles)}</View>
@@ -2844,7 +3075,10 @@ const FundamentalsTab = ({
 
           <View style={[styles.card, styles.fundamentalsSectionCard]}>
             <View style={styles.fundSectionHeader}>
-              <AppText style={[styles.cardTitle, styles.fundSectionTitle]}>Income statement</AppText>
+              {renderFundSectionTitle('Income statement', 'incomeStatement')}
+              <AppText style={[styles.sectionHeroText, styles.fundSectionText]}>
+                Reported revenue by period from the income statement.
+              </AppText>
             </View>
             {bundle.incomeStatement.length ? (
               <>
@@ -2895,14 +3129,6 @@ const FundamentalsTab = ({
                         disableScroll
                       />
                     </View>
-                    <View style={styles.fundChartMetaRow}>
-                      {incomeStatementSummary.map((item, index) => (
-                        <View key={`${item.label}-${index}`} style={styles.fundChartMetaPill}>
-                          <AppText style={styles.fundChartMetaLabel}>{item.label}</AppText>
-                          <AppText style={styles.fundChartMetaValue}>{item.value}</AppText>
-                        </View>
-                      ))}
-                    </View>
                   </View>
                 ) : null}
                 {renderStatementCards(bundle.incomeStatement, statementKeyOrder.income, styles, info?.currency)}
@@ -2914,7 +3140,7 @@ const FundamentalsTab = ({
 
           <View style={[styles.card, styles.fundamentalsSectionCard]}>
             <View style={styles.fundSectionHeader}>
-              <AppText style={[styles.cardTitle, styles.fundSectionTitle]}>Balance sheet</AppText>
+              {renderFundSectionTitle('Balance sheet', 'balanceSheet')}
             </View>
             {bundle.balanceSheet.length ? (
               <>
@@ -2960,6 +3186,21 @@ const FundamentalsTab = ({
 
         </>
       ) : null}
+
+      <AppDialog
+        visible={Boolean(activeFundSectionInfo)}
+        title={activeFundSectionInfo ? FUND_SECTION_INFO[activeFundSectionInfo].title : ''}
+        message={activeFundSectionInfo ? FUND_SECTION_INFO[activeFundSectionInfo].message : ''}
+        onRequestClose={closeFundSectionInfo}
+        icon={Info}
+        actions={[
+          {
+            label: 'Close',
+            onPress: closeFundSectionInfo,
+          },
+        ] as any}
+      />
+
     </View>
   );
 };
@@ -3412,6 +3653,8 @@ const TabContent = ({
   watchlistAdded,
   watchlistBusy,
   authFetch,
+  hasProPlan,
+  onUpgradePress,
 }: any) => {
   if (activeTab === 'overview') {
     return (
@@ -3426,6 +3669,8 @@ const TabContent = ({
         themeColors={themeColors}
         watchlistAdded={watchlistAdded}
         watchlistBusy={watchlistBusy}
+        hasProPlan={hasProPlan}
+        onUpgradePress={onUpgradePress}
       />
     );
   }
@@ -3445,6 +3690,8 @@ const TabContent = ({
         watchlistAdded={watchlistAdded}
         watchlistBusy={watchlistBusy}
         authFetch={authFetch}
+        hasProPlan={hasProPlan}
+        onUpgradePress={onUpgradePress}
       />
     );
   }
@@ -3456,6 +3703,8 @@ const TabContent = ({
         loading={fundamentalsState.loading}
         error={fundamentalsState.error}
         themeColors={themeColors}
+        hasProPlan={hasProPlan}
+        onUpgradePress={onUpgradePress}
       />
     );
   }
@@ -3476,9 +3725,12 @@ const TabContent = ({
   );
 };
 
-const StockDetailScreen = ({ route }: any) => {
-  const { authFetch, themeColors, token } = useUser() as any;
-  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+const StockDetailScreen = ({ navigation, route }: any) => {
+  const { authFetch, themeColors, token, currentPlan } = useUser() as any;
+  const insets = useSafeAreaInsets();
+  const headerTopPadding = Math.max(insets.top + 8, 16);
+  const styles = useMemo(() => createStyles(themeColors, headerTopPadding), [headerTopPadding, themeColors]);
+  const hasProPlan = useMemo(() => hasProAccess(currentPlan), [currentPlan]);
   const symbol = useMemo(() => normalizeStockSymbol(route?.params?.symbol), [route?.params?.symbol]);
   const normalizedWatchSymbol = useMemo(() => normalizeWatchlistSymbol(symbol), [symbol]);
   const routeTab = useMemo(
@@ -3540,26 +3792,29 @@ const StockDetailScreen = ({ route }: any) => {
   const fundamentalsState = useStockFundamentals(symbol, visitedTabs.fundamentals || activeTab === 'fundamentals');
   const newsState = useStockNews(symbol, visitedTabs.news || activeTab === 'news');
   const alertsState = useTickerAlerts(symbol, Boolean(token) && (visitedTabs.alerts || activeTab === 'alerts'));
+  const reloadInfo = infoState.reload;
+  const reloadOverviewSparkline = overviewSparkline.reload;
+  const reloadChart = chartState.reload;
 
   useEffect(() => {
     if (activeTab === 'overview') {
-      infoState.reload();
-      overviewSparkline.reload();
+      reloadInfo();
+      reloadOverviewSparkline();
     }
-  }, [activeTab, infoState.reload, overviewSparkline.reload]);
+  }, [activeTab, reloadInfo, reloadOverviewSparkline]);
 
   useEffect(() => {
     if (activeTab === 'chart') {
-      infoState.reload();
-      chartState.reload();
+      reloadInfo();
+      reloadChart();
     }
-  }, [activeTab, chartState.reload, infoState.reload]);
+  }, [activeTab, reloadChart, reloadInfo]);
 
   useEffect(() => {
     if (activeTab === 'chart') {
-      chartState.reload();
+      reloadChart();
     }
-  }, [activeTab, chartState.reload, chartTimeframe]);
+  }, [activeTab, chartTimeframe, reloadChart]);
 
   const price = infoState.info?.regularMarketPrice;
   const change = infoState.info?.regularMarketChange;
@@ -3829,6 +4084,15 @@ const StockDetailScreen = ({ route }: any) => {
     <View style={styles.screen}>
       <GradientBackground>
         <View style={styles.header}>
+          <Pressable
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+          >
+            <ArrowLeft size={22} color={themeColors.textPrimary} />
+          </Pressable>
+
           <View style={styles.symbolRow}>
             <View style={styles.symbolMeta}>
               <AppText style={styles.symbolText}>{symbol || '--'}</AppText>
@@ -3911,6 +4175,8 @@ const StockDetailScreen = ({ route }: any) => {
                 watchlistAdded={watchlistAdded}
                 watchlistBusy={watchlistLoading || watchlistBusy}
                 authFetch={authFetch}
+                hasProPlan={hasProPlan}
+                onUpgradePress={() => navigation.navigate('Plans')}
               />
             </View>
           </ScrollView>
@@ -3946,17 +4212,29 @@ const StockDetailScreen = ({ route }: any) => {
   );
 };
 
-const createStyles = (colors: Record<string, string>) =>
+const createStyles = (colors: Record<string, string>, headerTopPadding = 0) =>
   StyleSheet.create({
     screen: {
       flex: 1,
       backgroundColor: colors.background,
     },
     header: {
-      paddingTop: 28,
+      paddingTop: headerTopPadding,
       paddingHorizontal: 16,
       paddingBottom: 14,
       gap: 10,
+    },
+    backButton: {
+      alignSelf: 'flex-start',
+      width: 44,
+      height: 44,
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceGlass,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 4,
     },
     symbolRow: {
       flexDirection: 'row',
@@ -4200,9 +4478,26 @@ const createStyles = (colors: Record<string, string>) =>
       justifyContent: 'flex-start',
       gap: 6,
     },
+    fundSectionTitleRow: {
+      width: '100%',
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 12,
+    },
     fundSectionTitle: {
       fontFamily: FONT.extraBold,
       letterSpacing: 0.2,
+    },
+    sectionInfoButton: {
+      width: 30,
+      height: 30,
+      borderRadius: 15,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceAlt,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     fundSectionText: {
       maxWidth: 520,
@@ -4434,47 +4729,6 @@ const createStyles = (colors: Record<string, string>) =>
       fontSize: 11,
       fontFamily: FONT.medium,
       textAlign: 'left',
-    },
-    fundChartMetaRow: {
-      width: '100%',
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      justifyContent: 'flex-start',
-      gap: 8,
-      marginTop: 10,
-      marginBottom: 8,
-    },
-    fundChartMetaPill: {
-      minWidth: 110,
-      paddingHorizontal: 14,
-      paddingTop: 12,
-      paddingBottom: 11,
-      borderRadius: 18,
-      borderWidth: 1,
-      borderColor: 'rgba(148,163,184,0.18)',
-      backgroundColor: colors.surfaceGlass,
-      alignItems: 'flex-start',
-      gap: 4,
-      shadowColor: '#0F172A',
-      shadowOpacity: 0.04,
-      shadowRadius: 8,
-      shadowOffset: { width: 0, height: 4 },
-      elevation: 1,
-    },
-    fundChartMetaLabel: {
-      color: colors.textMuted,
-      fontSize: 10,
-      fontFamily: FONT.medium,
-      textTransform: 'uppercase',
-      letterSpacing: 0.5,
-    },
-    fundChartMetaValue: {
-      color: colors.textPrimary,
-      fontSize: 12,
-      lineHeight: 17,
-      fontFamily: FONT.semiBold,
-      textAlign: 'left',
-      width: '100%',
     },
     fundPointerBubble: {
       minWidth: 112,
@@ -5096,6 +5350,62 @@ const createStyles = (colors: Record<string, string>) =>
       lineHeight: 18,
       fontFamily: FONT.medium,
     },
+    premiumLockedCard: {
+      position: 'relative',
+      overflow: 'hidden',
+      borderRadius: 24,
+      borderWidth: 1,
+      borderColor: 'rgba(59, 130, 246, 0.22)',
+      backgroundColor: 'rgba(37, 99, 235, 0.08)',
+      paddingHorizontal: 18,
+      paddingVertical: 18,
+      gap: 10,
+      marginTop: 10,
+    },
+    premiumLockedCardCompact: {
+      marginTop: 14,
+    },
+    premiumLockedGlow: {
+      position: 'absolute',
+      top: -42,
+      right: -24,
+      width: 138,
+      height: 138,
+      borderRadius: 999,
+      backgroundColor: 'rgba(96, 165, 250, 0.16)',
+    },
+    premiumLockedEyebrow: {
+      fontSize: 11,
+      letterSpacing: 1.2,
+      textTransform: 'uppercase',
+      color: '#2563EB',
+      fontFamily: FONT.semiBold,
+    },
+    premiumLockedTitle: {
+      fontSize: 18,
+      lineHeight: 24,
+      color: colors.textPrimary,
+      fontFamily: FONT.extraBold,
+    },
+    premiumLockedBody: {
+      fontSize: 13,
+      lineHeight: 20,
+      color: colors.textMuted,
+      fontFamily: FONT.regular,
+    },
+    premiumLockedButton: {
+      alignSelf: 'flex-start',
+      borderRadius: 14,
+      backgroundColor: '#2563EB',
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      marginTop: 2,
+    },
+    premiumLockedButtonText: {
+      fontSize: 13,
+      color: '#FFFFFF',
+      fontFamily: FONT.semiBold,
+    },
     chartTfChip: {
       minWidth: 0,
       flexGrow: 1,
@@ -5153,6 +5463,10 @@ const createStyles = (colors: Record<string, string>) =>
       padding: 14,
       gap: 8,
     },
+    premiumMetricCard: {
+      backgroundColor: 'rgba(37, 99, 235, 0.08)',
+      borderColor: 'rgba(37, 99, 235, 0.18)',
+    },
     skeletonCard: {
       minHeight: 92,
       backgroundColor: colors.surfaceAlt,
@@ -5175,6 +5489,10 @@ const createStyles = (colors: Record<string, string>) =>
       fontSize: 15,
       lineHeight: 22,
       fontFamily: FONT.semiBold,
+    },
+    premiumMetricValue: {
+      color: '#2563EB',
+      letterSpacing: 1.4,
     },
     aboutGrid: {
       gap: 10,

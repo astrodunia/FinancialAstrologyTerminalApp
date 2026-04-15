@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
-import { NavigationContainer } from '@react-navigation/native';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { ArrowLeft } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Home from '../screens/Home/Home.js';
 import LoginScreen from '../screens/LoginScreen';
 import Register from '../screens/Register/Register';
@@ -15,6 +17,7 @@ import Products from '../screens/Products/Products';
 import ProductDetail from '../screens/ProductDetail/ProductDetail';
 import AboutTerminal from '../screens/AboutTerminal/AboutTerminal';
 import Plans from '../screens/Plans/Plans';
+import UpgradeOnWebsite from '../screens/UpgradeOnWebsite/UpgradeOnWebsite';
 import PrivacyPolicy from '../screens/PrivacyPolicy/PrivacyPolicy';
 import Support from '../screens/Support/Support';
 import ForgotPassword from '../screens/ForgotPassword/ForgotPassword';
@@ -28,6 +31,31 @@ import { useUser } from '../store/UserContext';
 import SectorDetailScreen from '../screens/SectorDetail/SectorDetailScreen';
 
 const Stack = createNativeStackNavigator();
+const navigationRef = createNavigationContainerRef();
+const BACK_BUTTON_HIDDEN_ROUTES = new Set([
+  'Home',
+  'Watchlist',
+  'Sectors',
+  'Portfolio',
+  'Overview',
+  'GlobalIndices',
+  'Plans',
+  'Products',
+  'ProductDetail',
+  'Calculators',
+  'CalculatorCategoryList',
+  'CalculatorTool',
+  'Profile',
+  'AboutTerminal',
+  'PrivacyPolicy',
+  'Support',
+  'SectorDetail',
+  'StockDetail',
+  'IndexDetail',
+  'UpgradeOnWebsite',
+  'Register',
+  'Login',
+]);
 const linking = {
   prefixes: ['financialastrology://', 'https://financialastrology.app'],
   config: {
@@ -47,6 +75,7 @@ const linking = {
       ProductDetail: 'products/:productId',
       AboutTerminal: 'about-terminal',
       Plans: 'plans',
+      UpgradeOnWebsite: 'upgrade',
       PrivacyPolicy: 'privacy-policy',
       Support: 'support',
       StockDetail: 's/:symbol/:tab?/:tf?',
@@ -56,12 +85,13 @@ const linking = {
 
 const AppNavigation = () => {
     const { isHydrating, token, themeColors, entryRoute } = useUser();
+    const insets = useSafeAreaInsets();
     const [isRouteLoading, setIsRouteLoading] = useState(false);
+    const [canGoBack, setCanGoBack] = useState(false);
+    const [activeRouteName, setActiveRouteName] = useState(entryRoute || (token ? 'Home' : 'Login'));
     const activeRouteNameRef = useRef(null);
     const hideLoadingTimerRef = useRef(null);
     const styles = useMemo(() => createStyles(themeColors), [themeColors]);
-    const appInitialRoute = entryRoute === 'Plans' ? 'Plans' : 'Home';
-
     const stopRouteLoading = useCallback((delayMs = 140) => {
       if (hideLoadingTimerRef.current) {
         clearTimeout(hideLoadingTimerRef.current);
@@ -101,6 +131,8 @@ const AppNavigation = () => {
         }
 
         activeRouteNameRef.current = nextRouteName;
+        setActiveRouteName(nextRouteName);
+        setCanGoBack(navigationRef.canGoBack());
       },
       [getActiveRouteName, startRouteLoading, stopRouteLoading],
     );
@@ -136,10 +168,14 @@ const AppNavigation = () => {
     return (
        <View style={styles.appRoot}>
        <NavigationContainer
+         ref={navigationRef}
          linking={linking}
          onReady={() => {
-           activeRouteNameRef.current = entryRoute || (token ? 'Home' : 'Login');
+           const initialRouteName = entryRoute || (token ? 'Home' : 'Login');
+           activeRouteNameRef.current = initialRouteName;
+           setActiveRouteName(initialRouteName);
            setIsRouteLoading(false);
+           setCanGoBack(navigationRef.canGoBack());
          }}
         onStateChange={handleNavigationStateChange}
       >
@@ -153,6 +189,7 @@ const AppNavigation = () => {
               <>
                 <Stack.Screen name="Home" component={Home} />
                 <Stack.Screen name="Plans" component={Plans} />
+                <Stack.Screen name="UpgradeOnWebsite" component={UpgradeOnWebsite} />
                 <Stack.Screen name="Watchlist" component={Watchlist} />
                 <Stack.Screen name="Sectors" component={Sectors} />
                 <Stack.Screen name="Portfolio" component={Portfolio} />
@@ -181,6 +218,18 @@ const AppNavigation = () => {
             )}
           </Stack.Navigator>
        </NavigationContainer>
+       {canGoBack && !BACK_BUTTON_HIDDEN_ROUTES.has(activeRouteName) ? (
+         <View style={[styles.backButtonWrap, { top: insets.top + 4 }]} pointerEvents="box-none">
+          <Pressable
+            style={styles.backButton}
+            onPress={() => navigationRef.goBack()}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+          >
+            <ArrowLeft size={22} color={themeColors.textPrimary} />
+          </Pressable>
+        </View>
+      ) : null}
        {isRouteLoading ? (
          <View style={styles.routeLoaderOverlay} pointerEvents="auto">
            <View style={styles.routeLoaderCard}>
@@ -218,6 +267,25 @@ const createStyles = (colors) =>
       zIndex: 9999,
       elevation: 9999,
     },
+    backButtonWrap: {
+      position: 'absolute',
+      left: 16,
+      right: 16,
+      zIndex: 9000,
+      elevation: 9000,
+      pointerEvents: 'box-none',
+    },
+    backButton: {
+      alignSelf: 'flex-start',
+      width: 44,
+      height: 44,
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceGlass,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
     routeLoaderCard: {
       minWidth: 132,
       paddingHorizontal: 16,
@@ -237,5 +305,3 @@ const createStyles = (colors) =>
   });
 
 export default AppNavigation;
-
-

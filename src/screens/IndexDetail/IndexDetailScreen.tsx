@@ -11,12 +11,13 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Bell, Bookmark, RefreshCcw, Search, X } from 'lucide-react-native';
+import { ArrowLeft, Bell, Bookmark, RefreshCcw, Search, X } from 'lucide-react-native';
 import Svg, { Circle, Line, Path, Rect } from 'react-native-svg';
 import AppDialog from '../../components/AppDialog';
 import AppText from '../../components/AppText';
 import BottomTabs from '../../components/BottomTabs';
 import GradientBackground from '../../components/GradientBackground';
+import { hasProAccess } from '../../features/plans/guards';
 import { useUser } from '../../store/UserContext';
 import { navigateToStockDetail, normalizeStockSymbol } from '../../features/stocks/navigation';
 import {
@@ -273,6 +274,28 @@ const buildNakshatraRows = (dataset: any): TransitRow[] => {
 };
 
 const ALL_NAKSHATRA_ROWS: TransitRow[] = buildNakshatraRows(nakshatraTransitData);
+
+const PremiumLockedSection = ({
+  styles,
+  title,
+  body,
+  onPress,
+}: {
+  styles: ReturnType<typeof createStyles>;
+  title: string;
+  body: string;
+  onPress: () => void;
+}) => (
+  <View style={styles.premiumLockedCard}>
+    <View style={styles.premiumLockedGlow} />
+    <AppText style={styles.premiumLockedEyebrow}>Pro Preview</AppText>
+    <AppText style={styles.premiumLockedTitle}>{title}</AppText>
+    <AppText style={styles.premiumLockedBody}>{body}</AppText>
+    <Pressable style={styles.premiumLockedButton} onPress={onPress}>
+      <AppText style={styles.premiumLockedButtonText}>Go to plans</AppText>
+    </Pressable>
+  </View>
+);
 
 const overlapsRange = (row: TransitRow, startTs: number, endTs: number) => {
   const rowStart = new Date(row.start).getTime();
@@ -743,9 +766,10 @@ const MainChart = ({
 };
 
 export function IndexDetailScreen({ navigation, route }: any) {
-  const { theme, themeColors, token, authFetch } = useUser() as any;
+  const { theme, themeColors, token, authFetch, currentPlan } = useUser() as any;
   const colors = useMemo(() => createPalette(themeColors, theme), [theme, themeColors]);
   const styles = useMemo(() => createStyles(colors, theme), [colors, theme]);
+  const hasProPlan = useMemo(() => hasProAccess(currentPlan), [currentPlan]);
 
   const routeSymbol = route?.params?.symbol;
   const routeTf = route?.params?.tf;
@@ -1073,9 +1097,18 @@ export function IndexDetailScreen({ navigation, route }: any) {
       <GradientBackground>
         <SafeAreaView style={styles.safeArea} edges={['top']}>
           <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+            <Pressable
+              style={styles.backButton}
+              onPress={() => navigation.goBack()}
+              accessibilityRole="button"
+              accessibilityLabel="Go back"
+            >
+              <ArrowLeft size={22} color={colors.textPrimary} />
+            </Pressable>
+
             <View style={styles.headerRow}>
               <View style={styles.headerCopy}>
-                <AppText style={styles.eyebrow}>Global Index</AppText>
+                
                 <AppText style={styles.screenTitle}>{title || 'Index'}</AppText>
                 <AppText style={styles.screenSubtitle}>
                   {symbol || '--'} • {snapshot?.marketState ? String(snapshot.marketState).toUpperCase() : 'STATE N/A'}
@@ -1299,134 +1332,145 @@ export function IndexDetailScreen({ navigation, route }: any) {
                     </View>
                   </View>
 
-                  <View style={styles.chartTransitModeRow}>
-                    {(['planetary', 'nakshatra'] as TransitMode[]).map((mode) => {
-                      const active = mode === transitMode;
-                      return (
-                        <Pressable
-                          key={mode}
-                          onPress={() => setTransitMode(mode)}
-                          style={[styles.chartTransitModeChip, active ? styles.chartTransitModeChipActive : null]}
-                        >
-                          <AppText style={[styles.chartTransitModeText, active ? styles.chartTransitModeTextActive : null]}>
-                            {mode === 'planetary' ? 'Planetary' : 'Nakshatra'}
-                          </AppText>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-
-                  {transitPlanets.length > 1 ? (
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.remainingRow}>
-                      {transitPlanets.map((planet) => {
-                        const active = planet === selectedTransitPlanet;
-                        return (
-                          <Pressable
-                            key={planet}
-                            onPress={() => setSelectedTransitPlanet(planet)}
-                            style={[styles.chartTfChip, active ? styles.chartTfChipActive : null]}
-                          >
-                            <AppText style={[styles.chartTfChipText, active ? styles.chartTfChipTextActive : null]}>{planet}</AppText>
-                          </Pressable>
-                        );
-                      })}
-                    </ScrollView>
-                  ) : null}
-
-                  {featuredTransit ? (
-                    <View style={styles.transitFeaturedCard}>
-                      <View style={styles.transitFeaturedHeader}>
-                        <View style={styles.transitFeaturedTitleBlock}>
-                          <AppText style={styles.transitFeaturedEyebrow}>
-                            {featuredTransit.isActive ? 'Current Transit' : 'Latest Transit'}
-                          </AppText>
-                          <AppText style={styles.transitFeaturedTitle}>{featuredTransit.label}</AppText>
-                          <AppText style={styles.transitFeaturedSub}>{featuredTransit.subLabel}</AppText>
-                        </View>
-                        <View style={styles.transitFeaturedValueBlock}>
-                          <AppText
-                            style={[
-                              styles.transitFeaturedPct,
-                              { color: featuredTransit.pctChange >= 0 ? colors.positive : colors.negative },
-                            ]}
-                          >
-                            {featuredTransit.pctChange >= 0 ? '+' : ''}
-                            {featuredTransit.pctChange.toFixed(2)}%
-                          </AppText>
-                          <AppText style={styles.transitFeaturedValue}>
-                            {featuredTransit.absChange >= 0 ? '+' : ''}
-                            {formatValue(featuredTransit.absChange, 2)}
-                          </AppText>
-                        </View>
+                  {hasProPlan ? (
+                    <>
+                      <View style={styles.chartTransitModeRow}>
+                        {(['planetary', 'nakshatra'] as TransitMode[]).map((mode) => {
+                          const active = mode === transitMode;
+                          return (
+                            <Pressable
+                              key={mode}
+                              onPress={() => setTransitMode(mode)}
+                              style={[styles.chartTransitModeChip, active ? styles.chartTransitModeChipActive : null]}
+                            >
+                              <AppText style={[styles.chartTransitModeText, active ? styles.chartTransitModeTextActive : null]}>
+                                {mode === 'planetary' ? 'Planetary' : 'Nakshatra'}
+                              </AppText>
+                            </Pressable>
+                          );
+                        })}
                       </View>
 
-                      <AppText style={styles.transitFeaturedRange}>
-                        {formatDateTime(featuredTransit.start)} {'->'} {formatDateTime(featuredTransit.end || latestTransitTimestamp)}
-                      </AppText>
+                      {transitPlanets.length > 1 ? (
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.remainingRow}>
+                          {transitPlanets.map((planet) => {
+                            const active = planet === selectedTransitPlanet;
+                            return (
+                              <Pressable
+                                key={planet}
+                                onPress={() => setSelectedTransitPlanet(planet)}
+                                style={[styles.chartTfChip, active ? styles.chartTfChipActive : null]}
+                              >
+                                <AppText style={[styles.chartTfChipText, active ? styles.chartTfChipTextActive : null]}>{planet}</AppText>
+                              </Pressable>
+                            );
+                          })}
+                        </ScrollView>
+                      ) : null}
 
-                      <View style={styles.transitMetricRow}>
-                        <View style={styles.transitMetricCard}>
-                          <AppText style={styles.transitMetricLabel}>Start</AppText>
-                          <AppText style={styles.transitMetricValue}>{formatValue(featuredTransit.startClose, 2)}</AppText>
-                        </View>
-                        <View style={styles.transitMetricCard}>
-                          <AppText style={styles.transitMetricLabel}>End</AppText>
-                          <AppText style={styles.transitMetricValue}>{formatValue(featuredTransit.endClose, 2)}</AppText>
-                        </View>
-                      </View>
-                    </View>
-                  ) : null}
-
-                  {transitLoading ? (
-                    <View style={styles.chartTransitState}>
-                      <ActivityIndicator size="small" color={colors.textPrimary} />
-                      <AppText style={styles.centerMessage}>Loading transit windows...</AppText>
-                    </View>
-                  ) : transitMode === 'planetary' && transitError ? (
-                    <AppText style={styles.centerMessage}>{transitError}</AppText>
-                  ) : filteredTransitResults.length ? (
-                    <View style={styles.transitList}>
-                      {filteredTransitResults.slice(0, 8).map((item) => (
-                        <View key={item.key} style={styles.transitListCard}>
-                          <View style={styles.transitListHeader}>
-                            <View style={styles.transitListTitleBlock}>
-                              <AppText style={styles.transitListTitle}>{item.label}</AppText>
-                              <AppText style={styles.transitListSub}>{item.subLabel}</AppText>
+                      {featuredTransit ? (
+                        <View style={styles.transitFeaturedCard}>
+                          <View style={styles.transitFeaturedHeader}>
+                            <View style={styles.transitFeaturedTitleBlock}>
+                              <AppText style={styles.transitFeaturedEyebrow}>
+                                {featuredTransit.isActive ? 'Current Transit' : 'Latest Transit'}
+                              </AppText>
+                              <AppText style={styles.transitFeaturedTitle}>{featuredTransit.label}</AppText>
+                              <AppText style={styles.transitFeaturedSub}>{featuredTransit.subLabel}</AppText>
                             </View>
-                            <AppText
-                              style={[
-                                styles.transitListPct,
-                                { color: item.pctChange >= 0 ? colors.positive : colors.negative },
-                              ]}
-                            >
-                              {item.pctChange >= 0 ? '+' : ''}
-                              {item.pctChange.toFixed(2)}%
-                            </AppText>
+                            <View style={styles.transitFeaturedValueBlock}>
+                              <AppText
+                                style={[
+                                  styles.transitFeaturedPct,
+                                  { color: featuredTransit.pctChange >= 0 ? colors.positive : colors.negative },
+                                ]}
+                              >
+                                {featuredTransit.pctChange >= 0 ? '+' : ''}
+                                {featuredTransit.pctChange.toFixed(2)}%
+                              </AppText>
+                              <AppText style={styles.transitFeaturedValue}>
+                                {featuredTransit.absChange >= 0 ? '+' : ''}
+                                {formatValue(featuredTransit.absChange, 2)}
+                              </AppText>
+                            </View>
                           </View>
-                          <AppText style={styles.transitListRange}>
-                            {formatDateTime(item.start)} {'->'} {formatDateTime(item.end || latestTransitTimestamp)}
+
+                          <AppText style={styles.transitFeaturedRange}>
+                            {formatDateTime(featuredTransit.start)} {'->'} {formatDateTime(featuredTransit.end || latestTransitTimestamp)}
                           </AppText>
-                          <View style={styles.transitListFooter}>
-                            <AppText style={styles.transitListValue}>
-                              {formatValue(item.startClose, 2)} {'->'} {formatValue(item.endClose, 2)}
-                            </AppText>
-                            <AppText
-                              style={[
-                                styles.transitListValue,
-                                { color: item.absChange >= 0 ? colors.positive : colors.negative },
-                              ]}
-                            >
-                              {item.absChange >= 0 ? '+' : ''}
-                              {formatValue(item.absChange, 2)}
-                            </AppText>
+
+                          <View style={styles.transitMetricRow}>
+                            <View style={styles.transitMetricCard}>
+                              <AppText style={styles.transitMetricLabel}>Start</AppText>
+                              <AppText style={styles.transitMetricValue}>{formatValue(featuredTransit.startClose, 2)}</AppText>
+                            </View>
+                            <View style={styles.transitMetricCard}>
+                              <AppText style={styles.transitMetricLabel}>End</AppText>
+                              <AppText style={styles.transitMetricValue}>{formatValue(featuredTransit.endClose, 2)}</AppText>
+                            </View>
                           </View>
                         </View>
-                      ))}
-                    </View>
+                      ) : null}
+
+                      {transitLoading ? (
+                        <View style={styles.chartTransitState}>
+                          <ActivityIndicator size="small" color={colors.textPrimary} />
+                          <AppText style={styles.centerMessage}>Loading transit windows...</AppText>
+                        </View>
+                      ) : transitMode === 'planetary' && transitError ? (
+                        <AppText style={styles.centerMessage}>{transitError}</AppText>
+                      ) : filteredTransitResults.length ? (
+                        <View style={styles.transitList}>
+                          {filteredTransitResults.slice(0, 8).map((item) => (
+                            <View key={item.key} style={styles.transitListCard}>
+                              <View style={styles.transitListHeader}>
+                                <View style={styles.transitListTitleBlock}>
+                                  <AppText style={styles.transitListTitle}>{item.label}</AppText>
+                                  <AppText style={styles.transitListSub}>{item.subLabel}</AppText>
+                                </View>
+                                <AppText
+                                  style={[
+                                    styles.transitListPct,
+                                    { color: item.pctChange >= 0 ? colors.positive : colors.negative },
+                                  ]}
+                                >
+                                  {item.pctChange >= 0 ? '+' : ''}
+                                  {item.pctChange.toFixed(2)}%
+                                </AppText>
+                              </View>
+                              <AppText style={styles.transitListRange}>
+                                {formatDateTime(item.start)} {'->'} {formatDateTime(item.end || latestTransitTimestamp)}
+                              </AppText>
+                              <View style={styles.transitListFooter}>
+                                <AppText style={styles.transitListValue}>
+                                  {formatValue(item.startClose, 2)} {'->'} {formatValue(item.endClose, 2)}
+                                </AppText>
+                                <AppText
+                                  style={[
+                                    styles.transitListValue,
+                                    { color: item.absChange >= 0 ? colors.positive : colors.negative },
+                                  ]}
+                                >
+                                  {item.absChange >= 0 ? '+' : ''}
+                                  {formatValue(item.absChange, 2)}
+                                </AppText>
+                              </View>
+                            </View>
+                          ))}
+                        </View>
+                      ) : (
+                        <AppText style={styles.centerMessage}>
+                          No {transitMode === 'planetary' ? 'planetary' : 'nakshatra'} transit performance matched this chart range.
+                        </AppText>
+                      )}
+                    </>
                   ) : (
-                    <AppText style={styles.centerMessage}>
-                      No {transitMode === 'planetary' ? 'planetary' : 'nakshatra'} transit performance matched this chart range.
-                    </AppText>
+                    <PremiumLockedSection
+                      styles={styles}
+                      title="Planetary performance is available on Pro"
+                      body="Upgrade to Pro to unlock planetary and nakshatra performance for index chart ranges."
+                      onPress={() => navigation.navigate('Plans')}
+                    />
                   )}
                 </View>
 
@@ -1554,9 +1598,22 @@ const createStyles = (colors: any, theme: string) =>
     },
     content: {
       paddingHorizontal: 10,
-      paddingTop: 12,
+      paddingTop: 8,
       paddingBottom: 116,
       gap: 18,
+    },
+    backButton: {
+      alignSelf: 'flex-start',
+      width: 44,
+      height: 44,
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceGlass,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginLeft: 4,
+      marginBottom: 4,
     },
     headerRow: {
       flexDirection: 'row',
@@ -1575,6 +1632,7 @@ const createStyles = (colors: any, theme: string) =>
       letterSpacing: 1.3,
       textTransform: 'uppercase',
       fontFamily: FONT.medium,
+      marginTop: 30,
     },
     screenTitle: {
       fontSize: 20,
@@ -2053,6 +2111,59 @@ const createStyles = (colors: any, theme: string) =>
       gap: 10,
       alignItems: 'center',
       justifyContent: 'center',
+    },
+    premiumLockedCard: {
+      position: 'relative',
+      overflow: 'hidden',
+      borderRadius: 24,
+      borderWidth: 1,
+      borderColor: 'rgba(59, 130, 246, 0.22)',
+      backgroundColor: 'rgba(37, 99, 235, 0.08)',
+      paddingHorizontal: 18,
+      paddingVertical: 18,
+      gap: 10,
+      marginTop: 10,
+    },
+    premiumLockedGlow: {
+      position: 'absolute',
+      top: -42,
+      right: -24,
+      width: 138,
+      height: 138,
+      borderRadius: 999,
+      backgroundColor: 'rgba(96, 165, 250, 0.16)',
+    },
+    premiumLockedEyebrow: {
+      fontSize: 11,
+      letterSpacing: 1.2,
+      textTransform: 'uppercase',
+      color: '#2563EB',
+      fontFamily: FONT.semiBold,
+    },
+    premiumLockedTitle: {
+      fontSize: 18,
+      lineHeight: 24,
+      color: colors.textPrimary,
+      fontFamily: FONT.extraBold,
+    },
+    premiumLockedBody: {
+      fontSize: 13,
+      lineHeight: 20,
+      color: colors.textMuted,
+      fontFamily: FONT.regular,
+    },
+    premiumLockedButton: {
+      alignSelf: 'flex-start',
+      borderRadius: 14,
+      backgroundColor: '#2563EB',
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      marginTop: 2,
+    },
+    premiumLockedButtonText: {
+      fontSize: 13,
+      color: '#FFFFFF',
+      fontFamily: FONT.semiBold,
     },
     transitFeaturedCard: {
       marginTop: 8,

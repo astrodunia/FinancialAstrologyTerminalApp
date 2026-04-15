@@ -28,6 +28,13 @@ type AppleLoginPayload = {
   force: boolean;
 };
 
+type PasswordLoginPayload = {
+  email: string;
+  password: string;
+  device_id: string;
+  force: boolean;
+};
+
 const getApiError = (payload: ApiErrorPayload | null | undefined): string => {
   return payload?.error || payload?.message || payload?.errors?.[0]?.msg || '';
 };
@@ -150,6 +157,22 @@ const resolveTakeover = async <TPayload extends { force: boolean }>(
   }
 
   return result.data as LoginResponse;
+};
+
+export const loginWithPasswordRequest = async (
+  email: string,
+  password: string,
+  deviceId: string,
+  confirmTakeover: TakeoverConfirm,
+): Promise<LoginResponse> => {
+  const payload: PasswordLoginPayload = {
+    email: String(email || '').trim().toLowerCase(),
+    password,
+    device_id: deviceId,
+    force: false,
+  };
+
+  return resolveTakeover('/api/auth/login', payload, deviceId, confirmTakeover);
 };
 
 export const signInWithGoogleRequest = async (

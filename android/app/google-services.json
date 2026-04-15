@@ -7,17 +7,17 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:681851320163:android:2ce3e145a63d65b2408556",
+        "mobilesdk_app_id": "1:681851320163:android:ee2d9ae92a8ce47e408556",
         "android_client_info": {
-          "package_name": "com.financialastrologyterminalapp"
+          "package_name": "com.financialastrologyterminal"
         }
       },
       "oauth_client": [
         {
-          "client_id": "681851320163-lesdbvrvgqeclimduagro9rktmpno15b.apps.googleusercontent.com",
+          "client_id": "681851320163-p3sg4qrq20afudciptmikk5kgv4aa1bl.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
-            "package_name": "com.financialastrologyterminalapp",
+            "package_name": "com.financialastrologyterminal",
             "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
           }
         },

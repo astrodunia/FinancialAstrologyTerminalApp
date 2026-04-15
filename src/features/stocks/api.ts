@@ -308,9 +308,11 @@ export const buildAggsFromTagx = (data?: any): StockHistoryPoint[] => {
   keys.forEach((ts) => {
     const t = normalizeTimestamp(ts);
     if (!Number.isFinite(t)) return;
+    const normalizedTimestamp = t as number;
 
     const close = toNumber(closeMap?.[ts] ?? openMap?.[ts]);
     if (close == null || close <= 0) return;
+    const normalizedClose = close;
 
     const open = toNumber(openMap?.[ts]);
     const high = toNumber(highMap?.[ts]) ?? close;
@@ -320,10 +322,10 @@ export const buildAggsFromTagx = (data?: any): StockHistoryPoint[] => {
     if (!Number.isFinite(high) || !Number.isFinite(low) || high <= 0 || low <= 0) return;
 
     aggs.push({
-      timestamp: t,
-      value: close,
-      close,
-      open: open != null && open > 0 ? open : close,
+      timestamp: normalizedTimestamp,
+      value: normalizedClose,
+      close: normalizedClose,
+      open: open != null && open > 0 ? open : normalizedClose,
       high,
       low,
       volume: volume > 0 ? volume : 0,

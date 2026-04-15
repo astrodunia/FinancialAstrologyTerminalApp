@@ -3,13 +3,11 @@ import {
   SafeAreaView,
   ScrollView,
   StyleSheet,
-  Pressable,
   Dimensions,
-  Platform,
-  StatusBar,
   View,
+  Pressable
 } from 'react-native';
-import { Mail, ArrowLeft } from 'lucide-react-native';
+import { Mail } from 'lucide-react-native';
 import AppText from '../../components/AppText';
 import AppTextInput from '../../components/AppTextInput';
 import GradientBackground from '../../components/GradientBackground';
@@ -18,7 +16,6 @@ import { useUser } from '../../store/UserContext';
 const MAX_WIDTH = 420;
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_WIDTH = Math.min(MAX_WIDTH, SCREEN_WIDTH - 32);
-const TOP_INSET = Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 12 : 16;
 
 const createPalette = (themeColors, theme) => ({
   ...themeColors,
@@ -44,10 +41,12 @@ const ForgotPassword = ({ navigation }) => {
 
   const handleReset = async () => {
     if (loading) return;
+
     if (!email.trim()) {
       setError('Please enter your email.');
       return;
     }
+
     if (!/^\S+@\S+\.\S+$/.test(email)) {
       setError('Enter a valid email address.');
       return;
@@ -58,7 +57,6 @@ const ForgotPassword = ({ navigation }) => {
     setLoading(true);
 
     try {
-      // TODO: hook to backend reset endpoint when available.
       await new Promise((resolve) => setTimeout(resolve, 800));
     } finally {
       setLoading(false);
@@ -68,13 +66,12 @@ const ForgotPassword = ({ navigation }) => {
   return (
     <SafeAreaView style={styles.safeArea}>
       <GradientBackground>
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-          <View style={styles.headerRow}>
-            <Pressable style={styles.backButton} onPress={() => navigation.goBack()}>
-              <ArrowLeft size={18} color={colors.textPrimary} />
-              <AppText style={styles.backText}>Back</AppText>
-            </Pressable>
-          </View>
+        <ScrollView
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Added top spacing instead of header */}
+          <View style={styles.topSpacer} />
 
           <AppText style={styles.title}>Forgot password</AppText>
           <AppText style={styles.subtitle}>
@@ -84,8 +81,10 @@ const ForgotPassword = ({ navigation }) => {
           <View style={styles.card}>
             <View style={styles.field}>
               <AppText style={styles.label}>Email</AppText>
+
               <View style={styles.inputRow}>
                 <Mail size={18} color={colors.textMuted} />
+
                 <AppTextInput
                   value={email}
                   onChangeText={setEmail}
@@ -106,10 +105,13 @@ const ForgotPassword = ({ navigation }) => {
               onPress={handleReset}
               disabled={loading}
             >
-              <AppText style={styles.primaryText}>{loading ? 'Sending...' : 'Send reset link'}</AppText>
+              <AppText style={styles.primaryText}>
+                {loading ? 'Sending...' : 'Send reset link'}
+              </AppText>
             </Pressable>
           </View>
         </ScrollView>
+
       </GradientBackground>
     </SafeAreaView>
   );
@@ -121,39 +123,36 @@ const createStyles = (colors) =>
       flex: 1,
       backgroundColor: colors.background,
     },
+
     content: {
       paddingHorizontal: 16,
-      paddingTop: TOP_INSET,
-      paddingBottom: 24,
+      paddingTop: 70,
+      paddingBottom: 100, // space for bottom tabs
       gap: 16,
       alignItems: 'center',
     },
-    headerRow: {
+
+    topSpacer: {
+      height: 30, // replaces header spacing
       width: '100%',
-      maxWidth: CARD_WIDTH,
-      alignItems: 'flex-start',
     },
-    backButton: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
-    },
-    backText: {
-      color: colors.textPrimary,
-      fontSize: 12,
-    },
+
     title: {
       color: colors.textPrimary,
       fontSize: 26,
       width: '100%',
       maxWidth: CARD_WIDTH,
+      fontFamily: 'NotoSans-ExtraBold',
     },
+
     subtitle: {
       color: colors.textMuted,
       fontSize: 13,
       width: '100%',
       maxWidth: CARD_WIDTH,
+      fontFamily: 'NotoSans-Regular',
     },
+
     card: {
       width: '100%',
       maxWidth: CARD_WIDTH,
@@ -164,13 +163,17 @@ const createStyles = (colors) =>
       borderColor: colors.cardBorder,
       gap: 16,
     },
+
     field: {
       gap: 8,
     },
+
     label: {
       color: colors.textPrimary,
       fontSize: 13,
+      fontFamily: 'NotoSans-Medium',
     },
+
     inputRow: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -181,30 +184,40 @@ const createStyles = (colors) =>
       borderWidth: 1,
       borderColor: colors.inputBorder,
     },
+
     input: {
       flex: 1,
       color: colors.textPrimary,
       paddingVertical: 10,
+      fontFamily: 'NotoSans-Regular',
     },
+
     primaryButton: {
       backgroundColor: colors.primaryBg,
       paddingVertical: 12,
       borderRadius: 12,
       alignItems: 'center',
     },
+
     primaryButtonDisabled: {
       opacity: 0.7,
     },
+
     primaryText: {
       color: colors.primaryText,
+      fontFamily: 'NotoSans-SemiBold',
     },
+
     errorText: {
       color: colors.danger,
       fontSize: 12,
+      fontFamily: 'NotoSans-Regular',
     },
+
     messageText: {
       color: colors.success,
       fontSize: 12,
+      fontFamily: 'NotoSans-Regular',
     },
   });
 

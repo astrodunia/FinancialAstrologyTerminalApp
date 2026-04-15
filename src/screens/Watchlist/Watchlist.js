@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, BackHandler, FlatList, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { AlertTriangle, ArrowLeft, ChevronRight, CirclePlus, Pencil, Plus, Trash2 } from 'lucide-react-native';
+import AppDialog from '../../components/AppDialog';
 import AppText from '../../components/AppText';
 import AppTextInput from '../../components/AppTextInput';
 import BottomTabs from '../../components/BottomTabs';
@@ -330,6 +331,8 @@ const Watchlist = ({ navigation }) => {
     isEditingTitle,
     symInput: newSymbol,
     suggestions,
+    feedbackDialog,
+    closeFeedbackDialog,
     setNewTitle: setNewListTitle,
     setEditTitle,
     setIsEditingTitle,
@@ -849,11 +852,14 @@ const Watchlist = ({ navigation }) => {
                       <View style={styles.symbolCardMain}>
                         <View style={styles.symbolIdentity}>
                           <AppText style={styles.symbolNameInline} numberOfLines={1}>{row.symbol}</AppText>
+                          {!!row.name && row.name !== row.symbol ? (
+                            <AppText style={styles.symbolCompanyInline} numberOfLines={1}>{row.name}</AppText>
+                          ) : null}
                         </View>
 
                         <View style={styles.symbolInlineMetrics}>
-                          <AppText style={[styles.symbolChange, up ? styles.up : styles.down]}>{fmtPct(row.pct)}</AppText>
                           <AppText style={styles.symbolPrice}>{fmtPrice(row.price)}</AppText>
+                          <AppText style={[styles.symbolChange, up ? styles.up : styles.down]}>{fmtPct(row.pct)}</AppText>
                           <AppText style={styles.symbolMeta}>{fmtChange(row.change)}</AppText>
                           <Pressable style={styles.removeChip} onPress={() => removeSymbol(row.symbol)} hitSlop={8}>
                             <Trash2 size={13} color={themeColors.negative} />
@@ -943,6 +949,19 @@ const Watchlist = ({ navigation }) => {
             </View>
           </View>
         ) : null}
+
+        <AppDialog
+          visible={feedbackDialog.visible}
+          title={feedbackDialog.title}
+          message={feedbackDialog.message}
+          onRequestClose={closeFeedbackDialog}
+          actions={[
+            {
+              label: 'OK',
+              onPress: closeFeedbackDialog,
+            },
+          ]}
+        />
 
         <BottomTabs activeRoute="Watchlist" navigation={navigation} />
       </GradientBackground>
@@ -1232,12 +1251,12 @@ const createStyles = (colors, isLight, isWide, isCompact) =>
     },
     symbolWrap: { gap: isWide ? 10 : 8, minHeight: 36 },
     symbolCard: {
-      borderRadius: 14,
+      borderRadius: 16,
       borderWidth: 1,
       borderColor: colors.border,
-      backgroundColor: colors.surfaceGlass,
+      backgroundColor: isLight ? 'rgba(255,255,255,0.72)' : 'rgba(11,18,32,0.52)',
       paddingHorizontal: isWide ? 16 : 12,
-      paddingVertical: isWide ? 14 : 12,
+      paddingVertical: isWide ? 13 : 11,
     },
     symbolCardMain: {
       flexDirection: 'row',
@@ -1247,37 +1266,36 @@ const createStyles = (colors, isLight, isWide, isCompact) =>
     },
     symbolIdentity: {
       minWidth: 72,
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
+      flex: 1,
+      gap: 2,
     },
     symbolNameInline: { color: colors.textPrimary, fontSize: 15, fontFamily: FONT.medium },
+    symbolCompanyInline: { color: colors.textMuted, fontSize: 11, fontFamily: FONT.regular },
     symbolInlineMetrics: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'flex-end',
-      gap: 12,
-      flex: 1,
+      gap: 10,
       minWidth: 0,
     },
     symbolPrice: {
       color: colors.textPrimary,
-      fontSize: 16,
-      fontFamily: FONT.semiBold,
-      minWidth: 72,
+      fontSize: 15,
+      fontFamily: FONT.medium,
+      minWidth: 68,
       textAlign: 'right',
     },
     symbolChange: {
       fontSize: 12,
       fontFamily: FONT.medium,
-      minWidth: 58,
+      minWidth: 56,
       textAlign: 'right',
     },
     symbolMeta: {
       color: colors.textMuted,
       fontSize: 11,
-      fontFamily: FONT.medium,
-      minWidth: 56,
+      fontFamily: FONT.regular,
+      minWidth: 52,
       textAlign: 'right',
     },
     removeChip: {

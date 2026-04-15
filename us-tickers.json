@@ -13113,12 +13113,6 @@
       "type": "STOCK"
     },
     {
-      "symbol": "CMA",
-      "name": "Comerica Incorporated Common Stock",
-      "exchange": "N",
-      "type": "STOCK"
-    },
-    {
       "symbol": "CMA$B",
       "name": "Comerica Incorporated Depositary Shares, each representing a 1/40th interest in a share of 6.875% Fixed-Rate Reset Non-Cumulative Perpetual Preferred Stock, Series B",
       "exchange": "N",

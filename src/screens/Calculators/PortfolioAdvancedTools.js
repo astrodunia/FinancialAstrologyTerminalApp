@@ -1,9 +1,9 @@
 import React, { useMemo, useState } from 'react';
 import { Alert, Dimensions, Linking, Pressable, ScrollView, View } from 'react-native';
-import { ArrowLeft, UserCircle } from 'lucide-react-native';
 import Svg, { Circle, Line, Polyline, Rect, Text as SvgText } from 'react-native-svg';
 import AppText from '../../components/AppText';
 import AppTextInput from '../../components/AppTextInput';
+import BackButtonHeader from '../../components/BackButtonHeader';
 
 const fmt = (v, d = 2) => {
   if (v == null || !Number.isFinite(v)) return '--';
@@ -36,11 +36,9 @@ const ASTRO_SCORE_MAP = {
 
 function PageHeader({ navigation, styles, themeColors, title, subtitle }) {
   return (
-    <View style={styles.header}>
-      <Pressable style={styles.iconBtn} onPress={() => navigation.goBack()}><ArrowLeft size={16} color={themeColors.textPrimary} /></Pressable>
+    <BackButtonHeader colors={themeColors} onPress={() => navigation.goBack()} containerStyle={styles.header}>
       <View style={styles.headerCenter}><AppText style={styles.title}>{title}</AppText><AppText style={styles.subtitle}>{subtitle}</AppText></View>
-      <Pressable style={styles.iconBtn} onPress={() => navigation.navigate('Profile')}><UserCircle size={18} color={themeColors.textPrimary} /></Pressable>
-    </View>
+    </BackButtonHeader>
   );
 }
 
@@ -1427,8 +1425,6 @@ export function SavingGrowthToolScreen({ navigation, calculator, styles, themeCo
     </>
   );
 }
-
-
 
 
 

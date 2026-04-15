@@ -76,6 +76,8 @@ const createStyles = (colors) =>
       lineHeight: 24,
       color: colors.textPrimary,
       fontFamily: FONT.extraBold,
+      flexShrink: 1,
+      marginTop: 6,
     },
 
     meta: {
@@ -259,7 +261,7 @@ export default function HomeHeader({
 
       <View style={styles.topRow}>
         <View style={styles.leftBlock}>
-          <AppText numberOfLines={1} style={styles.name}>{`Hi, ${displayName}`}</AppText>
+          <AppText style={styles.name}>{`Hi, ${displayName}`}</AppText>
 
           <AppText numberOfLines={1} style={styles.meta}>{headerMetaText}</AppText>
         </View>
@@ -356,4 +358,3 @@ export default function HomeHeader({
     </View>
   );
 }
-

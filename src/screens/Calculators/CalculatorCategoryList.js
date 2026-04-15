@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -15,11 +15,9 @@ import {
 } from 'lucide-react-native';
 import AppText from '../../components/AppText';
 import BottomTabs from '../../components/BottomTabs';
+import BackButtonHeader from '../../components/BackButtonHeader';
 import GradientBackground from '../../components/GradientBackground';
 import CalculatorCTAContact from '../../components/CalculatorCTAContact';
-import HomeHeader from '../../components/HomeHeader';
-import { navigateToStockDetail, normalizeStockSymbol } from '../../features/stocks/navigation';
-import { useTickerSearch } from '../../features/stocks/useTickerSearch';
 import { useUser } from '../../store/UserContext';
 import { getCalculatorSection } from './catalog';
 
@@ -38,55 +36,21 @@ const CATEGORY_ICON_MAP = {
 };
 
 const CalculatorCategoryList = ({ navigation, route }) => {
-  const { themeColors, user } = useUser();
+  const { themeColors } = useUser();
   const { width } = useWindowDimensions();
   const compact = width < 380;
   const styles = useMemo(() => createStyles(themeColors, compact), [themeColors, compact]);
-  const [headerSearchQuery, setHeaderSearchQuery] = useState('');
 
   const categoryKey = route?.params?.categoryKey;
   const section = getCalculatorSection(categoryKey);
   const SectionIcon = CATEGORY_ICON_MAP[section?.key] || Calculator;
-  const profileName = user?.displayName || user?.name || 'Trader';
-  const { results, loading, error: searchError } = useTickerSearch(headerSearchQuery);
-
-  const submitTickerSearch = () => {
-    const normalized = normalizeStockSymbol(headerSearchQuery);
-    if (/^[A-Z][A-Z0-9.-]{0,9}$/.test(normalized)) {
-      navigateToStockDetail(navigation, normalized);
-      return;
-    }
-
-    if (results[0]?.symbol) {
-      navigateToStockDetail(navigation, results[0].symbol);
-    }
-  };
-
-  const selectTickerSearchResult = (item) => {
-    if (!item?.symbol) return;
-    setHeaderSearchQuery(item.symbol);
-    navigateToStockDetail(navigation, item.symbol);
-  };
 
   const visibleItems = section?.items || [];
 
   return (
     <View style={styles.safeArea}>
       <GradientBackground>
-        <HomeHeader
-          themeColors={themeColors}
-          profileName={profileName}
-          searchQuery={headerSearchQuery}
-          onChangeSearchQuery={setHeaderSearchQuery}
-          searchResults={results}
-          searchLoading={loading}
-          searchError={searchError}
-          showSearchResults={Boolean(headerSearchQuery.trim())}
-          onPressSearchResult={selectTickerSearchResult}
-          onSubmitSearch={submitTickerSearch}
-          onPressProfile={() => navigation.navigate('Profile')}
-          onPressGlobalIndices={() => navigation.navigate('GlobalIndices')}
-        />
+        <BackButtonHeader colors={themeColors} onPress={() => navigation.goBack()} containerStyle={styles.header} />
 
         <View style={styles.categoryHeadCard}>
           <View style={styles.titleRow}>
@@ -143,9 +107,12 @@ const createStyles = (colors, compact) =>
       flex: 1,
       backgroundColor: colors.background,
     },
+    header: {
+      gap: 16,
+    },
     categoryHeadCard: {
       marginHorizontal: 12,
-      marginTop: 8,
+      marginTop: 0,
       borderRadius: 12,
       borderWidth: 1,
       borderColor: colors.border,

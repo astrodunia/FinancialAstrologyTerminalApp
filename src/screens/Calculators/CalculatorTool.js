@@ -1,9 +1,10 @@
 import React, { useMemo, useState } from 'react';
-import { Alert, Dimensions, Linking, Platform, Pressable, ScrollView, StatusBar, StyleSheet, View, useWindowDimensions } from 'react-native';
-import { ArrowLeft, Trash2, UserCircle } from 'lucide-react-native';
+import { Alert, Dimensions, Linking, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Trash2 } from 'lucide-react-native';
 import Svg, { Circle, Line, Polyline, Text as SvgText } from 'react-native-svg';
 import AppText from '../../components/AppText';
 import AppTextInput from '../../components/AppTextInput';
+import BackButtonHeader from '../../components/BackButtonHeader';
 import GradientBackground from '../../components/GradientBackground';
 import { useUser } from '../../store/UserContext';
 import { DividendPEToolScreen, EfficientFrontierToolScreen, CorrelationCovarianceToolScreen, SharpeSortinoToolScreen, AstrologyLongevityToolScreen, EmergencyFundToolScreen, MortgageToolScreen, EMIToolScreen, CarLoanEMIToolScreen, HomeLoanEMIToolScreen, HouseAffordabilityToolScreen, SavingsRunwayToolScreen, SavingGrowthToolScreen } from './PortfolioAdvancedTools';
@@ -79,11 +80,9 @@ function FooterCTAContact({ styles, openSite }) {
 
 function PageHeader({ navigation, styles, themeColors, title, subtitle }) {
   return (
-    <View style={styles.header}>
-      <Pressable style={styles.iconBtn} onPress={() => navigation.goBack()}><ArrowLeft size={16} color={themeColors.textPrimary} /></Pressable>
+    <BackButtonHeader colors={themeColors} onPress={() => navigation.goBack()} containerStyle={styles.header}>
       <View style={styles.headerCenter}><AppText style={styles.title}>{title}</AppText><AppText style={styles.subtitle}>{subtitle}</AppText></View>
-      <Pressable style={styles.iconBtn} onPress={() => navigation.navigate('Profile')}><UserCircle size={18} color={themeColors.textPrimary} /></Pressable>
-    </View>
+    </BackButtonHeader>
   );
 }
 
@@ -2788,12 +2787,11 @@ const CalculatorTool = ({ navigation, route }) => {
 
 const createStyles = (colors, isLight, isCompact) => StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.background },
-  header: { paddingHorizontal: isCompact ? 10 : 12, paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 8 : 50, paddingBottom: 10, flexDirection: 'row', alignItems: 'center', gap: isCompact ? 8 : 10 },
-  iconBtn: { width: 34, height: 34, borderRadius: 17, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceAlt },
-  headerCenter: { flex: 1 },
+  header: { gap: 12 },
+  headerCenter: { marginTop: 12 },
   title: { color: colors.textPrimary, fontSize: isCompact ? 16 : 18, fontFamily: FONT.semiBold },
   subtitle: { color: colors.textMuted, fontSize: 12, marginTop: 2 },
-  content: { paddingHorizontal: isCompact ? 10 : 12, paddingBottom: 30, gap: 10 },
+  content: { paddingHorizontal: isCompact ? 10 : 12, paddingTop: 8, paddingBottom: 30, gap: 10 },
   card: { borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceGlass, padding: isCompact ? 8 : 10, gap: 8 },
   sectionTitle: { color: colors.textPrimary, fontSize: 15, fontFamily: FONT.semiBold },
   sectionBody: { color: colors.textMuted, fontSize: 12, lineHeight: 18 },
@@ -2916,11 +2914,6 @@ const createStyles = (colors, isLight, isCompact) => StyleSheet.create({
 });
 
 export default CalculatorTool;
-
-
-
-
-
 
 
 

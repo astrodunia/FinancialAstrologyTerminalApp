@@ -1,6 +1,8 @@
+import * as Keychain from 'react-native-keychain';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const DEVICE_ID_KEY = 'auth_device_id';
+const DEVICE_ID_SERVICE = 'com.financialastrologyterminalapp.device';
 
 const createUuid = (): string => {
   const template = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx';
@@ -16,12 +18,27 @@ const createUuid = (): string => {
 };
 
 export const getOrCreateDeviceId = async (): Promise<string> => {
+  const existingSecure = await Keychain.getGenericPassword({ service: DEVICE_ID_SERVICE });
+  if (existingSecure?.password) {
+    return existingSecure.password;
+  }
+
   const existing = await AsyncStorage.getItem(DEVICE_ID_KEY);
   if (existing) {
+    await Keychain.setGenericPassword('device', existing, {
+      service: DEVICE_ID_SERVICE,
+      accessible: Keychain.ACCESSIBLE.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
+    });
     return existing;
   }
 
   const nextDeviceId = createUuid();
-  await AsyncStorage.setItem(DEVICE_ID_KEY, nextDeviceId);
+  await Promise.all([
+    AsyncStorage.setItem(DEVICE_ID_KEY, nextDeviceId),
+    Keychain.setGenericPassword('device', nextDeviceId, {
+      service: DEVICE_ID_SERVICE,
+      accessible: Keychain.ACCESSIBLE.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
+    }),
+  ]);
   return nextDeviceId;
 };

@@ -1,12 +1,10 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { CheckCircle2, ShieldCheck } from 'lucide-react-native';
 import AppText from '../../components/AppText';
+import BackButtonHeader from '../../components/BackButtonHeader';
 import BottomTabs from '../../components/BottomTabs';
 import GradientBackground from '../../components/GradientBackground';
-import HomeHeader from '../../components/HomeHeader';
-import { navigateToStockDetail, normalizeStockSymbol } from '../../features/stocks/navigation';
-import { useTickerSearch } from '../../features/stocks/useTickerSearch';
 import { useUser } from '../../store/UserContext';
 
 const SECTIONS = [
@@ -117,55 +115,26 @@ const SECTIONS = [
 ];
 
 const PrivacyPolicy = ({ navigation }) => {
-  const { themeColors, user } = useUser();
+  const { themeColors } = useUser();
   const styles = useMemo(() => createStyles(themeColors), [themeColors]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const profileName = user?.displayName || user?.name || 'Trader';
-  const { results, loading, error: searchError } = useTickerSearch(searchQuery);
-
-  const submitTickerSearch = () => {
-    const normalized = normalizeStockSymbol(searchQuery);
-    if (/^[A-Z][A-Z0-9.-]{0,9}$/.test(normalized)) {
-      navigateToStockDetail(navigation, normalized);
-      return;
-    }
-
-    if (results[0]?.symbol) {
-      navigateToStockDetail(navigation, results[0].symbol);
-    }
-  };
-
-  const selectTickerSearchResult = (item) => {
-    if (!item?.symbol) return;
-    setSearchQuery(item.symbol);
-    navigateToStockDetail(navigation, item.symbol);
-  };
 
   return (
     <View style={styles.screen}>
       <GradientBackground>
-        <HomeHeader
-          themeColors={themeColors}
-          profileName={profileName}
-          searchQuery={searchQuery}
-          onChangeSearchQuery={setSearchQuery}
-          searchResults={results}
-          searchLoading={loading}
-          searchError={searchError}
-          showSearchResults={Boolean(searchQuery.trim())}
-          onPressSearchResult={selectTickerSearchResult}
-          onSubmitSearch={submitTickerSearch}
-          onPressProfile={() => navigation.navigate('Profile')}
-          onPressGlobalIndices={() => navigation.navigate('GlobalIndices')}
-        />
+        <BackButtonHeader colors={themeColors} onPress={() => navigation.goBack()} containerStyle={styles.header} />
 
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           <View style={styles.heroCard}>
+            <View style={styles.heroGlowTop} />
+            <View style={styles.heroGlowBottom} />
             <View style={styles.heroIcon}>
               <ShieldCheck size={20} color={themeColors.accent} />
             </View>
             <View style={styles.heroTextWrap}>
-              <AppText style={styles.heroTitle}>Financial Astrology Terminal</AppText>
+              <View style={styles.heroBadge}>
+                <AppText style={styles.heroBadgeText}>Privacy & Data</AppText>
+              </View>
+              <AppText style={styles.heroTitle}>Clear privacy terms for a data-sensitive trading workflow.</AppText>
               <AppText style={styles.heroBody}>
                 This policy explains what data we collect, why we collect it, how long we keep it, and the choices you have over your information.
               </AppText>
@@ -174,18 +143,30 @@ const PrivacyPolicy = ({ navigation }) => {
 
           <View style={styles.summaryRow}>
             <View style={styles.summaryPill}>
-              <AppText style={styles.summaryLabel}>Use</AppText>
+              <AppText style={styles.summaryLabel}>Primary Use</AppText>
               <AppText style={styles.summaryValue}>Account, billing, alerts</AppText>
             </View>
             <View style={styles.summaryPill}>
-              <AppText style={styles.summaryLabel}>Control</AppText>
+              <AppText style={styles.summaryLabel}>Your Control</AppText>
               <AppText style={styles.summaryValue}>Access, correction, deletion</AppText>
+            </View>
+            <View style={styles.summaryPill}>
+              <AppText style={styles.summaryLabel}>Contact</AppText>
+              <AppText style={styles.summaryValue}>Direct support for privacy requests</AppText>
             </View>
           </View>
 
-          {SECTIONS.map((section) => (
+          {SECTIONS.map((section, index) => (
             <View key={section.title} style={styles.sectionCard}>
-              <AppText style={styles.sectionTitle}>{section.title}</AppText>
+              <View style={styles.sectionHead}>
+                <View style={styles.sectionIndex}>
+                  <AppText style={styles.sectionIndexText}>{String(index + 1).padStart(2, '0')}</AppText>
+                </View>
+                <View style={styles.sectionTitleWrap}>
+                  <AppText style={styles.sectionEyebrow}>Policy Section</AppText>
+                  <AppText style={styles.sectionTitle}>{section.title}</AppText>
+                </View>
+              </View>
               <AppText style={styles.sectionBody}>{section.body}</AppText>
 
               <View style={styles.listWrap}>
@@ -222,26 +203,50 @@ const createStyles = (colors) =>
       flex: 1,
       backgroundColor: colors.background,
     },
+    header: {
+      gap: 16,
+    },
     content: {
       paddingHorizontal: 16,
-      paddingTop: 12,
+      paddingTop: 0,
       paddingBottom: 32,
-      gap: 14,
+      gap: 16,
     },
     heroCard: {
-      borderRadius: 22,
+      position: 'relative',
+      overflow: 'hidden',
+      marginTop: 8,
+      borderRadius: 28,
       borderWidth: 1,
       borderColor: colors.border,
       backgroundColor: colors.surfaceGlass,
-      padding: 18,
-      flexDirection: 'row',
+      padding: 22,
       gap: 14,
-      alignItems: 'flex-start',
+    },
+    heroGlowTop: {
+      position: 'absolute',
+      top: -36,
+      right: -24,
+      width: 140,
+      height: 140,
+      borderRadius: 70,
+      backgroundColor: colors.accent,
+      opacity: 0.14,
+    },
+    heroGlowBottom: {
+      position: 'absolute',
+      bottom: -46,
+      left: -16,
+      width: 130,
+      height: 130,
+      borderRadius: 65,
+      backgroundColor: colors.positive,
+      opacity: 0.1,
     },
     heroIcon: {
-      width: 42,
-      height: 42,
-      borderRadius: 14,
+      width: 52,
+      height: 52,
+      borderRadius: 18,
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: colors.surfaceAlt,
@@ -249,52 +254,107 @@ const createStyles = (colors) =>
       borderColor: colors.border,
     },
     heroTextWrap: {
-      flex: 1,
-      gap: 6,
+      gap: 8,
+    },
+    heroBadge: {
+      alignSelf: 'flex-start',
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceAlt,
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+    },
+    heroBadgeText: {
+      color: colors.textPrimary,
+      fontSize: 11,
+      fontFamily: 'NotoSans-SemiBold',
     },
     heroTitle: {
       color: colors.textPrimary,
-      fontSize: 18,
+      fontSize: 24,
+      lineHeight: 31,
+      fontFamily: 'NotoSans-ExtraBold',
     },
     heroBody: {
       color: colors.textMuted,
-      fontSize: 13,
-      lineHeight: 20,
+      fontSize: 14,
+      lineHeight: 22,
+      maxWidth: '96%',
     },
     summaryRow: {
       flexDirection: 'row',
+      flexWrap: 'wrap',
       gap: 10,
     },
     summaryPill: {
-      flex: 1,
-      borderRadius: 18,
-      borderWidth: 1,
-      borderColor: colors.border,
-      backgroundColor: colors.surfaceGlass,
-      paddingHorizontal: 14,
-      paddingVertical: 12,
-      gap: 4,
-    },
-    summaryLabel: {
-      color: colors.textMuted,
-      fontSize: 11,
-    },
-    summaryValue: {
-      color: colors.textPrimary,
-      fontSize: 12,
-      lineHeight: 18,
-    },
-    sectionCard: {
+      minWidth: '30%',
+      flexGrow: 1,
       borderRadius: 20,
       borderWidth: 1,
       borderColor: colors.border,
       backgroundColor: colors.surfaceGlass,
-      padding: 16,
-      gap: 10,
+      paddingHorizontal: 15,
+      paddingVertical: 14,
+      gap: 6,
+    },
+    summaryLabel: {
+      color: colors.textMuted,
+      fontSize: 11,
+      fontFamily: 'NotoSans-Medium',
+      textTransform: 'uppercase',
+      letterSpacing: 0.4,
+    },
+    summaryValue: {
+      color: colors.textPrimary,
+      fontSize: 13,
+      lineHeight: 19,
+      fontFamily: 'NotoSans-SemiBold',
+    },
+    sectionCard: {
+      borderRadius: 24,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceGlass,
+      padding: 18,
+      gap: 12,
+    },
+    sectionHead: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 12,
+    },
+    sectionIndex: {
+      width: 38,
+      height: 38,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceAlt,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    sectionIndexText: {
+      color: colors.textPrimary,
+      fontSize: 12,
+      fontFamily: 'NotoSans-ExtraBold',
+    },
+    sectionTitleWrap: {
+      flex: 1,
+      gap: 3,
+    },
+    sectionEyebrow: {
+      color: colors.textMuted,
+      fontSize: 10,
+      fontFamily: 'NotoSans-SemiBold',
+      textTransform: 'uppercase',
+      letterSpacing: 0.5,
     },
     sectionTitle: {
       color: colors.textPrimary,
-      fontSize: 16,
+      fontSize: 17,
+      lineHeight: 23,
+      fontFamily: 'NotoSans-ExtraBold',
     },
     sectionBody: {
       color: colors.textMuted,
@@ -316,29 +376,31 @@ const createStyles = (colors) =>
       lineHeight: 20,
     },
     footerCard: {
-      borderRadius: 24,
+      borderRadius: 28,
       borderWidth: 1,
       borderColor: colors.border,
       backgroundColor: colors.surfaceGlass,
-      padding: 18,
-      gap: 10,
+      padding: 20,
+      gap: 12,
       marginBottom: 12,
     },
     footerTitle: {
       color: colors.textPrimary,
-      fontSize: 17,
+      fontSize: 20,
+      lineHeight: 26,
+      fontFamily: 'NotoSans-ExtraBold',
     },
     footerBody: {
       color: colors.textMuted,
-      fontSize: 13,
-      lineHeight: 20,
+      fontSize: 14,
+      lineHeight: 21,
     },
     footerButton: {
-      marginTop: 2,
+      marginTop: 4,
       alignSelf: 'flex-start',
-      minHeight: 42,
-      borderRadius: 14,
-      paddingHorizontal: 16,
+      minHeight: 46,
+      borderRadius: 16,
+      paddingHorizontal: 18,
       backgroundColor: colors.accent,
       alignItems: 'center',
       justifyContent: 'center',
@@ -346,6 +408,7 @@ const createStyles = (colors) =>
     footerButtonText: {
       color: '#FFFFFF',
       fontSize: 13,
+      fontFamily: 'NotoSans-SemiBold',
     },
   });
 

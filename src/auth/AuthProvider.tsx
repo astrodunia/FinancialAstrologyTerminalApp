@@ -8,6 +8,7 @@ import {
   updateStoredUser,
 } from './authStorage';
 import { API_BASE, apiFetch, configureApiClient, SESSION_INVALID_ERRORS } from './apiClient';
+import { fetchMe } from '../features/plans/api';
 import { isAppleSignInSupported, revokeGoogleSession, signInWithAppleRequest, signInWithGoogleRequest } from './authService';
 import type { ApiErrorPayload, AuthSession, AuthUser, SessionEntryRoute } from './types';
 
@@ -114,14 +115,23 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const refreshSession = useCallback(async (): Promise<string | null> => {
     if (refreshPromiseRef.current) {
+      console.log('[AuthRefresh] reusing in-flight refresh promise');
       return refreshPromiseRef.current;
     }
 
     refreshPromiseRef.current = (async () => {
       const currentDeviceId = deviceId || (await getOrCreateDeviceId());
-      const currentRefreshToken = session.refreshToken;
+      const storedSession = await getAuthSession().catch(() => null);
+      const currentRefreshToken = session.refreshToken || storedSession?.refreshToken || '';
+      console.log('[AuthRefresh] start', {
+        apiBase: API_BASE,
+        deviceId: currentDeviceId,
+        hasMemoryRefreshToken: Boolean(session.refreshToken),
+        hasStoredRefreshToken: Boolean(storedSession?.refreshToken),
+      });
 
       if (!currentDeviceId || !currentRefreshToken) {
+        console.log('[AuthRefresh] logout: missing refresh token or device id');
         await clearAuthSession();
         return null;
       }
@@ -143,7 +153,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
         if (!response.ok) {
           const errorCode = getApiError(payload);
+          console.log('[AuthRefresh] failed', {
+            status: response.status,
+            errorCode,
+            payload,
+          });
           if (SESSION_INVALID_ERRORS.has(errorCode)) {
+            console.log('[AuthRefresh] logout: invalid refresh session');
             await clearAuthSession();
             return null;
           }
@@ -156,7 +172,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           throw new Error('Refresh response did not include token.');
         }
 
+        console.log('[AuthRefresh] success');
+
         setSession((current) => ({
+          ...(storedSession || current),
           ...current,
           token: nextToken,
         }));
@@ -183,13 +202,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       return null;
     }
 
-    const response = await apiFetch('/api/auth/session', { method: 'GET' });
-    if (!response.ok) {
-      return null;
-    }
-
-    const payload = (await response.json().catch(() => null)) as { user?: AuthUser; data?: { user?: AuthUser } } | null;
-    const nextUser = payload?.user || payload?.data?.user || null;
+    const payload = await fetchMe(apiFetch);
+    const nextUser = payload?.user
+      ? ({
+          ...payload.user,
+          plan: payload.plan || null,
+          quotas: payload.quotas || null,
+          features: payload.features || null,
+        } as AuthUser)
+      : null;
     if (!nextUser) {
       return null;
     }

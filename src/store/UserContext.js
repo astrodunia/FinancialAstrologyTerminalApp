@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import { useColorScheme } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../auth/AuthProvider';
+import { resolveCurrentPlan } from '../features/plans/catalog';
 import { API_BASE_URL, API_BASE_URL_DEBUG } from '../utils/apiBaseUrl';
 
 export { API_BASE_URL };
@@ -151,7 +152,7 @@ export const UserProvider = ({ children }) => {
       await auth.updateUser(nextUser);
       return buildUserState(nextUser);
     },
-    [auth],
+    [auth.updateUser, auth.user],
   );
 
   const syncSession = useCallback(async () => {
@@ -161,34 +162,48 @@ export const UserProvider = ({ children }) => {
     } finally {
       setIsSyncingSession(false);
     }
-  }, [auth]);
+  }, [auth.syncSession]);
+
+  useEffect(() => {
+    if (!localHydrated || !auth.token) {
+      return;
+    }
+
+    syncSession().catch(() => null);
+  }, [auth.token, localHydrated, syncSession]);
 
   const value = useMemo(
-    () => ({
-      isHydrating: auth.isHydrating || !localHydrated,
-      isSyncingSession,
-      token: auth.token,
-      refreshToken: auth.refreshToken,
-      deviceId: auth.deviceId,
-      lastLoginUsername: auth.user?.email || '',
-      user: buildUserState(auth.user),
-      profileImageUrl,
-      theme,
-      themePreference,
-      themeColors,
-      entryRoute: auth.entryRoute,
-      getOrCreateDeviceId: auth.getOrCreateDeviceId,
-      authFetch: auth.authFetch,
-      refreshAccessToken: auth.refreshSession,
-      setAuthSession: auth.setAuthSession,
-      syncSession,
-      updateUserProfile,
-      updateProfileImage,
-      clearAuthSession: auth.clearAuthSession,
-      logout: auth.logout,
-      setThemePreference,
-      toggleTheme,
-    }),
+    () => {
+      const nextUser = buildUserState(auth.user);
+      const currentPlan = resolveCurrentPlan(nextUser);
+
+      return {
+        isHydrating: auth.isHydrating || !localHydrated,
+        isSyncingSession,
+        token: auth.token,
+        refreshToken: auth.refreshToken,
+        deviceId: auth.deviceId,
+        lastLoginUsername: auth.user?.email || '',
+        user: nextUser,
+        currentPlan,
+        profileImageUrl,
+        theme,
+        themePreference,
+        themeColors,
+        entryRoute: auth.entryRoute,
+        getOrCreateDeviceId: auth.getOrCreateDeviceId,
+        authFetch: auth.authFetch,
+        refreshAccessToken: auth.refreshSession,
+        setAuthSession: auth.setAuthSession,
+        syncSession,
+        updateUserProfile,
+        updateProfileImage,
+        clearAuthSession: auth.clearAuthSession,
+        logout: auth.logout,
+        setThemePreference,
+        toggleTheme,
+      };
+    },
     [
       auth,
       isSyncingSession,
