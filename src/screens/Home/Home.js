@@ -20,6 +20,8 @@ import HomeHeader from '../../components/HomeHeader';
 import LiveIndicesTicker from '../../components/LiveIndicesTicker';
 import MarketHeatmap from '../../features/marketHeatmap/MarketHeatmap';
 import { useHeatmapData } from '../../features/marketHeatmap/useHeatmapData';
+import AstroAnalysisCard from '../../features/astroAnalysis/AstroAnalysisCard';
+import { useAstroAnalysisData } from '../../features/astroAnalysis/useAstroAnalysisData';
 import { useTickerSearch } from '../../features/stocks/useTickerSearch';
 import { fetchStockInfo, fetchStockNews, mapNews } from '../../features/stocks/api';
 import { navigateToStockDetail, normalizeStockSymbol } from '../../features/stocks/navigation';
@@ -304,6 +306,7 @@ const Home = ({ navigation }) => {
   const [newsLoading, setNewsLoading] = useState(true);
   const [initialLoading, setInitialLoading] = useState(!cachedStocks.length);
   const heatmapQuery = useHeatmapData();
+  const astroQuery = useAstroAnalysisData(authFetch);
   const { results: tickerResults, loading: tickerSearchLoading, error: tickerSearchError } = useTickerSearch(searchQuery);
   const swipeHandlers = useHorizontalSwipe(MAIN_TAB_ROUTES, 'Home', (route) => navigation.navigate(route));
 
@@ -637,6 +640,17 @@ const Home = ({ navigation }) => {
                   error={heatmapQuery.error instanceof Error ? heatmapQuery.error.message : ''}
                   onRetry={heatmapQuery.refetch}
                   onPressSymbol={(symbol) => navigateToStockDetail(navigation, symbol)}
+                />
+              </View>
+
+              <View style={styles.sectionBlock}>
+                <AstroAnalysisCard
+                  data={astroQuery.data}
+                  isLoading={astroQuery.isLoading}
+                  error={astroQuery.error}
+                  themeColors={themeColors}
+                  onPress={() => navigation.navigate('AstroAnalysis')}
+                  onRefresh={astroQuery.refetch}
                 />
               </View>
             </>

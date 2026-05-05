@@ -29,6 +29,7 @@ import IndexDetailScreen from '../screens/IndexDetail/IndexDetailScreen';
 import AppText from '../components/AppText';
 import { useUser } from '../store/UserContext';
 import SectorDetailScreen from '../screens/SectorDetail/SectorDetailScreen';
+import AstroAnalysisScreen from '../screens/AstroAnalysis/AstroAnalysisScreen';
 
 const Stack = createNativeStackNavigator();
 const navigationRef = createNavigationContainerRef();
@@ -49,6 +50,7 @@ const BACK_BUTTON_HIDDEN_ROUTES = new Set([
   'AboutTerminal',
   'PrivacyPolicy',
   'Support',
+  'AstroAnalysis',
   'SectorDetail',
   'StockDetail',
   'IndexDetail',
@@ -205,6 +207,7 @@ const AppNavigation = () => {
                 <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicy} />
                 <Stack.Screen name="Support" component={Support} />
 
+                <Stack.Screen name="AstroAnalysis" component={AstroAnalysisScreen} />
                 <Stack.Screen name="SectorDetail" component={SectorDetailScreen} />
                 <Stack.Screen name="StockDetail" component={StockDetailScreen} />
                 <Stack.Screen name="IndexDetail" component={IndexDetailScreen} />
