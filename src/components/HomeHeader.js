@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Globe, Search } from 'lucide-react-native';
 import AppText from './AppText';
 import AppTextInput from './AppTextInput';
@@ -254,8 +255,10 @@ export default function HomeHeader({
 
   const shouldShowSearchPanel = isSearchFocused && showSearchResults;
 
+  const Wrapper = Platform.OS === 'ios' ? SafeAreaView : View;
+
   return (
-    <View style={styles.header}>
+    <Wrapper style={styles.header} edges={['top']}>
       <View style={styles.glowTop} />
       <View style={styles.glowBottom} />
 
@@ -355,6 +358,6 @@ export default function HomeHeader({
             : null}
         </View>
       ) : null}
-    </View>
+    </Wrapper>
   );
 }

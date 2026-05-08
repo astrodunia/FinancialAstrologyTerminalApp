@@ -5,7 +5,6 @@ import {
   ArrowDown,
   ArrowUp,
   Circle,
-  EllipsisVertical,
   Eraser,
   FunctionSquare,
   Hexagon,
@@ -20,7 +19,6 @@ import {
   RectangleHorizontal,
   Redo2,
   Route,
-  Settings2,
   Send,
   Trash2,
   TrendingUp,
@@ -118,7 +116,6 @@ export type DrawingToolbarProps = {
   onToggleLock?: () => void;
   canToggleLock?: boolean;
   isLocked?: boolean;
-  onSettings?: () => void;
 };
 
 export const DrawingToolbar = ({
@@ -142,7 +139,6 @@ export const DrawingToolbar = ({
   onToggleLock,
   canToggleLock = false,
   isLocked = false,
-  onSettings,
 }: DrawingToolbarProps) => {
   const scrollRef = useRef<ScrollView | null>(null);
   const tools = useMemo(() => TOOL_ORDER, []);
@@ -168,73 +164,58 @@ export const DrawingToolbar = ({
   };
 
   if (compact) {
+    const ActiveIcon = ICONS[activeTool] ?? Pencil;
+    const isDrawing = activeTool !== 'select';
+
     return (
       <>
-        <View style={[styles.compactWrap, { backgroundColor: palette.panelBg, borderColor: palette.panelBorder }]}>
-          <View style={styles.compactGroup}>
+        <View style={[styles.pill, { backgroundColor: palette.panelBg, borderColor: palette.panelBorder }]}>
+          <Pressable
+            style={[styles.pillBtn, styles.pillPrimaryBtn, isDrawing && { backgroundColor: palette.toolActiveBg }]}
+            onPress={() => setShowAllTools(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Drawing tools"
+          >
+            <ActiveIcon size={14} color={isDrawing ? palette.toolActiveText : palette.toolText} />
+          </Pressable>
+
+          {canUndo ? (
+            <>
+              <View style={[styles.pillDivider, { backgroundColor: palette.panelBorder }]} />
+              <Pressable
+                style={styles.pillBtn}
+                onPress={onUndo}
+                accessibilityRole="button"
+                accessibilityLabel="Undo"
+              >
+                <Undo2 size={14} color={palette.toolText} />
+              </Pressable>
+            </>
+          ) : null}
+
+          {canRedo ? (
             <Pressable
-              style={[styles.compactBtn, { backgroundColor: activeTool === 'select' ? palette.toolActiveBg : palette.toolBg }]}
-              onPress={() => onToolChange('select')}
-              accessibilityRole="button"
-              accessibilityLabel="Cursor tool"
-            >
-              <MousePointer2 size={16} color={activeTool === 'select' ? palette.toolActiveText : palette.toolText} />
-            </Pressable>
-            <Pressable
-              style={[
-                styles.compactBtn,
-                { backgroundColor: palette.toolBg },
-                (!onUndo || !canUndo || readOnly) && styles.toolBtnDisabled,
-              ]}
-              onPress={onUndo}
-              disabled={!onUndo || !canUndo || readOnly}
-              accessibilityRole="button"
-              accessibilityLabel="Undo"
-            >
-              <Undo2 size={16} color={palette.toolText} />
-            </Pressable>
-            <Pressable
-              style={[
-                styles.compactBtn,
-                { backgroundColor: palette.toolBg },
-                (!onRedo || !canRedo || readOnly) && styles.toolBtnDisabled,
-              ]}
+              style={styles.pillBtn}
               onPress={onRedo}
-              disabled={!onRedo || !canRedo || readOnly}
               accessibilityRole="button"
               accessibilityLabel="Redo"
             >
-              <Redo2 size={16} color={palette.toolText} />
+              <Redo2 size={14} color={palette.toolText} />
             </Pressable>
-            <Pressable
-              style={[styles.compactBtn, { backgroundColor: palette.actionBg }]}
-              onPress={() => setShowAllTools(true)}
-              accessibilityRole="button"
-              accessibilityLabel="Open drawing tools"
-            >
-              <EllipsisVertical size={16} color={palette.actionText} />
-            </Pressable>
-          </View>
-          {onDeleteSelected ? (
-            <View style={styles.compactDeleteWrap}>
-              <View style={[styles.compactDivider, { backgroundColor: palette.panelBorder }]} />
+          ) : null}
+
+          {canDelete ? (
+            <>
+              <View style={[styles.pillDivider, { backgroundColor: palette.panelBorder }]} />
               <Pressable
-                style={[
-                  styles.compactBtn,
-                  styles.compactDeleteBtn,
-                  {
-                    backgroundColor: canDelete ? palette.dangerBg : palette.dangerDisabledBg,
-                    borderColor: canDelete ? palette.dangerBorder : 'transparent',
-                  },
-                ]}
+                style={[styles.pillBtn, { backgroundColor: palette.dangerBg }]}
                 onPress={onDeleteSelected}
-                disabled={!canDelete}
                 accessibilityRole="button"
-                accessibilityLabel="Delete all drawings"
+                accessibilityLabel="Clear drawings"
               >
-                <Trash2 size={17} color={canDelete ? palette.dangerIcon : palette.dangerDisabledIcon} />
+                <Trash2 size={13} color={palette.dangerIcon} />
               </Pressable>
-            </View>
+            </>
           ) : null}
         </View>
 
@@ -244,6 +225,18 @@ export const DrawingToolbar = ({
               onPress={(evt) => evt.stopPropagation()}
               style={[styles.modalCard, { backgroundColor: palette.panelBg, borderColor: palette.panelBorder }]}
             >
+              <View style={styles.modalHeader}>
+                <AppText style={[styles.modalTitle, { color: palette.toolText }]}>Draw</AppText>
+                <Pressable
+                  style={[styles.modalCloseBtn, { backgroundColor: palette.toolBg }]}
+                  onPress={() => setShowAllTools(false)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close drawing tools"
+                >
+                  <AppText style={[styles.modalCloseText, { color: palette.toolText }]}>Close</AppText>
+                </Pressable>
+              </View>
+
               <View style={styles.modalGrid}>
                 {tools.map((tool) => {
                   const disabled = readOnly || disabledTools.includes(tool);
@@ -255,8 +248,7 @@ export const DrawingToolbar = ({
                       disabled={disabled}
                       style={[
                         styles.modalToolBtn,
-                        { backgroundColor: palette.toolBg },
-                        active && { backgroundColor: palette.toolActiveBg },
+                        { backgroundColor: active ? palette.toolActiveBg : palette.toolBg },
                         disabled && styles.toolBtnDisabled,
                       ]}
                       onPress={() => {
@@ -266,7 +258,7 @@ export const DrawingToolbar = ({
                       accessibilityRole="button"
                       accessibilityLabel={LABELS[tool]}
                     >
-                      <Icon size={16} color={active ? palette.toolActiveText : palette.toolText} />
+                      <Icon size={15} color={active ? palette.toolActiveText : palette.toolText} />
                       <AppText style={[styles.modalToolText, { color: active ? palette.toolActiveText : palette.toolText }]}>
                         {LABELS[tool]}
                       </AppText>
@@ -275,58 +267,53 @@ export const DrawingToolbar = ({
                 })}
               </View>
 
+              {(onDuplicate || onToggleLock || onShare) ? (
+                <View style={[styles.modalDivider, { backgroundColor: palette.panelBorder }]} />
+              ) : null}
+
               <View style={styles.modalActions}>
                 {onDuplicate ? (
                   <Pressable
                     style={[styles.modalActionBtn, { backgroundColor: palette.actionBg }, !canDuplicate && styles.toolBtnDisabled]}
-                    onPress={onDuplicate}
+                    onPress={() => { onDuplicate(); setShowAllTools(false); }}
                     disabled={!canDuplicate}
                     accessibilityRole="button"
-                    accessibilityLabel="Duplicate selected drawing"
+                    accessibilityLabel="Duplicate"
                   >
-                    <Copy size={15} color={palette.actionText} />
+                    <Copy size={14} color={palette.actionText} />
                   </Pressable>
                 ) : null}
                 {onToggleLock ? (
                   <Pressable
                     style={[styles.modalActionBtn, { backgroundColor: palette.actionBg }, !canToggleLock && styles.toolBtnDisabled]}
-                    onPress={onToggleLock}
+                    onPress={() => { onToggleLock(); setShowAllTools(false); }}
                     disabled={!canToggleLock}
                     accessibilityRole="button"
-                    accessibilityLabel={isLocked ? 'Unlock selected drawing' : 'Lock selected drawing'}
+                    accessibilityLabel={isLocked ? 'Unlock' : 'Lock'}
                   >
-                    {isLocked ? <LockOpen size={15} color={palette.actionText} /> : <Lock size={15} color={palette.actionText} />}
+                    {isLocked ? <LockOpen size={14} color={palette.actionText} /> : <Lock size={14} color={palette.actionText} />}
                   </Pressable>
                 ) : null}
-                <Pressable
-                  style={[styles.modalActionBtn, { backgroundColor: palette.actionBg }, readOnly && styles.toolBtnDisabled]}
-                  onPress={onClear}
-                  disabled={readOnly}
-                  accessibilityRole="button"
-                  accessibilityLabel="Clear drawings"
-                >
-                  <Eraser size={15} color={palette.actionText} />
-                </Pressable>
                 {onShare ? (
                   <Pressable
                     style={[styles.modalActionBtn, { backgroundColor: palette.actionBg }]}
-                    onPress={onShare}
+                    onPress={() => { onShare(); setShowAllTools(false); }}
                     accessibilityRole="button"
-                    accessibilityLabel="Share drawings"
+                    accessibilityLabel="Share"
                   >
-                    <Send size={15} color={palette.actionText} />
+                    <Send size={14} color={palette.actionText} />
                   </Pressable>
                 ) : null}
-                {onSettings ? (
-                  <Pressable
-                    style={[styles.modalActionBtn, { backgroundColor: palette.actionBg }]}
-                    onPress={onSettings}
-                    accessibilityRole="button"
-                    accessibilityLabel="Drawing settings"
-                  >
-                    <Settings2 size={15} color={palette.actionText} />
-                  </Pressable>
-                ) : null}
+                <View style={styles.modalActionSpacer} />
+                <Pressable
+                  style={[styles.modalActionBtn, { backgroundColor: palette.dangerBg }, readOnly && styles.toolBtnDisabled]}
+                  onPress={() => { onClear(); setShowAllTools(false); }}
+                  disabled={readOnly}
+                  accessibilityRole="button"
+                  accessibilityLabel="Clear all"
+                >
+                  <Eraser size={14} color={palette.dangerIcon} />
+                </Pressable>
               </View>
             </Pressable>
           </Pressable>
@@ -422,82 +409,102 @@ export const DrawingToolbar = ({
 };
 
 const styles = StyleSheet.create({
-  compactWrap: {
-    borderRadius: 12,
+  pill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 14,
     borderWidth: 1,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 6,
-    flexWrap: 'nowrap',
+    paddingHorizontal: 4,
+    paddingVertical: 4,
+    gap: 3,
+    alignSelf: 'flex-start',
   },
-  compactGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  compactBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
+  pillBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  compactDeleteWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
+  pillPrimaryBtn: {
+    borderRadius: 11,
   },
-  compactDivider: {
+  pillDivider: {
     width: 1,
     height: 18,
-    opacity: 0.85,
-  },
-  compactDeleteBtn: {
-    borderWidth: 1,
+    marginHorizontal: 2,
+    opacity: 0.6,
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    backgroundColor: 'rgba(0,0,0,0.55)',
     alignItems: 'center',
-    justifyContent: 'center',
-    padding: 20,
+    justifyContent: 'flex-end',
+    padding: 14,
   },
   modalCard: {
     width: '100%',
-    maxWidth: 320,
-    borderRadius: 14,
+    maxWidth: 380,
+    borderRadius: 18,
     borderWidth: 1,
-    padding: 12,
+    padding: 14,
+    gap: 14,
+    marginBottom: 10,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     gap: 12,
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontFamily: 'NotoSans-SemiBold',
+  },
+  modalCloseBtn: {
+    minHeight: 30,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalCloseText: {
+    fontSize: 11,
+    fontFamily: 'NotoSans-SemiBold',
   },
   modalGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: 9,
   },
   modalToolBtn: {
-    width: 64,
-    minHeight: 58,
-    borderRadius: 10,
+    width: 76,
+    minHeight: 64,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
-    paddingVertical: 6,
+    gap: 6,
+    paddingVertical: 8,
     paddingHorizontal: 4,
   },
   modalToolText: {
     fontSize: 10,
     lineHeight: 12,
     textAlign: 'center',
-    fontFamily: 'NotoSans-Medium',
+    fontFamily: 'NotoSans-SemiBold',
+  },
+  modalDivider: {
+    height: 1,
+    marginVertical: 4,
+    opacity: 0.5,
   },
   modalActions: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 10,
+    alignItems: 'center',
+    gap: 8,
+  },
+  modalActionSpacer: {
+    flex: 1,
   },
   modalActionBtn: {
     width: 38,

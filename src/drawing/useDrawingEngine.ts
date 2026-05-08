@@ -199,6 +199,11 @@ export const useDrawingEngine = ({
     setStyleState((prev) => ({ ...prev, ...next }));
   }, []);
 
+  const selectCreatedShape = useCallback((id: string) => {
+    setSelectedId(id);
+    setActiveToolState('select');
+  }, []);
+
   const updateShape = useCallback((shape: DrawingShape, options?: { recordHistory?: boolean }) => {
     if (options?.recordHistory) {
       setShapesWithHistory((prev) => prev.map((item) => (item.id === shape.id ? shape : item)));
@@ -214,7 +219,7 @@ export const useDrawingEngine = ({
   }, [selectedId, setShapesWithHistory]);
 
   const clearAll = useCallback(() => {
-    setShapesWithHistory(() => []);
+    setShapesWithHistory((prev) => (prev.length === 0 ? prev : []));
     setSelectedId(null);
     setDraft(null);
     setDrag(null);
@@ -280,11 +285,11 @@ export const useDrawingEngine = ({
           ...style,
         };
         setShapesWithHistory((prev) => [...prev, created]);
-        setSelectedId(created.id);
+        selectCreatedShape(created.id);
       }
       return null;
     });
-  }, [setShapesWithHistory, style]);
+  }, [selectCreatedShape, setShapesWithHistory, style]);
 
   const share = useCallback(() => {
     onShare?.({ shapes, xDomain });
@@ -310,9 +315,9 @@ export const useDrawingEngine = ({
               ...style,
             };
       setShapesWithHistory((prev) => [...prev, created]);
-      setSelectedId(created.id);
+      selectCreatedShape(created.id);
     },
-    [setShapesWithHistory, style],
+    [selectCreatedShape, setShapesWithHistory, style],
   );
 
   const commitTap = useCallback(
@@ -323,14 +328,14 @@ export const useDrawingEngine = ({
       if (activeTool === 'hline') {
         const created: DrawingShape = { id: createId(), type: 'hline', y: point.y, ...style };
         setShapesWithHistory((prev) => [...prev, created]);
-        setSelectedId(created.id);
+        selectCreatedShape(created.id);
         return;
       }
 
       if (activeTool === 'vline') {
         const created: DrawingShape = { id: createId(), type: 'vline', x: point.x, ...style };
         setShapesWithHistory((prev) => [...prev, created]);
-        setSelectedId(created.id);
+        selectCreatedShape(created.id);
         return;
       }
 
@@ -367,7 +372,7 @@ export const useDrawingEngine = ({
             ...style,
           };
           setShapesWithHistory((all) => [...all, created]);
-          setSelectedId(created.id);
+          selectCreatedShape(created.id);
           return null;
         });
         return;
@@ -386,7 +391,7 @@ export const useDrawingEngine = ({
         });
       }
     },
-    [activeTool, commitTwoPointShape, readOnly, setShapesWithHistory, startTextEdit, style],
+    [activeTool, commitTwoPointShape, readOnly, selectCreatedShape, setShapesWithHistory, startTextEdit, style],
   );
 
   const commitDoubleTap = useCallback(() => {
@@ -401,10 +406,10 @@ export const useDrawingEngine = ({
         ...style,
       };
       setShapesWithHistory((all) => [...all, created]);
-      setSelectedId(created.id);
+      selectCreatedShape(created.id);
       return null;
     });
-  }, [readOnly, setShapesWithHistory, style]);
+  }, [readOnly, selectCreatedShape, setShapesWithHistory, style]);
 
   const onPointerDown = useCallback(
     (x: number, y: number, timestamp = Date.now()) => {
@@ -538,7 +543,7 @@ export const useDrawingEngine = ({
             ...style,
           };
           setShapesWithHistory((prev) => [...prev, created]);
-          setSelectedId(created.id);
+          selectCreatedShape(created.id);
         }
         setDraft(null);
       }
@@ -563,7 +568,7 @@ export const useDrawingEngine = ({
         commitTap(point);
       }
     },
-    [commitDoubleTap, commitTap, draft, plotRect, readOnly, scales, setShapesWithHistory, style],
+    [commitDoubleTap, commitTap, draft, plotRect, readOnly, scales, selectCreatedShape, setShapesWithHistory, style],
   );
 
   const undo = useCallback(() => {

@@ -52,14 +52,14 @@ const resolveApiHost = () => {
 
   if (__DEV__ && Platform.OS === 'android') {
     return {
-      host: '10.0.2.2',
+      host: 'localhost',
       source: 'android_dev_fallback',
     };
   }
 
   if (__DEV__ && Platform.OS === 'ios') {
     return {
-      host: 'localhost',
+      host: '192.168.29.213',
       source: 'ios_dev_fallback',
     };
   }

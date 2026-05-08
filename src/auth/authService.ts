@@ -280,7 +280,7 @@ export const isAppleSignInSupported = (): boolean => {
     return false;
   }
 
-  if (typeof appleAuthAndroid !== 'undefined' && appleAuthAndroid) {
+  if (typeof appleAuthAndroid !== 'undefined' && appleAuthAndroid.isSupported !== undefined) {
     return false;
   }
 

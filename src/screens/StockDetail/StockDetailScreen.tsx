@@ -628,6 +628,11 @@ const useTransitPerformance = (history: StockHistoryPoint[] | null, authFetch: a
   const [planetaryRows, setPlanetaryRows] = useState<TransitRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const authFetchRef = useRef(authFetch);
+
+  useEffect(() => {
+    authFetchRef.current = authFetch;
+  }, [authFetch]);
 
   const sortedHistory = useMemo(
     () => (Array.isArray(history) ? history.slice().sort((a, b) => a.timestamp - b.timestamp) : []),
@@ -641,17 +646,21 @@ const useTransitPerformance = (history: StockHistoryPoint[] | null, authFetch: a
       endTs: sortedHistory[sortedHistory.length - 1].timestamp,
     };
   }, [sortedHistory]);
+  const rangeStartTs = range?.startTs ?? null;
+  const rangeEndTs = range?.endTs ?? null;
+  const hasTransitFetcher = Boolean(authFetch);
 
   useEffect(() => {
-    if (!range || !authFetch) {
-      setPlanetaryRows([]);
+    const fetcher = authFetchRef.current;
+    if (rangeStartTs == null || rangeEndTs == null || !hasTransitFetcher || !fetcher) {
+      setPlanetaryRows((prev) => (prev.length ? [] : prev));
       setLoading(false);
-      setError('');
+      setError((prev) => (prev ? '' : prev));
       return;
     }
 
-    const startYear = new Date(range.startTs).getUTCFullYear();
-    const endYear = new Date(range.endTs).getUTCFullYear();
+    const startYear = new Date(rangeStartTs).getUTCFullYear();
+    const endYear = new Date(rangeEndTs).getUTCFullYear();
     const years = [];
     for (let year = startYear; year <= endYear; year += 1) {
       years.push(year);
@@ -660,9 +669,9 @@ const useTransitPerformance = (history: StockHistoryPoint[] | null, authFetch: a
     let active = true;
     const controller = new AbortController();
     setLoading(true);
-    setError('');
+    setError((prev) => (prev ? '' : prev));
 
-    fetchPlanetaryTransitRows(authFetch, years, controller.signal)
+    fetchPlanetaryTransitRows(fetcher, years, controller.signal)
       .then((rows) => {
         if (!active) return;
         setPlanetaryRows(rows);
@@ -681,7 +690,7 @@ const useTransitPerformance = (history: StockHistoryPoint[] | null, authFetch: a
       active = false;
       controller.abort();
     };
-  }, [authFetch, range]);
+  }, [hasTransitFetcher, rangeEndTs, rangeStartTs]);
 
   const nakshatraResults = useMemo(() => {
     if (!range || !sortedHistory.length) return [];
@@ -832,7 +841,7 @@ const OverviewTab = ({
               <Bookmark size={15} color={themeColors.textPrimary} />
             )}
             <AppText style={[styles.actionChipText, watchlistAdded ? styles.actionChipTextAdded : null]}>
-              {watchlistBusy ? 'Saving...' : watchlistAdded ? 'Remove' : 'Watch'}
+              {watchlistBusy ? 'Saving...' : watchlistAdded ? 'Remove from watchlist' : 'Add to watchlist'}
             </AppText>
           </Pressable>
         </View>
@@ -1163,10 +1172,10 @@ const ChartTab = ({
   watchlistAdded: boolean;
   watchlistBusy: boolean;
   authFetch: any;
-  drawingShapes: DrawingShape[];
-  onDrawingShapesChange: (next: DrawingShape[]) => void;
-  onClearAllDrawings: () => void;
-  onShareDrawings: (payload: SharePayload) => void;
+  drawingShapes?: DrawingShape[];
+  onDrawingShapesChange?: (next: DrawingShape[]) => void;
+  onClearAllDrawings?: () => void;
+  onShareDrawings?: (payload: SharePayload) => void;
   hasProPlan: boolean;
   onUpgradePress: () => void;
 }) => {
@@ -1242,58 +1251,19 @@ const ChartTab = ({
     });
     return ['All', ...Array.from(set).sort((a, b) => a.localeCompare(b))];
   }, [transitResults]);
+  const effectiveTransitPlanet = transitPlanets.includes(selectedTransitPlanet) ? selectedTransitPlanet : 'All';
   const filteredTransitResults = useMemo(() => {
-    if (selectedTransitPlanet === 'All') return transitResults;
-    return transitResults.filter((item) => item.planet === selectedTransitPlanet);
-  }, [selectedTransitPlanet, transitResults]);
+    if (effectiveTransitPlanet === 'All') return transitResults;
+    return transitResults.filter((item) => item.planet === effectiveTransitPlanet);
+  }, [effectiveTransitPlanet, transitResults]);
   const featuredTransit = useMemo(
     () => filteredTransitResults.find((item) => item.isActive) || filteredTransitResults[0] || null,
     [filteredTransitResults],
   );
 
-  useEffect(() => {
-    if (!transitPlanets.includes(selectedTransitPlanet)) {
-      setSelectedTransitPlanet('All');
-    }
-  }, [selectedTransitPlanet, transitPlanets]);
-
   return (
     <View style={styles.tabContent}>
       <View style={styles.chartHeroCard}>
-        <View style={styles.chartPriceRow}>
-          <AppText style={styles.chartPriceValue}>{formatCurrency(price, info?.currency)}</AppText>
-          <AppText style={[styles.chartPriceChange, { color: isUp ? themeColors.positive : themeColors.negative }]}>
-            {change != null ? `${change > 0 ? '+' : ''}${change.toFixed(2)}` : '--'}
-            {changePct != null ? ` (${changePct > 0 ? '+' : ''}${changePct.toFixed(2)}%)` : ''}
-          </AppText>
-          <AppText style={styles.chartPriceTf}>{timeframe === 'ALL' ? 'All' : timeframe}</AppText>
-        </View>
-
-        <View style={styles.actionRow}>
-          <Pressable style={styles.actionChip} onPress={onAlertPress}>
-            <Bell size={15} color={themeColors.textPrimary} />
-            <AppText style={styles.actionChipText}>Alert</AppText>
-          </Pressable>
-          <Pressable
-            style={[
-              styles.actionChip,
-              watchlistAdded ? styles.actionChipAdded : null,
-              watchlistBusy ? styles.actionChipDisabled : null,
-            ]}
-            onPress={onWatchPress}
-            disabled={watchlistBusy}
-          >
-            {watchlistAdded ? (
-              <X size={14} strokeWidth={2} color={themeColors.negative} />
-            ) : (
-              <Bookmark size={15} color={themeColors.textPrimary} />
-            )}
-            <AppText style={[styles.actionChipText, watchlistAdded ? styles.actionChipTextAdded : null]}>
-              {watchlistBusy ? 'Saving...' : watchlistAdded ? 'Remove' : 'Watch'}
-            </AppText>
-          </Pressable>
-        </View>
-
         <View style={styles.chartCanvasWrap}>
           {displayHistory?.length ? (
             <MainChart
@@ -1306,6 +1276,42 @@ const ChartTab = ({
               onDrawingsChange={onDrawingShapesChange}
               onClearAllDrawings={onClearAllDrawings}
               onShareDrawings={onShareDrawings}
+              header={
+                <View style={styles.chartPriceRow}>
+                  <AppText style={styles.chartPriceValue}>{formatCurrency(price, info?.currency)}</AppText>
+                  <AppText style={[styles.chartPriceChange, { color: isUp ? themeColors.positive : themeColors.negative }]}>
+                    {change != null ? `${change > 0 ? '+' : ''}${change.toFixed(2)}` : '--'}
+                    {changePct != null ? ` (${changePct > 0 ? '+' : ''}${changePct.toFixed(2)}%)` : ''}
+                  </AppText>
+                  <AppText style={styles.chartPriceTf}>{timeframe === 'ALL' ? 'All' : timeframe}</AppText>
+                </View>
+              }
+              afterHeader={
+                <View style={styles.actionRow}>
+                  <Pressable style={styles.actionChip} onPress={onAlertPress}>
+                    <Bell size={15} color={themeColors.textPrimary} />
+                    <AppText style={styles.actionChipText}>Alert</AppText>
+                  </Pressable>
+                  <Pressable
+                    style={[
+                      styles.actionChip,
+                      watchlistAdded ? styles.actionChipAdded : null,
+                      watchlistBusy ? styles.actionChipDisabled : null,
+                    ]}
+                    onPress={onWatchPress}
+                    disabled={watchlistBusy}
+                  >
+                    {watchlistAdded ? (
+                      <X size={14} strokeWidth={2} color={themeColors.negative} />
+                    ) : (
+                      <Bookmark size={15} color={themeColors.textPrimary} />
+                    )}
+                    <AppText style={[styles.actionChipText, watchlistAdded ? styles.actionChipTextAdded : null]}>
+                      {watchlistBusy ? 'Saving...' : watchlistAdded ? 'Remove from watchlist' : 'Add to watchlist'}
+                    </AppText>
+                  </Pressable>
+                </View>
+              }
             />
           ) : loading ? (
             <View style={styles.chartLoaderWrap}>
@@ -1366,7 +1372,7 @@ const ChartTab = ({
             {transitPlanets.length > 1 ? (
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
                 {transitPlanets.map((planet) => {
-                  const active = planet === selectedTransitPlanet;
+                  const active = planet === effectiveTransitPlanet;
                   return (
                     <Pressable
                       key={planet}
@@ -3511,6 +3517,8 @@ const MainChart = ({
   onDrawingsChange,
   onClearAllDrawings,
   onShareDrawings,
+  header,
+  afterHeader,
 }: {
   points: StockHistoryPoint[];
   color: string;
@@ -3521,6 +3529,8 @@ const MainChart = ({
   onDrawingsChange?: (next: DrawingShape[]) => void;
   onClearAllDrawings?: () => void;
   onShareDrawings?: (payload: SharePayload) => void;
+  header?: React.ReactNode;
+  afterHeader?: React.ReactNode;
 }) => {
   const { theme, themeColors } = useUser() as any;
   const styles = useMemo(() => createStyles(themeColors), [themeColors]);
@@ -3546,7 +3556,6 @@ const MainChart = ({
         ? '#DC2626'
         : color;
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
-  const [toolbarHeight, setToolbarHeight] = useState(0);
 
   const drawingPlotRect = useMemo(
     () => ({
@@ -3567,6 +3576,7 @@ const MainChart = ({
     }),
     [chartWidth, max, maxX, min, minX, plotHeight],
   );
+  const drawingXDomain = useMemo<[number, number]>(() => [minX, maxX], [minX, maxX]);
 
   const drawing = useDrawingEngine({
     scales: drawingScales,
@@ -3577,22 +3587,36 @@ const MainChart = ({
       width: 2,
       opacity: 1,
     },
-    xDomain: [minX, maxX],
+    xDomain: drawingXDomain,
     onChange: onDrawingsChange,
     onShare: onShareDrawings,
   });
 
+  const drawingOverlayTheme = useMemo(
+    () => ({
+      editorBg: theme === 'light' ? 'rgba(255,255,255,0.98)' : 'rgba(8,16,28,0.96)',
+      editorBorder: themeColors.border,
+      inputBg: theme === 'light' ? '#FFFFFF' : 'transparent',
+      inputBorder: themeColors.border,
+      inputText: themeColors.textPrimary,
+      placeholderText: themeColors.textMuted,
+      cancelBg: theme === 'light' ? 'rgba(15,23,42,0.07)' : 'rgba(255,255,255,0.1)',
+      saveBg: themeColors.textPrimary,
+      buttonText: themeColors.surface,
+    }),
+    [theme, themeColors.border, themeColors.surface, themeColors.textMuted, themeColors.textPrimary],
+  );
   const drawingToolbarTheme = useMemo(
     () => ({
-      panelBg: theme === 'light' ? 'rgba(255,255,255,0.93)' : 'rgba(10,16,28,0.9)',
-      panelBorder: themeColors.border,
-      toolBg: theme === 'light' ? 'rgba(15,23,42,0.06)' : 'rgba(255,255,255,0.08)',
+      panelBg: theme === 'light' ? 'rgba(255,255,255,0.95)' : 'rgba(9,14,24,0.92)',
+      panelBorder: theme === 'light' ? 'rgba(15,23,42,0.1)' : 'rgba(255,255,255,0.1)',
+      toolBg: theme === 'light' ? 'rgba(15,23,42,0.055)' : 'rgba(255,255,255,0.075)',
       toolText: themeColors.textPrimary,
       toolActiveBg: themeColors.textPrimary,
       toolActiveText: themeColors.surface,
-      actionBg: theme === 'light' ? 'rgba(15,23,42,0.08)' : 'rgba(255,255,255,0.12)',
+      actionBg: theme === 'light' ? 'rgba(15,23,42,0.07)' : 'rgba(255,255,255,0.1)',
       actionText: themeColors.textPrimary,
-      scrollBg: theme === 'light' ? 'rgba(15,23,42,0.06)' : 'rgba(255,255,255,0.08)',
+      scrollBg: theme === 'light' ? 'rgba(15,23,42,0.055)' : 'rgba(255,255,255,0.075)',
       scrollText: themeColors.textMuted,
       dangerBg: themeColors.negative,
       dangerBorder: themeColors.negative,
@@ -3600,22 +3624,7 @@ const MainChart = ({
       dangerDisabledBg: theme === 'light' ? 'rgba(148,163,184,0.25)' : 'rgba(148,163,184,0.2)',
       dangerDisabledIcon: theme === 'light' ? 'rgba(15,23,42,0.45)' : 'rgba(255,255,255,0.55)',
     }),
-    [theme, themeColors.border, themeColors.negative, themeColors.surface, themeColors.textMuted, themeColors.textPrimary],
-  );
-
-  const drawingOverlayTheme = useMemo(
-    () => ({
-      editorBg: theme === 'light' ? 'rgba(255,255,255,0.96)' : 'rgba(8,16,28,0.95)',
-      editorBorder: themeColors.border,
-      inputBg: theme === 'light' ? '#FFFFFF' : 'transparent',
-      inputBorder: themeColors.border,
-      inputText: themeColors.textPrimary,
-      placeholderText: themeColors.textMuted,
-      cancelBg: theme === 'light' ? 'rgba(15,23,42,0.08)' : 'rgba(255,255,255,0.1)',
-      saveBg: themeColors.textPrimary,
-      buttonText: themeColors.surface,
-    }),
-    [theme, themeColors.border, themeColors.surface, themeColors.textMuted, themeColors.textPrimary],
+    [theme, themeColors.negative, themeColors.surface, themeColors.textMuted, themeColors.textPrimary],
   );
 
   const setNearestPoint = useCallback(
@@ -3678,43 +3687,44 @@ const MainChart = ({
     }));
   }, [hasChartPoints, max, min, plotHeight, tall]);
 
+  const clearAllDrawings = drawing.clearAll;
   const handleClearDrawings = useCallback(() => {
-    drawing.clearAll();
+    clearAllDrawings();
     onClearAllDrawings?.();
-  }, [drawing, onClearAllDrawings]);
+  }, [clearAllDrawings, onClearAllDrawings]);
 
   return (
     <View>
-      {enableDrawing ? (
-        <View
-          style={styles.chartDrawingToolsWrap}
-          onLayout={(evt) => setToolbarHeight(Math.round(evt.nativeEvent.layout.height))}
-        >
-          <DrawingToolbar
-            activeTool={drawing.activeTool}
-            onToolChange={drawing.setActiveTool}
-            onClear={handleClearDrawings}
-            onShare={drawing.share}
-            onDeleteSelected={handleClearDrawings}
-            canDelete={drawing.shapes.length > 0}
-            onUndo={drawing.undo}
-            onRedo={drawing.redo}
-            canUndo={drawing.canUndo}
-            canRedo={drawing.canRedo}
-            onDuplicate={drawing.duplicateSelected}
-            canDuplicate={Boolean(drawing.selectedId)}
-            onToggleLock={drawing.toggleSelectedLock}
-            canToggleLock={Boolean(drawing.selectedId)}
-            isLocked={drawing.selectedLocked}
-            onSettings={() => {
-              console.log('drawing-settings');
-            }}
-            readOnly={!hasChartPoints}
-            compact
-            theme={drawingToolbarTheme}
-          />
+      {header || enableDrawing ? (
+        <View style={styles.chartHeaderToolsRow}>
+          {header ? <View style={styles.chartHeaderSlot}>{header}</View> : null}
+          {enableDrawing ? (
+            <View style={styles.chartDrawingToolsWrap}>
+              <DrawingToolbar
+                activeTool={drawing.activeTool}
+                onToolChange={drawing.setActiveTool}
+                onClear={handleClearDrawings}
+                onShare={drawing.share}
+                onDeleteSelected={handleClearDrawings}
+                canDelete={drawing.shapes.length > 0}
+                onUndo={drawing.undo}
+                onRedo={drawing.redo}
+                canUndo={drawing.canUndo}
+                canRedo={drawing.canRedo}
+                onDuplicate={drawing.duplicateSelected}
+                canDuplicate={Boolean(drawing.selectedId)}
+                onToggleLock={drawing.toggleSelectedLock}
+                canToggleLock={Boolean(drawing.selectedId)}
+                isLocked={drawing.selectedLocked}
+                readOnly={!hasChartPoints}
+                compact
+                theme={drawingToolbarTheme}
+              />
+            </View>
+          ) : null}
         </View>
       ) : null}
+      {afterHeader ? <View style={styles.chartAfterHeaderSlot}>{afterHeader}</View> : null}
       <View style={styles.chartWrap}>
         {hasChartPoints ? (
           <View style={styles.chartFrame}>
@@ -3779,10 +3789,7 @@ const MainChart = ({
         )}
         {loading ? (
           <View
-            style={[
-              styles.chartLoadingOverlay,
-              enableDrawing ? { top: 10 + toolbarHeight + 8 } : null,
-            ]}
+            style={styles.chartLoadingOverlay}
             pointerEvents="none"
           >
             <View style={styles.chartLoadingTrack}>
@@ -3929,7 +3936,11 @@ const StockDetailScreen = ({ navigation, route }: any) => {
   const { authFetch, themeColors, token, currentPlan } = useUser() as any;
   const insets = useSafeAreaInsets();
   const headerTopPadding = Math.max(insets.top + 8, 16);
-  const styles = useMemo(() => createStyles(themeColors, headerTopPadding), [headerTopPadding, themeColors]);
+  const contentBottomPadding = Math.max(insets.bottom + 56, 88);
+  const styles = useMemo(
+    () => createStyles(themeColors, headerTopPadding, contentBottomPadding),
+    [contentBottomPadding, headerTopPadding, themeColors],
+  );
   const hasProPlan = useMemo(() => hasProAccess(currentPlan), [currentPlan]);
   const symbol = useMemo(() => normalizeStockSymbol(route?.params?.symbol), [route?.params?.symbol]);
   const normalizedWatchSymbol = useMemo(() => normalizeWatchlistSymbol(symbol), [symbol]);
@@ -4047,7 +4058,7 @@ const StockDetailScreen = ({ navigation, route }: any) => {
   const chartDrawingShapes = chartDrawingsBySymbol[symbol] || [];
   const handleDrawingShapesChange = useCallback(
     (next: DrawingShape[]) => {
-      setChartDrawingsBySymbol((prev) => ({ ...prev, [symbol]: next }));
+      setChartDrawingsBySymbol((prev) => (prev[symbol] === next ? prev : { ...prev, [symbol]: next }));
     },
     [symbol],
   );
@@ -4527,7 +4538,7 @@ const StockDetailScreen = ({ navigation, route }: any) => {
   );
 };
 
-const createStyles = (colors: Record<string, string>, headerTopPadding = 0) =>
+const createStyles = (colors: Record<string, string>, headerTopPadding = 0, contentBottomPadding = 32) =>
   StyleSheet.create({
     screen: {
       flex: 1,
@@ -4663,7 +4674,8 @@ const createStyles = (colors: Record<string, string>, headerTopPadding = 0) =>
       position: 'absolute',
       right: 0,
       textAlign: 'right',
-      backgroundColor: 'rgba(255,255,255,0.72)',
+      color: colors.textPrimary,
+      backgroundColor: colors.surface,
       paddingHorizontal: 4,
       borderRadius: 6,
     },
@@ -4682,10 +4694,6 @@ const createStyles = (colors: Record<string, string>, headerTopPadding = 0) =>
       fontSize: 10,
       lineHeight: 14,
       fontFamily: FONT.medium,
-    },
-    chartDrawingToolsWrap: {
-      marginBottom: 10,
-      gap: 8,
     },
     chartLegendRow: {
       flexDirection: 'row',
@@ -4728,7 +4736,7 @@ const createStyles = (colors: Record<string, string>, headerTopPadding = 0) =>
     scrollContent: {
       paddingHorizontal: 10,
       paddingTop: 20,
-      paddingBottom: 32,
+      paddingBottom: contentBottomPadding,
     },
     tabContent: {
       gap: 16,
@@ -5421,8 +5429,9 @@ const createStyles = (colors: Record<string, string>, headerTopPadding = 0) =>
       elevation: 4,
     },
     chartPriceRow: {
+      flex: 1,
       flexDirection: 'row',
-      alignItems: 'baseline',
+      alignItems: 'center',
       flexWrap: 'wrap',
       gap: 8,
     },
@@ -5439,6 +5448,24 @@ const createStyles = (colors: Record<string, string>, headerTopPadding = 0) =>
       color: colors.textMuted,
       fontSize: 14,
       fontFamily: FONT.medium,
+    },
+    chartHeaderToolsRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 10,
+      marginBottom: 12,
+    },
+    chartHeaderSlot: {
+      flex: 1,
+      minWidth: 0,
+    },
+    chartAfterHeaderSlot: {
+      marginBottom: 12,
+    },
+    chartDrawingToolsWrap: {
+      gap: 8,
+      alignSelf: 'flex-start',
     },
     chartCanvasWrap: {
       marginTop: 16,

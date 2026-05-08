@@ -30,7 +30,7 @@ export const DrawingOverlay = ({
   scales,
   plotRect,
   allowTextEditor = true,
-  handleRadius = 5,
+  handleRadius = 6,
   theme,
 }: DrawingOverlayProps) => {
   const palette = {
@@ -135,19 +135,19 @@ const styles = StyleSheet.create({
   editorWrap: {
     position: 'absolute',
     width: 180,
-    padding: 8,
-    borderRadius: 8,
+    padding: 10,
+    borderRadius: 12,
     borderWidth: 1,
     gap: 8,
   },
   input: {
-    minHeight: 34,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+    minHeight: 38,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 9,
     borderWidth: 1,
     fontFamily: 'NotoSans-Regular',
-    fontSize: 12,
+    fontSize: 13,
   },
   editorActions: {
     flexDirection: 'row',
@@ -156,18 +156,18 @@ const styles = StyleSheet.create({
   },
   cancelBtn: {
     flex: 1,
-    paddingVertical: 6,
-    borderRadius: 6,
+    paddingVertical: 8,
+    borderRadius: 9,
     alignItems: 'center',
   },
   saveBtn: {
     flex: 1,
-    paddingVertical: 6,
-    borderRadius: 6,
+    paddingVertical: 8,
+    borderRadius: 9,
     alignItems: 'center',
   },
   btnText: {
     fontFamily: 'NotoSans-SemiBold',
-    fontSize: 11,
+    fontSize: 12,
   },
 });
