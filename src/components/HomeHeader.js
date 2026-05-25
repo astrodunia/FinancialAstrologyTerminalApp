@@ -233,6 +233,7 @@ export default function HomeHeader({
   searchResults = [],
   searchLoading = false,
   searchError = '',
+  searchResolved = false,
   showSearchResults = false,
   onPressSearchResult,
   onSubmitSearch,
@@ -315,7 +316,7 @@ export default function HomeHeader({
             </View>
           ) : null}
 
-          {!searchLoading && !searchError && !searchResults.length ? (
+          {!searchLoading && searchResolved && !searchError && !searchResults.length ? (
             <View style={styles.searchStateRow}>
               <AppText style={styles.searchStateText}>No matches found</AppText>
             </View>

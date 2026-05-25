@@ -190,7 +190,7 @@ export const useTickerAlerts = (symbol: string, enabled = true) => {
   const createAlert = useCallback(
     async (condition: string, targetPrice: number) => {
       await createStockAlert(authFetch as any, { email, symbol: normalizedSymbol, condition, targetPrice });
-      state.reload();
+      await state.reload();
     },
     [authFetch, email, normalizedSymbol, state],
   );
@@ -198,7 +198,7 @@ export const useTickerAlerts = (symbol: string, enabled = true) => {
   const removeAlert = useCallback(
     async (id: string) => {
       await deleteStockAlert(authFetch as any, id);
-      state.reload();
+      await state.reload();
     },
     [authFetch, state],
   );
@@ -206,7 +206,7 @@ export const useTickerAlerts = (symbol: string, enabled = true) => {
   const toggleAlert = useCallback(
     async (id: string, enabledValue: boolean) => {
       await updateStockAlert(authFetch as any, id, { enabled: enabledValue });
-      state.reload();
+      await state.reload();
     },
     [authFetch, state],
   );

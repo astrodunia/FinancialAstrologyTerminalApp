@@ -7,7 +7,7 @@ const PLAN_CATALOG = [
     family: 'basic',
     badge: 'Starter',
     description: 'A clean entry point for testing dashboards, layouts, and lightweight tracking.',
-    bullets: ['Core dashboards', 'Snapshot data', '2 watchlists', '25 tickers in each watchlist'],
+    bullets: ['Core dashboards', 'Snapshot data', '25 tickers in each watchlist'],
   },
   {
     id: 'pro',

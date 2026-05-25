@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Image,
+  Keyboard,
   Linking,
   Modal,
   PanResponder,
@@ -3358,12 +3360,21 @@ const AlertsTab = ({
   const [submitting, setSubmitting] = useState(false);
 
   const submit = async () => {
-    const parsed = Number(targetPrice);
-    if (!Number.isFinite(parsed)) return;
+    const normalizedTarget = String(targetPrice || '').trim().replace(',', '.');
+    const parsed = Number(normalizedTarget);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      Alert.alert('Invalid target', 'Enter a valid target price greater than 0.');
+      return;
+    }
+
+    Keyboard.dismiss();
     try {
       setSubmitting(true);
       await alertsState.createAlert(condition, parsed);
       setTargetPrice('');
+      Alert.alert('Alert created', `${symbol} alert created for price ${condition} ${parsed}.`);
+    } catch (error: any) {
+      Alert.alert('Unable to create alert', error?.message || 'The alert request failed.');
     } finally {
       setSubmitting(false);
     }
@@ -3411,7 +3422,11 @@ const AlertsTab = ({
           placeholderTextColor={themeColors.textMuted}
           style={styles.input}
         />
-        <Pressable onPress={submit} disabled={submitting} style={styles.primaryButton}>
+        <Pressable
+          onPress={submit}
+          disabled={submitting}
+          style={[styles.primaryButton, submitting ? styles.primaryButtonDisabled : null]}
+        >
           <AppText style={styles.primaryButtonText}>{submitting ? 'Saving...' : 'Create Alert'}</AppText>
         </Pressable>
       </View>
@@ -6180,6 +6195,9 @@ const createStyles = (colors: Record<string, string>, headerTopPadding = 0) =>
       color: colors.textMuted,
       fontFamily: FONT.regular,
     },
+
+
+
     emptyText: {
       color: colors.textMuted,
       fontSize: 13,
@@ -6202,6 +6220,9 @@ const createStyles = (colors: Record<string, string>, headerTopPadding = 0) =>
       borderRadius: 16,
       paddingVertical: 13,
       backgroundColor: colors.accent,
+    },
+    primaryButtonDisabled: {
+      opacity: 0.7,
     },
     primaryButtonText: {
       color: colors.background,

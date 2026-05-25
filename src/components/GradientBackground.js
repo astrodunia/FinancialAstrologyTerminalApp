@@ -1,17 +1,26 @@
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, View, useWindowDimensions } from 'react-native';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import { useUser } from '../store/UserContext';
 
 function GradientBackground({ children }) {
   const { theme, themeColors } = useUser();
+  const { width, height } = useWindowDimensions();
   const [bg0, bg1, bg2, bg3] = themeColors.gradientStops;
   const [left0, left1] = themeColors.glowLeft;
   const [right0, right1] = themeColors.glowRight;
 
   return (
-    <View style={styles.container}>
-      <Svg style={StyleSheet.absoluteFill} width="100%" height="100%">
+    <View style={[styles.container, { backgroundColor: bg3 || themeColors.background }]}>
+      <Svg
+        key={`${Math.round(width)}x${Math.round(height)}-${theme}`}
+        pointerEvents="none"
+        style={StyleSheet.absoluteFill}
+        width={Math.max(width, 1)}
+        height={Math.max(height, 1)}
+        viewBox={`0 0 ${Math.max(width, 1)} ${Math.max(height, 1)}`}
+        preserveAspectRatio="xMidYMid slice"
+      >
         <Defs>
           <LinearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
             <Stop offset="0%" stopColor={bg0} />
@@ -33,10 +42,10 @@ function GradientBackground({ children }) {
             <Stop offset="100%" stopColor={theme === 'dark' ? '#FFFFFF' : '#0B1F3F'} stopOpacity="0" />
           </LinearGradient>
         </Defs>
-        <Rect width="100%" height="100%" fill="url(#bg)" />
-        <Rect width="100%" height="100%" fill="url(#glowLeft)" />
-        <Rect width="100%" height="100%" fill="url(#glowRight)" />
-        <Rect width="100%" height="100%" fill="url(#mist)" />
+        <Rect width={Math.max(width, 1)} height={Math.max(height, 1)} fill="url(#bg)" />
+        <Rect width={Math.max(width, 1)} height={Math.max(height, 1)} fill="url(#glowLeft)" />
+        <Rect width={Math.max(width, 1)} height={Math.max(height, 1)} fill="url(#glowRight)" />
+        <Rect width={Math.max(width, 1)} height={Math.max(height, 1)} fill="url(#mist)" />
       </Svg>
       {children}
     </View>

@@ -7,6 +7,7 @@ export const useTickerSearch = (query, { enabled = true, limit = 8 } = {}) => {
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [resolved, setResolved] = useState(false);
   const requestRef = useRef(null);
 
   useEffect(() => {
@@ -15,6 +16,7 @@ export const useTickerSearch = (query, { enabled = true, limit = 8 } = {}) => {
       setResults([]);
       setLoading(false);
       setError('');
+      setResolved(false);
       return undefined;
     }
 
@@ -24,26 +26,30 @@ export const useTickerSearch = (query, { enabled = true, limit = 8 } = {}) => {
       setResults([]);
       setLoading(false);
       setError('');
+      setResolved(false);
       return undefined;
     }
 
     const controller = new AbortController();
     requestRef.current?.abort();
     requestRef.current = controller;
+    setLoading(true);
+    setResolved(false);
 
     const timeoutId = setTimeout(async () => {
-      setLoading(true);
       setError('');
 
       try {
         const items = rankLocalTickerResults(trimmed, limit);
         if (!controller.signal.aborted) {
           setResults(items);
+          setResolved(true);
         }
       } catch (nextError) {
         if (!controller.signal.aborted) {
           setResults([]);
           setError(nextError?.message ? 'Search failed' : 'Search failed');
+          setResolved(true);
         }
       } finally {
         if (!controller.signal.aborted) {
@@ -58,5 +64,5 @@ export const useTickerSearch = (query, { enabled = true, limit = 8 } = {}) => {
     };
   }, [enabled, limit, query]);
 
-  return { results, loading, error };
+  return { results, loading, error, resolved };
 };

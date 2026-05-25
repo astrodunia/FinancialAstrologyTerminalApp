@@ -348,7 +348,12 @@ const Watchlist = ({ navigation }) => {
   const displayName = user?.displayName || user?.name || 'Trader';
   const symbolCount = customRows.length;
   const createButtonColor = theme === 'light' ? '#ffffff' : '#0b1220';
-  const { results: tickerResults, loading: tickerSearchLoading, error: tickerSearchError } = useTickerSearch(searchQuery);
+  const {
+    results: tickerResults,
+    loading: tickerSearchLoading,
+    error: tickerSearchError,
+    resolved: tickerSearchResolved,
+  } = useTickerSearch(searchQuery);
 
   const submitTickerSearch = useCallback(() => {
     const normalized = normalizeStockSymbol(searchQuery);
@@ -661,12 +666,13 @@ const Watchlist = ({ navigation }) => {
             profileName={displayName}
             searchQuery={searchQuery}
             onChangeSearchQuery={setSearchQuery}
-            searchResults={tickerResults}
-            searchLoading={tickerSearchLoading}
-            searchError={tickerSearchError}
-            showSearchResults={Boolean(searchQuery.trim())}
-            onPressSearchResult={selectTickerSearchResult}
-            onSubmitSearch={submitTickerSearch}
+              searchResults={tickerResults}
+              searchLoading={tickerSearchLoading}
+              searchError={tickerSearchError}
+              searchResolved={tickerSearchResolved}
+              showSearchResults={Boolean(searchQuery.trim())}
+              onPressSearchResult={selectTickerSearchResult}
+              onSubmitSearch={submitTickerSearch}
             onPressProfile={() => navigation.navigate('Profile')}
             onPressGlobalIndices={() => navigation.navigate('GlobalIndices')}
           />
@@ -721,12 +727,13 @@ const Watchlist = ({ navigation }) => {
           profileName={displayName}
           searchQuery={searchQuery}
           onChangeSearchQuery={setSearchQuery}
-          searchResults={tickerResults}
-          searchLoading={tickerSearchLoading}
-          searchError={tickerSearchError}
-          showSearchResults={Boolean(searchQuery.trim())}
-          onPressSearchResult={selectTickerSearchResult}
-          onSubmitSearch={submitTickerSearch}
+            searchResults={tickerResults}
+            searchLoading={tickerSearchLoading}
+            searchError={tickerSearchError}
+            searchResolved={tickerSearchResolved}
+            showSearchResults={Boolean(searchQuery.trim())}
+            onPressSearchResult={selectTickerSearchResult}
+            onSubmitSearch={submitTickerSearch}
           onPressProfile={() => navigation.navigate('Profile')}
           onPressGlobalIndices={() => navigation.navigate('GlobalIndices')}
         />
@@ -1533,6 +1540,7 @@ const createStyles = (colors, isLight, isWide, isCompact) =>
     dialogActions: {
       flexDirection: 'row',
       gap: 10,
+      marginBottom: 100,
     },
     dialogGhost: {
       flex: 1,

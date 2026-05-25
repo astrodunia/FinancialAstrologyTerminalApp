@@ -66,11 +66,22 @@ const buildUserState = (authUser) => {
   const rawName = source.name || source.fullName || source.username || source.email || '';
   const resolvedName = rawName || formatNameFromIdentifier(source.email || '');
 
+  // Produce a short display name for headers (first name or email prefix), truncated if too long
+  const firstToken = resolvedName ? resolvedName.split(/\s+/)[0] : '';
+  const emailPrefix = resolvedName && resolvedName.includes('@') ? resolvedName.split('@')[0] : '';
+  let shortName = firstToken || emailPrefix || 'Trader';
+  if (!firstToken && emailPrefix) shortName = emailPrefix;
+  // Limit to reasonable header length
+  const MAX_LEN = 18;
+  if (shortName.length > MAX_LEN) {
+    shortName = `${shortName.slice(0, MAX_LEN - 3)}...`;
+  }
+
   return {
     ...source,
     name: resolvedName || 'Trader',
     email: source.email || '',
-    displayName: resolvedName.includes('@') ? formatNameFromIdentifier(resolvedName) : resolvedName || 'Trader',
+    displayName: shortName,
   };
 };
 
