@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+      import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useUser } from '../../store/UserContext';
 import {
   createStockAlert,
@@ -23,6 +23,7 @@ import {
   normalizeSymbol,
   removeSimpleWatchlistTicker,
 } from '../../services/watchlistApi';
+import type { StockAlert } from './types';
 
 const useStableResource = <T,>(
   key: string,
@@ -77,7 +78,11 @@ const useStableResource = <T,>(
     setReloadTick((value) => value + 1);
   }, []);
 
-  return { data, loading, error, reload };
+  const mutate = useCallback((updater: T | null | ((current: T | null) => T | null)) => {
+    setData((current) => (typeof updater === 'function' ? (updater as (value: T | null) => T | null)(current) : updater));
+  }, []);
+
+  return { data, loading, error, reload, mutate };
 };
 
 export const useStockInfo = (symbol: string) => {
@@ -173,7 +178,12 @@ export const useStockNews = (symbol: string, enabled = true) => {
 export const useTickerAlerts = (symbol: string, enabled = true) => {
   const { authFetch, user } = useUser() as any;
   const normalizedSymbol = useMemo(() => normalizeStockSymbol(symbol), [symbol]);
-  const email = user?.email || '';
+  const email =
+    user?.email ||
+    user?.userEmail ||
+    user?.mail ||
+    (typeof user?.username === 'string' && user.username.includes('@') ? user.username : '') ||
+    '';
 
   const state = useStableResource(
     `alerts:${email}:${normalizedSymbol}`,
@@ -189,24 +199,51 @@ export const useTickerAlerts = (symbol: string, enabled = true) => {
 
   const createAlert = useCallback(
     async (condition: string, targetPrice: number) => {
-      await createStockAlert(authFetch as any, { email, symbol: normalizedSymbol, condition, targetPrice });
-      await state.reload();
+      const payload = await createStockAlert(authFetch as any, { email, symbol: normalizedSymbol, condition, targetPrice });
+      const created = mapAlerts(payload).find((item) => item.symbol === normalizedSymbol) || {
+        id:
+          (payload && typeof payload === 'object' && String((payload as any).id || (payload as any)._id || (payload as any).alertId || '')) ||
+          `local-${normalizedSymbol}-${condition}-${targetPrice}-${Date.now()}`,
+        symbol: normalizedSymbol,
+        email,
+        condition,
+        targetPrice,
+        enabled: true,
+        raw: payload && typeof payload === 'object' ? payload : {},
+      };
+
+      state.mutate((current) => {
+        const next = Array.isArray(current) ? [...current] : [];
+        const existingIndex = next.findIndex((item) => item.id === created.id);
+        if (existingIndex >= 0) {
+          next[existingIndex] = created;
+          return next;
+        }
+        return [created, ...next];
+      });
+      state.reload();
     },
     [authFetch, email, normalizedSymbol, state],
   );
 
   const removeAlert = useCallback(
-    async (id: string) => {
-      await deleteStockAlert(authFetch as any, id);
-      await state.reload();
+    async (alert: StockAlert) => {
+      await deleteStockAlert(authFetch as any, alert);
+      state.mutate((current) => (Array.isArray(current) ? current.filter((item) => item.id !== alert.id) : current));
+      state.reload();
     },
     [authFetch, state],
   );
 
   const toggleAlert = useCallback(
-    async (id: string, enabledValue: boolean) => {
-      await updateStockAlert(authFetch as any, id, { enabled: enabledValue });
-      await state.reload();
+    async (alert: StockAlert, enabledValue: boolean) => {
+      await updateStockAlert(authFetch as any, alert, { enabled: enabledValue });
+      state.mutate((current) => (
+        Array.isArray(current)
+          ? current.map((item) => (item.id === alert.id ? { ...item, enabled: enabledValue } : item))
+          : current
+      ));
+      state.reload();
     },
     [authFetch, state],
   );

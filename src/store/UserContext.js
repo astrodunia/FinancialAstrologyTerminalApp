@@ -63,8 +63,14 @@ const formatNameFromIdentifier = (identifier) => {
 
 const buildUserState = (authUser) => {
   const source = authUser || {};
-  const rawName = source.name || source.fullName || source.username || source.email || '';
-  const resolvedName = rawName || formatNameFromIdentifier(source.email || '');
+  const resolvedEmail =
+    source.email ||
+    source.userEmail ||
+    source.mail ||
+    (typeof source.username === 'string' && source.username.includes('@') ? source.username : '') ||
+    '';
+  const rawName = source.name || source.fullName || source.username || resolvedEmail || '';
+  const resolvedName = rawName || formatNameFromIdentifier(resolvedEmail || '');
 
   // Produce a short display name for headers (first name or email prefix), truncated if too long
   const firstToken = resolvedName ? resolvedName.split(/\s+/)[0] : '';
@@ -80,7 +86,7 @@ const buildUserState = (authUser) => {
   return {
     ...source,
     name: resolvedName || 'Trader',
-    email: source.email || '',
+    email: resolvedEmail,
     displayName: shortName,
   };
 };
@@ -88,6 +94,10 @@ const buildUserState = (authUser) => {
 export const UserProvider = ({ children }) => {
   const systemColorScheme = useColorScheme();
   const auth = useAuth();
+  const authUser = auth.user;
+  const authToken = auth.token;
+  const authUpdateUser = auth.updateUser;
+  const authSyncSession = auth.syncSession;
   const [localHydrated, setLocalHydrated] = useState(false);
   const [profileImageUrl, setProfileImageUrl] = useState('');
   const [themePreference, setThemePreferenceState] = useState('system');
@@ -156,32 +166,32 @@ export const UserProvider = ({ children }) => {
   const updateUserProfile = useCallback(
     async (nextRawUser) => {
       const nextUser = {
-        ...(auth.user || {}),
+        ...(authUser || {}),
         ...(nextRawUser || {}),
       };
 
-      await auth.updateUser(nextUser);
+      await authUpdateUser(nextUser);
       return buildUserState(nextUser);
     },
-    [auth.updateUser, auth.user],
+    [authUpdateUser, authUser],
   );
 
   const syncSession = useCallback(async () => {
     try {
       setIsSyncingSession(true);
-      return await auth.syncSession();
+      return await authSyncSession();
     } finally {
       setIsSyncingSession(false);
     }
-  }, [auth.syncSession]);
+  }, [authSyncSession]);
 
   useEffect(() => {
-    if (!localHydrated || !auth.token) {
+    if (!localHydrated || !authToken) {
       return;
     }
 
     syncSession().catch(() => null);
-  }, [auth.token, localHydrated, syncSession]);
+  }, [authToken, localHydrated, syncSession]);
 
   const value = useMemo(
     () => {

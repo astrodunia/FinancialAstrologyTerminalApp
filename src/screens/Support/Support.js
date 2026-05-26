@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -23,6 +24,7 @@ import AppTextInput from '../../components/AppTextInput';
 import BackButtonHeader from '../../components/BackButtonHeader';
 import BottomTabs from '../../components/BottomTabs';
 import GradientBackground from '../../components/GradientBackground';
+import { fetchMe } from '../../features/plans/api';
 import { useUser } from '../../store/UserContext';
 
 const FAQS = [
@@ -56,133 +58,208 @@ const safeJson = async (res) => {
   }
 };
 
-const extractSessionUser = (payload) => payload?.user || payload?.data?.user || payload?.session?.user || payload?.data || null;
+const REQUEST_TIMEOUT_MS = 15000;
+
+const fetchWithTimeout = async (request, timeoutMessage) => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  try {
+    return await request(controller.signal);
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      throw new Error(timeoutMessage);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+};
+
+const pickUserId = (source) => source?.id || source?._id || source?.uid || source?.userId || '';
+const pickUserMobile = (source) =>
+  String(source?.mobile || source?.mobileNumber || source?.phone || source?.phoneNumber || source?.contactNumber || '').trim();
+
 
 const Support = ({ navigation }) => {
   const { authFetch, themeColors, user } = useUser();
   const styles = useMemo(() => createStyles(themeColors), [themeColors]);
   const [expandedFaq, setExpandedFaq] = useState(0);
   const [message, setMessage] = useState('');
+  const [mobile, setMobile] = useState(pickUserMobile(user));
   const [submitting, setSubmitting] = useState(false);
   const [loadingTickets, setLoadingTickets] = useState(true);
   const [tickets, setTickets] = useState([]);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-  const [sessionUser, setSessionUser] = useState(null);
+  const [supportUser, setSupportUser] = useState(user || null);
   const [deletingId, setDeletingId] = useState('');
   const [deleteTicketId, setDeleteTicketId] = useState('');
   const authFetchRef = useRef(authFetch);
+  const userRef = useRef(user);
 
   useEffect(() => {
     authFetchRef.current = authFetch;
   }, [authFetch]);
 
-  const loadSessionUser = useCallback(async () => {
-    try {
-      const res = await authFetchRef.current('/api/auth/session');
-      const json = await safeJson(res);
-      if (!res.ok) return null;
-      const nextUser = extractSessionUser(json);
-      setSessionUser(nextUser);
-      return nextUser;
-    } catch {
-      return null;
-    }
-  }, []);
-
-  const loadTickets = useCallback(
-    async (existingSessionUser) => {
-      setLoadingTickets(true);
-      setError('');
-
-      try {
-        const resolvedUser = existingSessionUser || (await loadSessionUser());
-        const userId = resolvedUser?.id || resolvedUser?._id;
-        if (!userId) {
-          setTickets([]);
-          return;
-        }
-
-        const res = await authFetchRef.current(`/api/help/queries?user_id=${encodeURIComponent(userId)}`);
-        if (res.status === 404) {
-          setTickets([]);
-          return;
-        }
-
-        const json = await safeJson(res);
-        if (!res.ok) {
-          throw new Error(json?.message || `Failed to load support messages (${res.status})`);
-        }
-
-        const payload = json?.data || json;
-        setTickets(Array.isArray(payload) ? payload : []);
-      } catch (nextError) {
-        setError(nextError?.message || 'Failed to load support messages.');
-      } finally {
-        setLoadingTickets(false);
-      }
-    },
-    [loadSessionUser],
-  );
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
 
   useEffect(() => {
-    let active = true;
+    setSupportUser(user || null);
+  }, [user]);
 
-    (async () => {
-      const nextUser = await loadSessionUser();
-      if (!active) return;
-      await loadTickets(nextUser);
-    })();
+  useEffect(() => {
+    const nextMobile = pickUserMobile(user);
+    if (nextMobile) {
+      setMobile(nextMobile);
+    }
+  }, [user]);
 
-    return () => {
-      active = false;
-    };
-  }, [loadSessionUser, loadTickets]);
+  const resolveSupportUser = useCallback(async (seedUser) => {
+    const baseUser = seedUser || userRef.current || null;
+    if (pickUserId(baseUser)) {
+      setSupportUser((current) => current || baseUser);
+      return baseUser;
+    }
+
+    const payload = await fetchMe(authFetchRef.current);
+    const nextUser = payload?.user || null;
+    if (nextUser) {
+      setSupportUser(nextUser);
+    }
+    return nextUser;
+  }, []);
+
+  const loadTickets = useCallback(async (forUser) => {
+    setLoadingTickets(true);
+    setError('');
+
+    try {
+      const resolvedUser =
+        typeof forUser === 'string'
+          ? { id: forUser }
+          : await resolveSupportUser(forUser);
+      const userId = typeof forUser === 'string' ? forUser : pickUserId(resolvedUser);
+      if (!userId) {
+        setTickets([]);
+        return;
+      }
+
+      const loadPath = `/api/help/queries?user_id=${encodeURIComponent(userId)}`;
+      console.log('[Support] loadTickets ->', { loadPath });
+      const res = await fetchWithTimeout(
+        (signal) => authFetchRef.current(loadPath, { signal }),
+        'Loading support history timed out. Please try again.',
+      );
+      if (res.status === 404) {
+        setTickets([]);
+        return;
+      }
+
+      const json = await safeJson(res);
+      console.log('[Support] loadTickets response', { status: res.status, body: json });
+      if (!res.ok) {
+        throw new Error(json?.message || `Failed to load support messages (${res.status})`);
+      }
+
+      const payload = json?.data || json;
+      setTickets(Array.isArray(payload) ? payload : []);
+    } catch (nextError) {
+      setError(nextError?.message || 'Failed to load support messages.');
+    } finally {
+      setLoadingTickets(false);
+    }
+  }, [resolveSupportUser]);
+
+  useEffect(() => {
+    loadTickets(user).catch(() => null);
+  }, [loadTickets, user]);
 
   const submitSupport = async () => {
     const trimmedMessage = message.trim();
     if (!trimmedMessage) {
-      setError('Please describe your issue before submitting.');
+      const nextMessage = 'Please describe your issue before submitting.';
+      setError(nextMessage);
+      Alert.alert('Support', nextMessage);
       return;
     }
 
+    let submitted = false;
     setSubmitting(true);
     setError('');
     setNotice('');
 
     try {
-      const resolvedUser = sessionUser || (await loadSessionUser());
-      const userId = resolvedUser?.id || resolvedUser?._id;
-      const name = resolvedUser?.name || user?.displayName || user?.name || '';
+      const resolvedUser = await resolveSupportUser();
+      const resolvedUserId = pickUserId(resolvedUser);
+      const name = resolvedUser?.name || resolvedUser?.displayName || user?.name || user?.displayName || '';
       const email = resolvedUser?.email || user?.email || '';
+      const resolvedMobile = pickUserMobile(resolvedUser) || mobile.trim();
 
-      if (!userId || !name || !email) {
+      if (!resolvedUserId || !name || !email) {
         throw new Error('Your account details are incomplete. Please sign in again.');
       }
 
-      const res = await authFetch('/api/help/queries', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_id: userId,
+      if (!resolvedMobile) {
+        throw new Error('Mobile number is required.');
+      }
+
+      const submitPath = '/api/help/queries';
+      console.log('[Support] submitSupport ->', {
+        path: submitPath,
+        payload: {
+          user_id: resolvedUserId,
           name,
           email: String(email).toLowerCase(),
+          mobile: resolvedMobile,
           message: trimmedMessage,
-        }),
+        },
       });
 
+      const res = await fetchWithTimeout(
+        (signal) =>
+          authFetchRef.current(submitPath, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            signal,
+            body: JSON.stringify({
+              user_id: resolvedUserId,
+              name,
+              email: String(email).toLowerCase(),
+              mobile: resolvedMobile,
+              message: trimmedMessage,
+            }),
+          }),
+        'Submitting support request timed out. Please try again.',
+      );
+
       const json = await safeJson(res);
+      console.log('[Support] submitSupport response', { status: res.status, body: json });
       if (!res.ok) {
         throw new Error(json?.message || `Failed to submit support request (${res.status})`);
       }
 
       setNotice('Your support message was submitted successfully.');
       setMessage('');
-      await loadTickets(resolvedUser);
+      Alert.alert('Support', 'Your support message was submitted successfully.');
+
+      const newTicket = json?.data || json;
+      if (newTicket && (newTicket._id || newTicket.id)) {
+        setTickets((current) => [newTicket, ...current]);
+      }
+      submitted = true;
     } catch (nextError) {
-      setError(nextError?.message || 'Failed to submit support request.');
+      const nextMessage = nextError?.message || 'Failed to submit support request.';
+      setError(nextMessage);
+      Alert.alert('Support request failed', nextMessage);
     } finally {
       setSubmitting(false);
+    }
+
+    if (submitted) {
+      loadTickets().catch(() => null);
     }
   };
 
@@ -194,14 +271,24 @@ const Support = ({ navigation }) => {
     setNotice('');
 
     try {
-      let res = await authFetch(`/api/help/queries?id=${encodeURIComponent(ticketId)}`, {
-        method: 'DELETE',
-      });
+      let res = await fetchWithTimeout(
+        (signal) =>
+          authFetchRef.current(`/api/help/queries?id=${encodeURIComponent(ticketId)}`, {
+            method: 'DELETE',
+            signal,
+          }),
+        'Deleting support message timed out. Please try again.',
+      );
 
       if (res.status === 404 || res.status === 405) {
-        res = await authFetch(`/api/help/queries/${encodeURIComponent(ticketId)}`, {
-          method: 'DELETE',
-        });
+        res = await fetchWithTimeout(
+          (signal) =>
+            authFetchRef.current(`/api/help/queries/${encodeURIComponent(ticketId)}`, {
+              method: 'DELETE',
+              signal,
+            }),
+          'Deleting support message timed out. Please try again.',
+        );
       }
 
       const json = await safeJson(res);
@@ -354,12 +441,25 @@ const Support = ({ navigation }) => {
 
             <View style={styles.readOnlyField}>
               <AppText style={styles.readOnlyLabel}>Name</AppText>
-              <AppText style={styles.readOnlyValue}>{sessionUser?.name || user?.displayName || user?.name || '—'}</AppText>
+              <AppText style={styles.readOnlyValue}>{supportUser?.name || supportUser?.displayName || user?.name || user?.displayName || '—'}</AppText>
             </View>
 
             <View style={styles.readOnlyField}>
               <AppText style={styles.readOnlyLabel}>Email</AppText>
-              <AppText style={styles.readOnlyValue}>{sessionUser?.email || user?.email || '—'}</AppText>
+              <AppText style={styles.readOnlyValue}>{supportUser?.email || user?.email || '—'}</AppText>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <AppText style={styles.inputLabel}>Mobile</AppText>
+              <AppTextInput
+                value={mobile}
+                onChangeText={setMobile}
+                keyboardType="phone-pad"
+                autoCapitalize="none"
+                style={styles.inputField}
+                placeholder="Enter your mobile number"
+                placeholderTextColor={themeColors.textMuted}
+              />
             </View>
 
             <View style={styles.inputGroup}>
@@ -759,6 +859,16 @@ const createStyles = (colors) =>
       color: colors.textPrimary,
       fontSize: 12,
       fontFamily: 'NotoSans-SemiBold',
+    },
+    inputField: {
+      minHeight: 52,
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceAlt,
+      color: colors.textPrimary,
+      paddingHorizontal: 12,
+      paddingVertical: 12,
     },
     textArea: {
       minHeight: 128,

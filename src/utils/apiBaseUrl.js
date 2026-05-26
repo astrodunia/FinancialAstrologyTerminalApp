@@ -9,7 +9,7 @@ const PROD_API_BASE_URL = 'https://finance.rajeevprakash.com';
 //   '192.168.1.8'
 //   'api.example.com'
 // Leave empty to auto-detect from the Metro host in development.
-const API_HOST_OVERRIDE = '';
+const API_HOST_OVERRIDE = '192.168.29.145';
 
 const getHostFromScriptUrl = () => {
   const scriptUrl = NativeModules?.SourceCode?.scriptURL || '';
@@ -38,6 +38,7 @@ const resolveApiHost = () => {
   const metroHost = normalizeHost(__DEV__ ? getHostFromScriptUrl() : '');
   if (metroHost) {
     if (Platform.OS === 'android' && isLocalhost(metroHost)) {
+      // Use Android emulator loopback alias. '10.0.2.2' works for default Android emulator.
       return {
         host: '10.0.2.2',
         source: 'android_emulator_loopback',
@@ -52,6 +53,8 @@ const resolveApiHost = () => {
 
   if (__DEV__ && Platform.OS === 'android') {
     return {
+      // Fallback for Android development if Metro host can't be determined.
+      // '10.0.2.2' maps to host machine localhost on Android emulator.
       host: '10.0.2.2',
       source: 'android_dev_fallback',
     };

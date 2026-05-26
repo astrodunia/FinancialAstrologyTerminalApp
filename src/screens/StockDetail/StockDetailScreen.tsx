@@ -3446,13 +3446,10 @@ const AlertsTab = ({
                 <AppText style={styles.listTitle}>
                   {item.condition === 'below' ? 'Below' : 'Above'} {item.targetPrice ?? '--'}
                 </AppText>
-                <AppText style={styles.listSummary}>{item.enabled ? 'Active' : 'Paused'}</AppText>
+                <AppText style={styles.listSummary}>Active</AppText>
               </View>
               <View style={styles.alertActions}>
-                <Pressable onPress={() => alertsState.toggleAlert(item.id, !item.enabled)} style={styles.smallButton}>
-                  <AppText style={styles.smallButtonText}>{item.enabled ? 'Pause' : 'Resume'}</AppText>
-                </Pressable>
-                <Pressable onPress={() => alertsState.removeAlert(item.id)} style={styles.smallButton}>
+                <Pressable onPress={() => alertsState.removeAlert(item)} style={styles.smallButton}>
                   <AppText style={styles.smallButtonText}>Delete</AppText>
                 </Pressable>
               </View>

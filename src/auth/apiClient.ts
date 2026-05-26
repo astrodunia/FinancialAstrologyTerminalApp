@@ -1,4 +1,4 @@
-import { LIVE_API_BASE as API_BASE } from '../utils/apiBaseUrl';
+import { API_BASE_URL as API_BASE } from '../utils/apiBaseUrl';
 
 export { API_BASE };
 

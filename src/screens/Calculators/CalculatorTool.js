@@ -731,8 +731,9 @@ function FibonacciTool({ navigation, styles, themeColors, openSite }) {
     const minY = out.low - out.range * 0.1;
     const maxY = out.high + out.range * 0.1;
 
-    const xFor = (pct) => left + (pct / 100) * plotW;
-    const yFor = (price) => top + (1 - (price - minY) / (maxY - minY)) * plotH;
+    const safeC = (v) => (Number.isFinite(v) ? v : 0);
+    const xFor = (pct) => safeC(left + (pct / 100) * plotW);
+    const yFor = (price) => safeC(top + (1 - (price - minY) / Math.max(maxY - minY, 1)) * plotH);
     const linePoints = out.levels.map((lv) => `${xFor(lv.p)},${yFor(lv.v)}`).join(' ');
     const level50 = out.levels.find((lv) => lv.p === 50);
     const level618 = out.levels.find((lv) => lv.p === 61.8);
@@ -1266,11 +1267,13 @@ function CAGRTool({ navigation, styles, themeColors, openSite }) {
     const bottom = isSmallScreen ? 32 : 36;
     const plotW = width - left - right;
     const plotH = height - top - bottom;
-    const maxY = Math.max(...out.points.map((p) => Math.max(p.nominal, p.real)));
-    const minY = Math.min(...out.points.map((p) => Math.min(p.nominal, p.real)));
-
-    const xFor = (t) => left + (t / out.y) * plotW;
-    const yFor = (v) => top + (1 - (v - minY) / Math.max(maxY - minY, 1)) * plotH;
+    const rawMaxY = out.points.reduce((m, p) => Math.max(m, p.nominal, p.real), 0);
+    const rawMinY = out.points.reduce((m, p) => Math.min(m, p.nominal, p.real), rawMaxY);
+    const maxY = Number.isFinite(rawMaxY) ? rawMaxY : 1;
+    const minY = Number.isFinite(rawMinY) ? rawMinY : 0;
+    const safeC = (v) => (Number.isFinite(v) ? v : 0);
+    const xFor = (t) => safeC(left + (t / Math.max(out.y, 1)) * plotW);
+    const yFor = (v) => safeC(top + (1 - (v - minY) / Math.max(maxY - minY, 1)) * plotH);
 
     return {
       width,
@@ -1398,7 +1401,7 @@ function RetirementCorpusTool({ navigation, styles, themeColors, openSite }) {
     const income = toNum(otherIncome) || 0;
     if ([age, ra, pv, pm, spend].some((v) => v == null) || ra <= age || pv < 0 || pm < 0 || wr <= 0) return null;
 
-    const years = ra - age;
+    const years = Math.min(100, ra - age);
     const months = Math.max(1, Math.round(years * 12));
     const rm = r / 12;
     const fvPv = pv * Math.pow(1 + rm, months);
@@ -1434,9 +1437,11 @@ function RetirementCorpusTool({ navigation, styles, themeColors, openSite }) {
     const bottom = isSmallScreen ? 30 : 34;
     const plotW = width - left - right;
     const plotH = height - top - bottom;
-    const maxY = Math.max(...out.path.map((p) => Math.max(p.val, p.req)), 1);
-    const xFor = (x) => left + (x / Math.max(out.years, 1)) * plotW;
-    const yFor = (v) => top + (1 - v / maxY) * plotH;
+    const rawMaxY = out.path.reduce((m, p) => Math.max(m, Number.isFinite(p.val) ? p.val : 0, Number.isFinite(p.req) ? p.req : 0), 1);
+    const maxY = Number.isFinite(rawMaxY) ? rawMaxY : 1;
+    const safeC = (v) => (Number.isFinite(v) ? v : 0);
+    const xFor = (x) => safeC(left + (x / Math.max(out.years, 1)) * plotW);
+    const yFor = (v) => safeC(top + (1 - (Number.isFinite(v) ? v : 0) / maxY) * plotH);
 
     return {
       width,

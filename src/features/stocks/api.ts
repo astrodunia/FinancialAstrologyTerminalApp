@@ -55,6 +55,7 @@ const normalizeTimestamp = (value: unknown): number | null => {
 const toArray = <T = Record<string, unknown>>(payload: unknown): T[] => {
   if (Array.isArray(payload)) return payload as T[];
   if (Array.isArray((payload as any)?.data)) return (payload as any).data as T[];
+  if (Array.isArray((payload as any)?.alerts)) return (payload as any).alerts as T[];
   if (Array.isArray((payload as any)?.items)) return (payload as any).items as T[];
   if (Array.isArray((payload as any)?.result)) return (payload as any).result as T[];
   if (Array.isArray((payload as any)?.results)) return (payload as any).results as T[];
@@ -393,15 +394,36 @@ export const mapNews = (payload: unknown): StockNewsItem[] => {
 };
 
 export const mapAlerts = (payload: unknown): StockAlert[] => {
-  return toObjectArray(payload).map((item, index) => ({
-    id: toString(item.id || item._id || item.alertId || `${item.symbol || item.ticker || 'alert'}-${index}`),
-    symbol: normalizeStockSymbol(toString(item.symbol || item.ticker)),
-    email: toString(item.email || item.userEmail),
-    condition: toString(item.condition || item.direction || item.operator || 'above').toLowerCase(),
-    targetPrice: toNumber(item.targetPrice ?? item.target_price ?? item.price ?? item.threshold),
-    enabled: item.enabled == null ? item.is_active !== false : Boolean(item.enabled),
-    raw: item,
-  }));
+  const normalized = toObjectArray(payload).map((item, index) => {
+    const rawCondition = toString(item.condition || item.direction || item.operator).toLowerCase();
+    const rawType = toString(item.type || item.alertType || item.triggerType).toLowerCase();
+    const condition =
+      rawCondition ||
+      (rawType.includes('below') ? 'below' : '') ||
+      (rawType.includes('above') ? 'above' : '') ||
+      'above';
+
+    return {
+      id: toString(item.id || item._id || item.alertId || `${item.symbol || item.ticker || 'alert'}-${index}`),
+      symbol: normalizeStockSymbol(toString(item.symbol || item.ticker)),
+      email: toString(item.email || item.userEmail),
+      condition,
+      targetPrice: toNumber(item.targetPrice ?? item.target_price ?? item.price ?? item.threshold ?? item.value),
+      enabled: item.enabled == null ? item.is_active !== false : Boolean(item.enabled),
+      raw: item,
+    };
+  });
+
+  if (normalized.length) {
+    return normalized;
+  }
+
+  if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+    const single = mapAlerts([payload]);
+    if (single.length) return single;
+  }
+
+  return [];
 };
 
 const toBoolean = (value: unknown): boolean | null => {
@@ -596,22 +618,26 @@ export const fetchStockAlerts = (fetcher: Fetcher, email: string, signal?: Abort
 export const createStockAlert = (
   fetcher: Fetcher,
   payload: { email: string; symbol: string; condition: string; targetPrice: number },
-) =>
-  requestJson(fetcher, '/api/alerts', {
+) => {
+  const ticker = normalizeStockSymbol(payload.symbol);
+  const type = payload.condition === 'below' ? 'price_below' : 'price_above';
+
+  return requestJson(fetcher, '/api/alerts', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       email: payload.email,
       userEmail: payload.email,
-      symbol: normalizeStockSymbol(payload.symbol),
-      ticker: normalizeStockSymbol(payload.symbol),
+      symbol: ticker,
+      ticker,
       condition: payload.condition,
       direction: payload.condition,
-        operator: payload.condition,
-      type: 'price',
+      operator: payload.condition,
+      type,
       alertType: 'price',
       triggerType: 'price',
       assetType: 'stock',
+      value: payload.targetPrice,
       targetPrice: payload.targetPrice,
       target_price: payload.targetPrice,
       price: payload.targetPrice,
@@ -620,31 +646,70 @@ export const createStockAlert = (
       is_active: true,
     }),
   });
+};
+
+const buildAlertMutationPayload = (
+  alert: Pick<StockAlert, 'id' | 'symbol' | 'email' | 'condition' | 'targetPrice' | 'enabled' | 'raw'>,
+  payload: Partial<{ condition: string; targetPrice: number; enabled: boolean }> = {},
+) => {
+  const raw = alert?.raw || {};
+  const ticker = normalizeStockSymbol(
+    toString(alert?.symbol || (raw as any)?.symbol || (raw as any)?.ticker),
+  );
+  const condition =
+    payload.condition ||
+    alert.condition ||
+    toString((raw as any)?.condition || (raw as any)?.direction || (raw as any)?.operator || 'above').toLowerCase();
+  const targetPrice =
+    payload.targetPrice ??
+    alert.targetPrice ??
+    toNumber((raw as any)?.targetPrice ?? (raw as any)?.target_price ?? (raw as any)?.price ?? (raw as any)?.threshold ?? (raw as any)?.value);
+  const enabled = payload.enabled ?? alert.enabled;
+
+  return {
+    id: toString(alert?.id || (raw as any)?.id || (raw as any)?._id || (raw as any)?.alertId),
+    _id: toString((raw as any)?._id || alert?.id),
+    alertId: toString((raw as any)?.alertId || alert?.id),
+    email: toString(alert?.email || (raw as any)?.email || (raw as any)?.userEmail),
+    userEmail: toString(alert?.email || (raw as any)?.email || (raw as any)?.userEmail),
+    symbol: ticker,
+    ticker,
+    condition,
+    direction: condition,
+    operator: condition,
+    type:
+      toString((raw as any)?.type || (raw as any)?.alertType || (raw as any)?.triggerType) ||
+      (condition === 'below' ? 'price_below' : 'price_above'),
+    alertType: toString((raw as any)?.alertType) || 'price',
+    triggerType: toString((raw as any)?.triggerType) || 'price',
+    assetType: toString((raw as any)?.assetType) || 'stock',
+    value: targetPrice,
+    targetPrice,
+    target_price: targetPrice,
+    price: targetPrice,
+    threshold: targetPrice,
+    enabled,
+    is_active: enabled,
+  };
+};
 
 export const updateStockAlert = (
   fetcher: Fetcher,
-  id: string,
+  alert: Pick<StockAlert, 'id' | 'symbol' | 'email' | 'condition' | 'targetPrice' | 'enabled' | 'raw'>,
   payload: Partial<{ condition: string; targetPrice: number; enabled: boolean }>,
 ) =>
   requestJson(fetcher, '/api/alerts', {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      id,
-      condition: payload.condition,
-      direction: payload.condition,
-      targetPrice: payload.targetPrice,
-      target_price: payload.targetPrice,
-      price: payload.targetPrice,
-      threshold: payload.targetPrice,
-      enabled: payload.enabled,
-      is_active: payload.enabled,
-    }),
+    body: JSON.stringify(buildAlertMutationPayload(alert, payload)),
   });
 
-export const deleteStockAlert = (fetcher: Fetcher, id: string) =>
+export const deleteStockAlert = (
+  fetcher: Fetcher,
+  alert: Pick<StockAlert, 'id' | 'symbol' | 'email' | 'condition' | 'targetPrice' | 'enabled' | 'raw'>,
+) =>
   requestJson(fetcher, '/api/alerts', {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id }),
+    body: JSON.stringify(buildAlertMutationPayload(alert)),
   });

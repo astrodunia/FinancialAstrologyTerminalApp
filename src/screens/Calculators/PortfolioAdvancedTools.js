@@ -524,6 +524,20 @@ export function SharpeSortinoToolScreen({ navigation, calculator, styles, themeC
   );
 }
 
+const filterAlpha = (text) => text.replace(/[^a-zA-Zऀ-ॿ\s]/g, '');
+const filterNakshatra = (text) => text.replace(/[^a-zA-Zऀ-ॿ\s/]/g, '');
+const formatDate = (text) => {
+  const d = text.replace(/\D/g, '').slice(0, 8);
+  if (d.length <= 2) return d;
+  if (d.length <= 4) return `${d.slice(0, 2)}-${d.slice(2)}`;
+  return `${d.slice(0, 2)}-${d.slice(2, 4)}-${d.slice(4)}`;
+};
+const formatTime = (text) => {
+  const d = text.replace(/\D/g, '').slice(0, 4);
+  if (d.length <= 2) return d;
+  return `${d.slice(0, 2)}:${d.slice(2)}`;
+};
+
 export function AstrologyLongevityToolScreen({ navigation, calculator, styles, themeColors, openSite }) {
   const [name, setName] = useState('');
   const [birthPlace, setBirthPlace] = useState('');
@@ -638,13 +652,13 @@ export function AstrologyLongevityToolScreen({ navigation, calculator, styles, t
 
         <View style={styles.card}>
           <AppText style={styles.sectionTitle}>Inputs (Educational, not medical)</AppText>
-          <View style={styles.fieldFull}><AppText style={styles.label}>Name (optional)</AppText><AppTextInput value={name} onChangeText={setName} style={styles.input} placeholder="e.g. A Sharma" placeholderTextColor={themeColors.textMuted} /></View>
-          <View style={styles.fieldFull}><AppText style={styles.label}>Birth Place (city)</AppText><AppTextInput value={birthPlace} onChangeText={setBirthPlace} style={styles.input} placeholder="e.g. Jaipur" placeholderTextColor={themeColors.textMuted} /></View>
+          <View style={styles.fieldFull}><AppText style={styles.label}>Name (optional)</AppText><AppTextInput value={name} onChangeText={(v) => setName(filterAlpha(v))} style={styles.input} placeholder="e.g. A Sharma" placeholderTextColor={themeColors.textMuted} /></View>
+          <View style={styles.fieldFull}><AppText style={styles.label}>Birth Place (city)</AppText><AppTextInput value={birthPlace} onChangeText={(v) => setBirthPlace(filterAlpha(v))} style={styles.input} placeholder="e.g. Jaipur" placeholderTextColor={themeColors.textMuted} /></View>
           <View style={styles.resultRow}>
-            <View style={{ flex: 1 }}><AppText style={styles.label}>Birth Date</AppText><AppTextInput value={birthDate} onChangeText={setBirthDate} style={styles.input} placeholder="dd-mm-yyyy" placeholderTextColor={themeColors.textMuted} /></View>
-            <View style={{ flex: 1 }}><AppText style={styles.label}>Birth Time</AppText><AppTextInput value={birthTime} onChangeText={setBirthTime} style={styles.input} placeholder="--:--" placeholderTextColor={themeColors.textMuted} /></View>
+            <View style={{ flex: 1 }}><AppText style={styles.label}>Birth Date</AppText><AppTextInput value={birthDate} onChangeText={(v) => setBirthDate(formatDate(v))} keyboardType="numeric" style={styles.input} placeholder="dd-mm-yyyy" placeholderTextColor={themeColors.textMuted} /></View>
+            <View style={{ flex: 1 }}><AppText style={styles.label}>Birth Time</AppText><AppTextInput value={birthTime} onChangeText={(v) => setBirthTime(formatTime(v))} keyboardType="numeric" style={styles.input} placeholder="HH:MM" placeholderTextColor={themeColors.textMuted} /></View>
           </View>
-          <View style={styles.fieldFull}><AppText style={styles.label}>Nakshatra hint (optional)</AppText><AppTextInput value={nakshatra} onChangeText={setNakshatra} style={styles.input} placeholder="e.g. Ashwini / Moola" placeholderTextColor={themeColors.textMuted} /></View>
+          <View style={styles.fieldFull}><AppText style={styles.label}>Nakshatra hint (optional)</AppText><AppTextInput value={nakshatra} onChangeText={(v) => setNakshatra(filterNakshatra(v))} style={styles.input} placeholder="e.g. Ashwini / Moola" placeholderTextColor={themeColors.textMuted} /></View>
         </View>
 
         <View style={styles.card}>

@@ -69,10 +69,11 @@ function Chart({
   const plotH = h - t - b;
   const span = Math.max(yMax - yMin, 1);
 
-  const X = (v) => l + (v / Math.max(xMax, 1)) * plotW;
-  const Y = (v) => h - b - ((v - yMin) / span) * plotH;
+  const safeC = (v) => (Number.isFinite(v) ? v : 0);
+  const X = (v) => safeC(l + (v / Math.max(xMax, 1)) * plotW);
+  const Y = (v) => safeC(h - b - ((v - yMin) / span) * plotH);
 
-  const points = series.map((p) => `${X(p.x)},${Y(p.y)}`).join(' ');
+  const points = series.filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y)).map((p) => `${X(p.x)},${Y(p.y)}`).join(' ');
   const yTicks = [0, 0.25, 0.5, 0.75, 1].map((k) => yMin + span * k);
   const xTicks = [0, 0.2, 0.4, 0.6, 0.8, 1].map((k) => xMax * k);
 
@@ -118,7 +119,7 @@ export function SaveMoneyGoalTool({ navigation, calculator, styles, themeColors,
   const [months, setMonths] = useState('0');
 
   const out = useMemo(() => {
-    const n = Math.max(0, Math.floor(N(years)) * 12 + Math.floor(N(months)));
+    const n = Math.min(1200, Math.max(0, Math.floor(N(years)) * 12 + Math.floor(N(months))));
     const i = Math.max(0, N(rate)) / 1200;
     const p = Math.max(0, N(pv));
     const g = Math.max(0, N(goal));
@@ -130,7 +131,7 @@ export function SaveMoneyGoalTool({ navigation, calculator, styles, themeColors,
       bal = bal * (1 + i) + req;
       points.push({ x: m, y: bal });
     }
-    return { n, req, points, yMax: Math.max(g, ...points.map((s) => s.y), 1) };
+    return { n, req, points, yMax: points.reduce((acc, s) => Math.max(acc, Number.isFinite(s.y) ? s.y : 0), Math.max(g, 1)) };
   }, [goal, months, pv, rate, years]);
 
   return (
@@ -270,7 +271,7 @@ export function CollegeCalculatorsTool({ navigation, calculator, styles, themeCo
 
   const L = useMemo(() => {
     const p = Math.max(0, N(loan));
-    const n = Math.max(1, Math.floor(N(term)) * 12);
+    const n = Math.min(1200, Math.max(1, Math.floor(N(term)) * 12));
     const r = Math.max(0, N(rate)) / 1200;
     const emi = r === 0 ? p / n : (p * r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1);
     let bal = p;
@@ -328,7 +329,7 @@ export function HighYieldSavingsTool({ navigation, calculator, styles, themeColo
   const out = useMemo(() => {
     const p0 = Math.max(0, N(initial));
     const m = Math.max(0, N(monthly));
-    const n = Math.max(1, Math.floor(N(years)) * 12);
+    const n = Math.min(1200, Math.max(1, Math.floor(N(years)) * 12));
     const r = Math.max(0, N(apy)) / 1200;
     let bal = p0;
     const points = [{ x: 0, y: bal }];
@@ -386,7 +387,7 @@ export function RetirementSavingsPFTool({ navigation, calculator, styles, themeC
     const p = Math.max(0, N(pv));
     const m = Math.max(0, N(monthly));
     const t = Math.max(0, N(target));
-    const n = (ra - a) * 12;
+    const n = Math.min(1200, (ra - a) * 12);
     const r = Math.max(0, N(rate)) / 1200;
 
     let bal = p;
@@ -459,7 +460,7 @@ export function SIPTool({ navigation, calculator, styles, themeColors, PageHeade
   const out = useMemo(() => {
     const pmt = Math.max(0, N(sip));
     const r = Math.max(0, N(annualReturn)) / 1200;
-    const y = Math.max(1, Math.floor(N(years)));
+    const y = Math.min(100, Math.max(1, Math.floor(N(years))));
     const n = y * 12;
     let bal = 0;
     const points = [{ x: 0, y: 0, invested: 0 }];
@@ -576,7 +577,7 @@ export function LumpsumTool({ navigation, calculator, styles, themeColors, PageH
   const out = useMemo(() => {
     const p = Math.max(0, N(amount));
     const r = Math.max(0, N(annualReturn)) / 100;
-    const y = Math.max(1, Math.floor(N(years)));
+    const y = Math.min(100, Math.max(1, Math.floor(N(years))));
     const m = freq === 'monthly' ? 12 : freq === 'quarterly' ? 4 : freq === 'half-yearly' ? 2 : 1;
     const totalPeriods = y * m;
     const periodic = r / m;
@@ -646,7 +647,7 @@ export function SWPTool({ navigation, calculator, styles, themeColors, PageHeade
     const p = Math.max(0, N(initial));
     const w = Math.max(0, N(withdrawal));
     const r = Math.max(0, N(annualReturn)) / 1200;
-    const y = Math.max(1, Math.floor(N(years)));
+    const y = Math.min(100, Math.max(1, Math.floor(N(years))));
     const n = y * 12;
     let bal = p;
     const points = [{ x: 0, y: bal }];
@@ -670,7 +671,7 @@ export function SWPTool({ navigation, calculator, styles, themeColors, PageHeade
       final: bal,
       growth: Math.max(0, bal + (w * n) - p),
       depletedAt,
-      yMax: Math.max(p, ...points.map((pt) => pt.y), 1),
+      yMax: points.reduce((acc, pt) => Math.max(acc, Number.isFinite(pt.y) ? pt.y : 0), Math.max(p, 1)),
       withdrawRate: p > 0 ? ((w * 12) / p) * 100 : 0,
       monthlyPct: r * 100,
     };
@@ -747,7 +748,7 @@ export function FDTool({ navigation, calculator, styles, themeColors, PageHeader
   const out = useMemo(() => {
     const p = Math.max(0, N(principal));
     const r = Math.max(0, N(rate)) / 100;
-    const y = Math.max(1, Math.floor(N(years)));
+    const y = Math.min(100, Math.max(1, Math.floor(N(years))));
     const m = freq === 'monthly' ? 12 : freq === 'quarterly' ? 4 : freq === 'half-yearly' ? 2 : 1;
     const points = [];
     for (let k = 0; k <= y; k += 1) {
@@ -819,7 +820,7 @@ export function SimpleInterestTool({ navigation, calculator, styles, themeColors
   const out = useMemo(() => {
     const p = Math.max(0, N(principal));
     const r = Math.max(0, N(rate)) / 100;
-    const y = Math.max(1, Math.floor(N(years)));
+    const y = Math.min(100, Math.max(1, Math.floor(N(years))));
     const points = Array.from({ length: y + 1 }, (_, k) => ({ x: k, y: p * (1 + r * k) }));
     const maturity = points[points.length - 1].y;
     const interest = maturity - p;
@@ -887,7 +888,7 @@ export function CompoundInterestTool({ navigation, calculator, styles, themeColo
   const out = useMemo(() => {
     const p = Math.max(0, N(principal));
     const r = Math.max(0, N(rate)) / 100;
-    const t = Math.max(1, Math.floor(N(tenure)));
+    const t = Math.min(100, Math.max(1, Math.floor(N(tenure))));
     const n = freq === 'monthly' ? 12 : freq === 'quarterly' ? 4 : freq === 'half-yearly' ? 2 : 1;
     const maturity = p * Math.pow(1 + r / n, n * t);
     const interest = maturity - p;
@@ -960,7 +961,7 @@ export function RDTool({ navigation, calculator, styles, themeColors, PageHeader
   const out = useMemo(() => {
     const pmt = Math.max(0, N(monthlyDeposit));
     const r = Math.max(0, N(rate)) / 1200;
-    const y = Math.max(1, Math.floor(N(tenure)));
+    const y = Math.min(100, Math.max(1, Math.floor(N(tenure))));
     const n = y * 12;
     let bal = 0;
     const points = [{ x: 0, y: 0, invested: 0 }];
@@ -976,8 +977,9 @@ export function RDTool({ navigation, calculator, styles, themeColors, PageHeader
   const { w, h, l, r, t, b } = chartBox();
   const plotW = w - l - r;
   const plotH = h - t - b;
-  const X = (v) => l + (v / Math.max(out.y, 1)) * plotW;
-  const Y = (v) => h - b - (v / Math.max(out.yMax, 1)) * plotH;
+  const _safeC = (v) => (Number.isFinite(v) ? v : 0);
+  const X = (v) => _safeC(l + (v / Math.max(out.y, 1)) * plotW);
+  const Y = (v) => _safeC(h - b - (v / Math.max(out.yMax, 1)) * plotH);
   const baseline = <Polyline points={investedLine.map((p) => `${X(p.x)},${Y(p.y)}`).join(' ')} fill="none" stroke="#94a3b8" strokeWidth="1.3" opacity={0.8} />;
 
   return (
