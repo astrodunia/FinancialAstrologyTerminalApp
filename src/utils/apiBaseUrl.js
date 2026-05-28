@@ -40,11 +40,10 @@ const resolveApiHost = () => {
     if (Platform.OS === 'android' && isLocalhost(metroHost)) {
       // Use Android emulator loopback alias. '10.0.2.2' works for default Android emulator.
       return {
-        host: '10.0.2.2',
+        host: '192.168.29.145',
         source: 'android_emulator_loopback',
       };
     }
-
     return {
       host: metroHost,
       source: 'metro_host',

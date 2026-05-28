@@ -537,6 +537,23 @@ const formatTime = (text) => {
   if (d.length <= 2) return d;
   return `${d.slice(0, 2)}:${d.slice(2)}`;
 };
+const isValidDateInput = (value) => {
+  const match = /^(\d{2})-(\d{2})-(\d{4})$/.exec(value.trim());
+  if (!match) return false;
+  const day = Number(match[1]);
+  const month = Number(match[2]);
+  const year = Number(match[3]);
+  if (month < 1 || month > 12 || day < 1) return false;
+  const maxDay = new Date(year, month, 0).getDate();
+  return day <= maxDay;
+};
+const isValidTimeInput = (value) => {
+  const match = /^(\d{2}):(\d{2})$/.exec(value.trim());
+  if (!match) return false;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  return hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59;
+};
 
 export function AstrologyLongevityToolScreen({ navigation, calculator, styles, themeColors, openSite }) {
   const [name, setName] = useState('');
@@ -554,6 +571,8 @@ export function AstrologyLongevityToolScreen({ navigation, calculator, styles, t
   const [moonStability, setMoonStability] = useState('variable');
   const [dashaFlavor, setDashaFlavor] = useState('neutral');
   const [computed, setComputed] = useState(false);
+  const hasRequiredInputs = birthPlace.trim() && birthDate.trim() && birthTime.trim();
+  const canCompute = Boolean(hasRequiredInputs);
 
   const out = useMemo(() => {
     const base = 48;
@@ -635,6 +654,24 @@ export function AstrologyLongevityToolScreen({ navigation, calculator, styles, t
     setDashaFlavor('neutral');
     setComputed(false);
   };
+  const handleCompute = () => {
+    if (!canCompute) {
+      setComputed(false);
+      Alert.alert('Missing inputs', 'Enter birth place, birth date, and birth time before computing longevity insights.');
+      return;
+    }
+    if (!isValidDateInput(birthDate)) {
+      setComputed(false);
+      Alert.alert('Invalid birth date', 'Use a valid birth date in DD-MM-YYYY format.');
+      return;
+    }
+    if (!isValidTimeInput(birthTime)) {
+      setComputed(false);
+      Alert.alert('Invalid birth time', 'Use a valid birth time in HH:MM format.');
+      return;
+    }
+    setComputed(true);
+  };
 
   return (
     <>
@@ -659,6 +696,7 @@ export function AstrologyLongevityToolScreen({ navigation, calculator, styles, t
             <View style={{ flex: 1 }}><AppText style={styles.label}>Birth Time</AppText><AppTextInput value={birthTime} onChangeText={(v) => setBirthTime(formatTime(v))} keyboardType="numeric" style={styles.input} placeholder="HH:MM" placeholderTextColor={themeColors.textMuted} /></View>
           </View>
           <View style={styles.fieldFull}><AppText style={styles.label}>Nakshatra hint (optional)</AppText><AppTextInput value={nakshatra} onChangeText={(v) => setNakshatra(filterNakshatra(v))} style={styles.input} placeholder="e.g. Ashwini / Moola" placeholderTextColor={themeColors.textMuted} /></View>
+          <AppText style={styles.tipText}>Birth place, birth date, and birth time are required to compute this educational result.</AppText>
         </View>
 
         <View style={styles.card}>
@@ -682,7 +720,14 @@ export function AstrologyLongevityToolScreen({ navigation, calculator, styles, t
           </View>
           {renderTri('Dasa flavor', dashaFlavor, setDashaFlavor, 'benefic', 'neutral', 'challenging')}
           <View style={optionWrap}>
-            <Pressable style={[styles.primaryBtn, { flexBasis: '64%', flexGrow: 1, alignItems: 'center', paddingVertical: 10 }]} onPress={() => setComputed(true)}><AppText style={styles.primaryBtnText}>Compute (Educational)</AppText></Pressable>
+            <Pressable
+              style={[
+                styles.primaryBtn,
+                { flexBasis: '64%', flexGrow: 1, alignItems: 'center', paddingVertical: 10 },
+                !canCompute && { opacity: 0.55 },
+              ]}
+              onPress={handleCompute}
+            ><AppText style={styles.primaryBtnText}>Compute (Educational)</AppText></Pressable>
             <Pressable style={[styles.ghostBtn, { flexBasis: '34%', flexGrow: 1, alignItems: 'center', paddingVertical: 10 }]} onPress={resetAll}><AppText style={styles.ghostBtnText}>Reset</AppText></Pressable>
           </View>
         </View>
